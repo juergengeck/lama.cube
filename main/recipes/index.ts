@@ -17,6 +17,17 @@ import { AvatarPreferenceRecipe } from './avatar-recipes.js'
 // LLM Recipe - represents an AI model/assistant
 import { LLMRecipe } from './LLM.js'
 
+// Assembly.core recipes - Demand/Supply/Assembly/Plan/Story
+import { AssemblyCoreRecipes } from '@assembly/core'
+
+// Cube.core recipes - CubeObject, Dimension, DimensionValue, QueryResult
+import {
+    CubeObjectRecipe,
+    DimensionRecipe,
+    DimensionValueRecipe,
+    QueryResultRecipe
+} from '@cube/cube.core/recipes'
+
 const LLMSettingsRecipe = {
     $type$: 'Recipe' as const,
     name: 'LLMSettings',
@@ -152,8 +163,15 @@ const LamaRecipes = [
     KeywordAccessStateRecipe,
     ProposalConfigRecipe,
     AvatarPreferenceRecipe,
-    ...MCPRecipes
+    ...MCPRecipes,
     // ...FeedForwardRecipes
+    // Assembly.core recipes (Demand/Supply/Assembly/Plan/Story)
+    ...AssemblyCoreRecipes,
+    // Cube.core recipes
+    CubeObjectRecipe,
+    DimensionRecipe,
+    DimensionValueRecipe,
+    QueryResultRecipe
 ]
 
 export { LamaRecipes }

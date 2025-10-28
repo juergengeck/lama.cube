@@ -1,6 +1,141 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with LAMA Electron.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Essential Commands
+
+### Development
+```bash
+# Install all dependencies (root + electron-ui)
+npm install
+
+# Start Vite dev server for UI hot-reload
+cd electron-ui && npm run dev
+
+# Launch Electron app (run from project root)
+npm run electron              # Uses dist/ (requires build first)
+npm run electron:src          # Uses source TypeScript directly
+
+# Run simple electron test
+npm run simple
+```
+
+### Building
+```bash
+# Build everything (TypeScript + React UI)
+npm run build:all
+
+# Build individual components
+npm run build:main            # TypeScript main process → dist/
+npm run build:ui              # React UI → electron-ui/dist/
+npm run build:preload         # Preload script
+
+# Watch mode for development
+npm run watch:main            # Auto-rebuild TypeScript on changes
+
+# Type checking without building
+npm run typecheck
+```
+
+### Testing
+```bash
+# Run all tests (from electron-ui/)
+cd electron-ui && npm test
+
+# Watch mode for development
+npm run test:watch
+
+# Run specific test suites
+npm run test:unit             # Unit tests only
+npm run test:integration      # Integration tests only
+
+# Coverage report
+npm run test:coverage
+
+# CI mode (used in automation)
+npm run test:ci
+```
+
+### Distribution (Creating Installers)
+```bash
+# Build installers for current platform
+npm run dist
+
+# Platform-specific builds
+npm run dist:win              # Windows NSIS installer
+npm run dist:win-portable     # Windows portable .exe
+npm run dist:mac              # macOS .dmg
+npm run dist:linux            # Linux AppImage + .deb
+
+# Build for all platforms (requires macOS for .dmg)
+npm run dist:all
+```
+
+### Cleanup & Utilities
+```bash
+# Clear all ONE.core storage
+./clear-all-storage.sh
+
+# Clear specific data
+./clear-storage.sh            # Clear main storage
+./clear-lama-topic.sh         # Clear LAMA topics only
+./clear-p2p-channels.sh       # Clear P2P channels
+
+# Kill all Electron processes
+pkill -f Electron
+```
+
+## Project Structure
+
+```
+lama.cube/                          # Electron desktop app
+├── main/                           # Node.js main process
+│   ├── core/                       # Core ONE.core instance & services
+│   │   ├── node-one-core.ts        # Single Node.js ONE.core instance
+│   │   ├── ai-assistant-model.ts   # AI orchestration (being refactored)
+│   │   ├── topic-group-manager.ts  # P2P and group chat management
+│   │   └── llm-object-manager.ts   # LLM configuration storage
+│   ├── ipc/                        # IPC communication layer
+│   │   ├── controller.ts           # Main IPC router
+│   │   └── handlers/               # IPC handlers for each domain
+│   │       ├── chat.ts             # Chat operations
+│   │       ├── ai.ts               # AI assistant
+│   │       ├── connection.ts       # P2P connections
+│   │       ├── contacts.ts         # Contact management
+│   │       └── ...                 # Other handlers
+│   ├── services/                   # Platform services
+│   │   ├── llm-manager.ts          # LLM provider integration
+│   │   ├── mcp-manager.ts          # Model Context Protocol tools
+│   │   └── html-export/            # HTML export with microdata
+│   ├── models/                     # Data models
+│   ├── recipes/                    # ONE.core recipe definitions
+│   └── utils/                      # Utilities
+│
+├── electron-ui/                    # React renderer process
+│   ├── src/
+│   │   ├── App.tsx                 # Main React app
+│   │   ├── components/             # UI components
+│   │   │   ├── ChatLayout.tsx      # Multi-conversation layout
+│   │   │   ├── ChatView.tsx        # Chat interface
+│   │   │   ├── DataDashboard.tsx   # IoM monitoring
+│   │   │   ├── SettingsView.tsx    # Settings UI
+│   │   │   └── ...
+│   │   ├── hooks/                  # React hooks
+│   │   ├── services/               # Browser services
+│   │   └── bridge/                 # IPC bridge to main process
+│   └── tests/                      # Frontend tests
+│       ├── unit/                   # Unit tests
+│       ├── integration/            # Integration tests
+│       └── contract/               # Contract tests
+│
+├── dist/                           # Build output (TypeScript → JS)
+├── specs/                          # Feature specifications
+├── reference/                      # Reference implementations
+├── lama-electron-shadcn.ts         # Electron main entry point
+├── electron-preload.ts             # Preload script (security bridge)
+├── tsconfig.json                   # TypeScript config (main process)
+└── electron-builder.yml            # Installer configuration
+```
 
 ## Architecture: lama.core vs lama.electron
 
@@ -34,7 +169,7 @@ This file provides guidance to Claude Code when working with LAMA Electron.
 **NO ambient pattern** - handlers receive all dependencies via constructor parameters
 
 ### lama.electron (Platform-Specific Implementation)
-**Location**: `/Users/gecko/src/lama/lama.electron/`
+**Location**: `/Users/gecko/src/lama/lama.cube/`
 
 **Contains**:
 - **IPC Handlers** (`main/ipc/handlers/*`) - Thin adapters that:
@@ -121,7 +256,7 @@ AIAssistantHandler (orchestrator)
 **Electron** - `lama.electron/main/core/ai-assistant-handler-adapter.ts`:
 ```typescript
 import { AIAssistantHandler } from '@lama/core/handlers/AIAssistantHandler.js';
-import { ElectronLLMPlatform } from '../../adapters/electron-llm-platform.js';
+import { ElectronLLMPlatform } from '../../adapters/electron-llm-platform.ts';
 
 const platform = new ElectronLLMPlatform(mainWindow);
 const handler = new AIAssistantHandler({
@@ -579,14 +714,14 @@ Structured JSON-based protocol for LLM responses using Ollama's native `format` 
 
 ### IPC Handler
 - `export:htmlWithMicrodata` - Export conversation as HTML with embedded microdata
-- Location: `/main/ipc/handlers/export.js`
+- Location: `/main/ipc/handlers/export.ts`
 - Request: topicId, format, options (includeSignatures, maxMessages, etc.)
 - Response: HTML string and metadata
 
 ### Implementation Architecture
 **Services**:
-- `/main/services/html-export/implode-wrapper.js` - ONE.core implode() integration
-- `/main/services/html-export/formatter.js` - Human-readable HTML formatting
+- `/main/services/html-export/implode-wrapper.ts` - ONE.core implode() integration
+- `/main/services/html-export/formatter.ts` - Human-readable HTML formatting
 
 **Key Functions**:
 - `implode(hash)` - Recursively embed referenced ONE objects as microdata
@@ -629,7 +764,7 @@ Structured JSON-based protocol for LLM responses using Ollama's native `format` 
 - `/main/core/one-ai/models/` - Subject.js, Keyword.js, Summary.js
 - `/main/core/one-ai/services/TopicAnalyzer.js` - Main analysis service
 - `/main/core/one-ai/storage/` - Persistence layer for all objects
-- `/main/ipc/handlers/topic-analysis.js` - IPC handler implementations
+- `/main/ipc/handlers/topic-analysis.ts` - IPC handler implementations
 
 **UI Components**:
 - `TopicSummary.tsx` - Main summary display with version history
@@ -704,9 +839,9 @@ const relevanceScore = jaccard * config.matchWeight + recencyBoost * config.rece
 ### Integration Points
 - **Depends on Feature 018**: Uses Subject and Keyword objects from topic analysis
 - **Node.js Services**:
-  - `/main/services/proposal-engine.js` - Core matching logic
-  - `/main/services/proposal-ranker.js` - Ranking algorithm
-  - `/main/ipc/handlers/proposals.js` - IPC handler implementations
+  - `/main/services/proposal-engine.ts` - Core matching logic
+  - `/main/services/proposal-ranker.ts` - Ranking algorithm
+  - `/main/ipc/handlers/proposals.ts` - IPC handler implementations
 - **React UI Components**:
   - `/electron-ui/src/components/ProposalCard.tsx` - Single proposal display
   - `/electron-ui/src/components/ProposalCarousel.tsx` - Swipeable container
@@ -754,7 +889,7 @@ const relevanceScore = jaccard * config.matchWeight + recencyBoost * config.rece
    - NO SingleUserNoAuth - authentication handled by Node.js
 
 2. **Node.js Instance** (Main Process)
-   - Location: `/main/core/node-one-core.js`
+   - Location: `/main/core/node-one-core.ts`
    - Platform: Node.js with file system
    - Role: SINGLE ONE.core instance - handles EVERYTHING
    - Models: SingleUserNoAuth, LeuteModel, ChannelManager, AI contacts, etc.
@@ -843,7 +978,7 @@ The app follows a simple authentication flow:
 
 ### Architecture Principles
 
-**NO FALLBACKS**: 
+**NO FALLBACKS**:
 - Browser ONLY uses IPC - no fallback to local models
 - If IPC fails, operations fail - no mitigation
 - Fix the problem, don't work around it
@@ -874,14 +1009,14 @@ The app follows a simple authentication flow:
 
 ### Key Files
 
-- `/main/core/node-one-core.js` - SINGLE Node.js ONE.core instance
+- `/main/core/node-one-core.ts` - SINGLE Node.js ONE.core instance
 - `/main/ipc/handlers/` - IPC handlers for all operations
 - `/electron-ui/src/services/browser-init.ts` - UI initialization (NO ONE.core)
 - `/electron-ui/src/bridge/lama-bridge.ts` - IPC bridge for UI
 
 ### Development Notes
 
-- Main process uses CommonJS (`require`)
+- Main process uses ESM (`import`)
 - Renderer uses ESM (`import`)
 - IPC communication via contextBridge for ALL operations
 - NO direct ONE.core access from browser
@@ -892,7 +1027,7 @@ For consistency and simplicity:
 - ONE source of truth
 - IPC for everything
 - No complex federation/pairing needed
-- reference implementations are in ./reference
+- Reference implementations are in ./reference
 
 ## Transport Architecture
 
@@ -911,7 +1046,7 @@ Transport Layer:  [QUIC]    [WebSocket]
 
 ### Transport Layers
 
-- **QUIC** (`/main/core/quic-transport.js`): Future direct P2P transport
+- **QUIC** (`/main/core/quic-transport.ts`): Future direct P2P transport
   - Direct peer-to-peer connections
   - No relay server needed
   - Lower latency, better performance

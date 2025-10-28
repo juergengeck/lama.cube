@@ -26,7 +26,7 @@ import {
     DimensionRecipe,
     DimensionValueRecipe,
     QueryResultRecipe
-} from '@cube/cube.core/recipes'
+} from '@cube/cube.core'
 
 const LLMSettingsRecipe = {
     $type$: 'Recipe' as const,

@@ -81,37 +81,47 @@ export class CubeManager {
 
     /**
      * Store an Assembly in the Cube
+     * TODO: Implement when dimensional metadata is ready
      */
     async storeAssembly(assembly: Assembly): Promise<void> {
-        await this.cubeStorage.storeObject(assembly);
+        // await this.cubeStorage.store(assemblyHash, metadata);
+        // For now, just stored via ONE.core through AssemblyHandler
     }
 
     /**
      * Store a Plan in the Cube
+     * TODO: Implement when dimensional metadata is ready
      */
     async storePlan(plan: Plan): Promise<void> {
-        await this.cubeStorage.storeObject(plan);
+        // await this.cubeStorage.store(planHash, metadata);
+        // For now, just stored via ONE.core through AssemblyHandler
     }
 
     /**
      * Store a Supply in the Cube
+     * TODO: Implement when dimensional metadata is ready
      */
     async storeSupply(supply: Supply): Promise<void> {
-        await this.cubeStorage.storeObject(supply);
+        // await this.cubeStorage.store(supplyHash, metadata);
+        // For now, just stored via ONE.core through AssemblyHandler
     }
 
     /**
      * Store a Demand in the Cube
+     * TODO: Implement when dimensional metadata is ready
      */
     async storeDemand(demand: Demand): Promise<void> {
-        await this.cubeStorage.storeObject(demand);
+        // await this.cubeStorage.store(demandHash, metadata);
+        // For now, just stored via ONE.core through AssemblyHandler
     }
 
     /**
      * Store a Story in the Cube
+     * TODO: Implement when dimensional metadata is ready
      */
     async storeStory(story: Story): Promise<void> {
-        await this.cubeStorage.storeObject(story);
+        // await this.cubeStorage.store(storyHash, metadata);
+        // For now, just stored via ONE.core through AssemblyHandler
     }
 
     // ==================== AssemblyHandler Operations ====================

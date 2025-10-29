@@ -77,14 +77,8 @@ export const ChatView = memo(function ChatView({
     setAiStreamingContent('')
   }, [conversationId])
 
-  // Check if welcome message is still being generated on mount
-  useEffect(() => {
-    // If there are no messages and this is a new AI conversation, show spinner
-    if (messages.length === 0 && isInitiallyProcessing) {
-      setIsAIProcessing(true)
-      console.log('[ChatView] Setting AI processing on mount for new conversation')
-    }
-  }, []) // Only on mount
+  // Spinner is controlled by message:thinking event from backend
+  // No need to predict state here - backend emits event when generating welcome
 
   // Listen for AI streaming events
   useEffect(() => {
@@ -122,10 +116,10 @@ export const ChatView = memo(function ChatView({
       }
     }
     
-    // Subscribe to streaming events via electronAPI
-    const unsubThinking = window.electronAPI.on('message:thinking', handleThinking)
-    const unsubStream = window.electronAPI.on('message:stream', handleStream)
-    const unsubComplete = window.electronAPI.on('message:updated', handleComplete)
+    // Subscribe to streaming events via lamaBridge
+    const unsubThinking = lamaBridge.on('message:thinking', handleThinking)
+    const unsubStream = lamaBridge.on('message:stream', handleStream)
+    const unsubComplete = lamaBridge.on('message:updated', handleComplete)
     
     return () => {
       if (unsubThinking) unsubThinking()

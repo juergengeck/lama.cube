@@ -9,7 +9,25 @@
 
 import dgram from 'dgram';
 import { EventEmitter } from 'events';
-import type { LocalDiscoveryProvider, LocalPeerInfo } from '@lama/connection.core';
+
+// Define local types since connection.core doesn't export these yet
+export interface LocalPeerInfo {
+  id: string;
+  name: string;
+  address: string;
+  port?: number;
+  lastSeen?: number;
+  capabilities: string[];
+  discoveredAt: number;
+  lastSeenAt: number;
+}
+
+export interface LocalDiscoveryProvider {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  on(event: 'peer-discovered', listener: (peer: LocalPeerInfo) => void): this;
+  on(event: 'peer-lost', listener: (peerId: string) => void): this;
+}
 
 /**
  * QuicVC discovery frame type (from QuicVC spec)
@@ -52,6 +70,21 @@ export class QuicVCDiscovery extends EventEmitter implements LocalDiscoveryProvi
     super();
     this.ownDeviceId = ownDeviceId;
     this.ownDeviceName = ownDeviceName;
+  }
+
+  /**
+   * Start discovery (implements LocalDiscoveryProvider)
+   */
+  async start(): Promise<void> {
+    await this.initialize();
+    await this.startListening();
+  }
+
+  /**
+   * Stop discovery (implements LocalDiscoveryProvider)
+   */
+  async stop(): Promise<void> {
+    await this.shutdown();
   }
 
   /**

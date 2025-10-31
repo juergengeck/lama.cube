@@ -184,7 +184,7 @@ class ContentSharingManager {
     // Listen for new contacts (Someone objects)
     if (this.nodeOneCore.leuteModel) {
       // Import OEvent dynamically
-      const { OEvent } = await import('../../electron-ui/node_modules/@refinio/one.models/lib/misc/OEvent.js')
+      const { OEvent } = await import('@refinio/one.models/lib/misc/OEvent.js')
       
       // Listen for when a new Someone is added to "other" array
       this.nodeOneCore.leuteModel.onSomeoneAdded = this.nodeOneCore.leuteModel.onSomeoneAdded || new OEvent()
@@ -212,7 +212,7 @@ class ContentSharingManager {
     // Listen for new channels
     if (this.nodeOneCore.channelManager) {
       // Import OEvent if not already imported
-      const { OEvent } = await import('../../electron-ui/node_modules/@refinio/one.models/lib/misc/OEvent.js')
+      const { OEvent } = await import('@refinio/one.models/lib/misc/OEvent.js')
       
       // ChannelManager has an onChannelCreated event
       this.nodeOneCore.channelManager.onChannelCreated = this.nodeOneCore.channelManager.onChannelCreated || new OEvent()

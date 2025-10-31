@@ -300,8 +300,23 @@ class NodeProvisioning {
         })
       }
       
-      // Skip AI contact setup during provisioning - will be done on-demand
-      // This saves significant initialization time
+      // Create default AI chats after initialization
+      console.log('[NodeProvisioning] Setting up default AI chats...')
+      try {
+        const { default: llmManager } = await import('../services/llm-manager-singleton.js')
+        const models = llmManager.getModels()
+
+        if (models && models.length > 0) {
+          const defaultModel = models[0].id
+          console.log('[NodeProvisioning] Creating default chats with model:', defaultModel)
+          await nodeOneCore.aiAssistantModel.setDefaultModel(defaultModel)
+          console.log('[NodeProvisioning] ✅ Default AI chats created')
+        } else {
+          console.log('[NodeProvisioning] No models available, skipping default chats')
+        }
+      } catch (error) {
+        console.error('[NodeProvisioning] Failed to create default chats:', error)
+      }
 
       return {
         success: true,
@@ -346,9 +361,9 @@ class NodeProvisioning {
 
   async initializeNodeInstance(provisioningData: any): Promise<any> {
     const { user } = provisioningData || {}
-    
+
     console.log('[NodeProvisioning] Initializing Node instance for user:', user?.name)
-    
+
     // Check if Node is already initialized
     const currentInfo = nodeOneCore.getInfo()
     if (currentInfo.initialized) {
@@ -365,7 +380,22 @@ class NodeProvisioning {
     }
     
     console.log('[NodeProvisioning] Initializing Node.js with username:', username)
-    const result = await nodeOneCore.initialize(username, password)
+
+    // Create progress callback that sends IPC events to browser
+    const onProgress = (stage: string, percent: number, message: string) => {
+      console.log(`[NodeProvisioning] Progress: ${percent}% - ${message}`)
+
+      // Send progress event to browser via IPC
+      if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+        global.mainWindow.webContents.send('onecore:init-progress', {
+          stage,
+          percent,
+          message
+        })
+      }
+    }
+
+    const result = await nodeOneCore.initialize(username, password, onProgress)
     if (!result.success) {
       // If it's a decryption error, it means passwords don't match
       if (result.error && result.error.includes('CYENC-SYMDEC')) {

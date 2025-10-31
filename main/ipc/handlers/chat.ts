@@ -110,10 +110,8 @@ interface IpcResponse<T = any> {
 }
 
 const chatHandlers = {
-  async initializeDefaultChats(event: IpcMainInvokeEvent): Promise<IpcResponse> {
-    const response = await chatHandler.initializeDefaultChats({});
-    return { success: response.success, error: response.error };
-  },
+  // NOTE: initializeDefaultChats removed - default chats are created automatically
+  // by AIAssistantHandler.init() in node-one-core.ts during ONE.core initialization
 
   async uiReady(event: IpcMainInvokeEvent): Promise<IpcResponse> {
     // Platform-specific: Update PeerMessageListener with current window

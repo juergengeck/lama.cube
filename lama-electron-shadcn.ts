@@ -590,25 +590,24 @@ ipcMain.handle('app:clearData', async (event: Electron.IpcMainInvokeEvent) => {
 // Export the shared function so it can be called from other handlers
 export { clearAppDataShared };
 
-// Auto-login test function for debugging - DISABLED to avoid redundant control flows
+// Auto-login test function for debugging
 async function autoLoginTest(): Promise<void> {
-  console.log('[AutoLogin] Auto-login disabled to prevent redundant control flows')
-  // setTimeout(async () => {
-  //   console.log('[AutoLogin] Triggering login with demo/demo...')
-  //   try {
-  //     const { default: nodeProvisioning } = await import('./main/services/node-provisioning.js')
-  //     const result = await nodeProvisioning.provision({
-  //       user: {
-  //         name: 'demo',
-  //         password: 'demo'
-  //       }
-  //     })
-  //     console.log('[AutoLogin] Provision result:', JSON.stringify(result, null, 2))
-  //   } catch (error) {
-  //     console.error('[AutoLogin] Error:', error)
-  //   }
-  // }, 5000)
+  setTimeout(async () => {
+    console.log('[AutoLogin] Triggering login with demo/demo...')
+    try {
+      const { default: nodeProvisioning } = await import('./main/services/node-provisioning.js')
+      const result = await nodeProvisioning.provision({
+        user: {
+          name: 'demo',
+          password: 'demo'
+        }
+      })
+      console.log('[AutoLogin] Provision result:', JSON.stringify(result, null, 2))
+    } catch (error) {
+      console.error('[AutoLogin] Error:', error)
+    }
+  }, 5000)
 }
 
 // Uncomment to enable auto-login for testing
-autoLoginTest();
+// autoLoginTest();

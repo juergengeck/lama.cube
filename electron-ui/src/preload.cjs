@@ -114,12 +114,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'chat:conversationCreated',
       'chat:messageSent',
       'chat:newMessages',
-      'node-log'
+      'node-log',
+      'onecore:init-progress'
     ]
     if (validChannels.includes(channel)) {
       // Strip the Electron IPC event object, only pass data to callback
-      ipcRenderer.on(channel, (_event, ...args) => callback(...args))
+      const subscription = (_event, ...args) => callback(...args)
+      ipcRenderer.on(channel, subscription)
+      // Return cleanup function
+      return () => ipcRenderer.removeListener(channel, subscription)
     }
+    // Return no-op cleanup for invalid channels
+    return () => {}
   },
   off: (channel, callback) => {
     const validChannels = [

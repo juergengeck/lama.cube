@@ -26,7 +26,7 @@ const defaultConfig: LamaConfig = {
         name: 'LAMA Instance',
         email: 'user@lama.local',
         secret: '', // Must be provided
-        directory: path.join(os.homedir(), 'Documents', 'LAMA', 'OneDB'),
+        directory: path.join(process.cwd(), 'OneDB'),  // Keep app data in project directory
         wipeStorage: false
     },
     commServer: {

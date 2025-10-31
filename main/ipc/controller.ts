@@ -5,6 +5,7 @@
 
 import { ipcMain, BrowserWindow, IpcMainInvokeEvent, app } from 'electron';
 import type { IPCHandler, IPCHandlerMap } from '../types/ipc.js';
+import nodeOneCore from '../core/node-one-core.js';
 
 // Import handlers (will be JS files initially, then migrated to TS)
 import authHandlers from './handlers/auth.js';
@@ -119,7 +120,6 @@ class IPCController {
     this.handle('state:subscribe', stateHandlers.subscribe);
 
     // Chat handlers
-    this.handle('chat:initializeDefaultChats', chatHandlers.initializeDefaultChats);
     this.handle('chat:sendMessage', chatHandlers.sendMessage);
     this.handle('chat:getMessages', chatHandlers.getMessages);
     this.handle('chat:createConversation', chatHandlers.createConversation);
@@ -336,10 +336,31 @@ class IPCController {
       ipcMain.removeHandler(channel);
     }
 
-    // Register new handler with error handling
+    // Register new handler with error handling and initialization checks
     ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: any[]) => {
       try {
         this.safeLog(`[IPC] Handling: ${channel}`, args);
+
+        // Channels that can be called before Node initialization
+        const allowedBeforeInit = [
+          'onecore:initializeNode',
+          'onecore:getInfo',
+          'debug:log',
+          'state:get',
+          'state:set',
+          'settings:get',
+          'settings:getAll',
+          'app:clearData',
+          'action:init'
+        ];
+
+        // Check if NodeOneCore is initialized for channels that require it
+        if (!allowedBeforeInit.includes(channel) && !nodeOneCore.initialized) {
+          const error = `NodeOneCore not initialized yet. Please log in first. (Called: ${channel})`;
+          this.safeError(`[IPC] ${error}`);
+          throw new Error(error);
+        }
+
         const result: any = await handler(event, ...args);
         // Don't double-wrap if handler already returns success/error format
         if (result && typeof result === 'object' && 'success' in result) {

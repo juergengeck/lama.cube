@@ -306,13 +306,10 @@ class AIMessageListener {
         console.log(`[AIMessageListener] Last message from ${messageSender?.toString().substring(0, 8)}...: isAI=${isFromAI}, text="${messageText?.substring(0, 50)}..."`)
         
         if (!isFromAI && messageText && messageText.trim() && isRecent) {
-          console.log(`[AIMessageListener] Found recent user message: "${messageText}"`)
-          
-          // Delegate to AIAssistantModel for processing
-          console.log(`[AIMessageListener] Delegating to AIAssistantModel for processing`)
-          if (this.aiAssistantModel) {
-            await this.aiAssistantModel.processMessage(channelId, messageText, messageSender)
-          }
+          console.log(`[AIMessageListener] 🔇 Found user message: "${messageText}" - NOT auto-responding (welcome message only)`)
+          // DO NOT auto-respond to user messages
+          // The static welcome message is handled when the chat is created
+          // AI should only respond when explicitly triggered (future: button/mention)
         } else if (isFromAI) {
           console.log(`[AIMessageListener] ✅ Correctly ignoring AI message from ${messageSender?.toString().substring(0, 8)}...`)
         }

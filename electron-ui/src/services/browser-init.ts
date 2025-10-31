@@ -32,32 +32,51 @@ export class BrowserInit {
    */
   async login(username: string, password: string): Promise<any> {
     console.log('[BrowserInit] User login:', username)
-    
+
     // Store credentials for UI purposes
     this.loginCredentials = { username, password }
-    
+
     try {
       // Call Node.js to initialize ONE.core instance
       console.log('[BrowserInit] Calling Node.js to initialize ONE.core...')
-      
+
       if (!window.electronAPI) {
         throw new Error('Electron API not available - cannot communicate with Node.js')
       }
-      
-      // Initialize Node.js ONE.core instance
-      const nodeResult = await window.electronAPI.invoke('onecore:initializeNode', {
-        user: { 
-          name: username,
-          password: password
-        }
-      })
-      
+
+      // Set up progress event listener
+      const progressListener = (data: { stage: string; percent: number; message: string }) => {
+        console.log(`[BrowserInit] Initialization progress: ${data.percent}% - ${data.message}`)
+        // UI can listen to this event to show progress (e.g., via custom event)
+        window.dispatchEvent(new CustomEvent('onecore-init-progress', { detail: data }))
+      }
+
+      // Register progress listener (returns cleanup function)
+      const cleanupListener = window.electronAPI.on('onecore:init-progress', progressListener)
+
+      // Initialize Node.js ONE.core instance with timeout
+      const INIT_TIMEOUT = 30000 // 30 seconds
+      const nodeResult = await Promise.race([
+        window.electronAPI.invoke('onecore:initializeNode', {
+          user: {
+            name: username,
+            password: password
+          }
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Initialization timeout - Node.js did not respond within 30 seconds')), INIT_TIMEOUT)
+        )
+      ])
+
+      // Cleanup progress listener
+      cleanupListener()
+
       console.log('[BrowserInit] Node.js response:', nodeResult)
-      
+
       if (!nodeResult || !nodeResult.success) {
         throw new Error(`Failed to initialize Node.js instance: ${nodeResult?.error || 'No response'}`)
       }
-      
+
       // Store user info for UI
       this.currentUser = {
         instanceName: `lama-${username}`,
@@ -66,22 +85,12 @@ export class BrowserInit {
         password: password,
         loggedInAt: new Date().toISOString()
       }
-      
+
       console.log('[BrowserInit] ✅ Node.js ONE.core initialized:', nodeResult.nodeId)
 
-      // Initialize default chats (like Hi chat) after login
-      try {
-        console.log('[BrowserInit] Initializing default chats...')
-        const initResult = await window.electronAPI.invoke('chat:initializeDefaultChats')
-        if (initResult.success) {
-          console.log('[BrowserInit] Default chats initialized')
-        } else {
-          console.warn('[BrowserInit] Failed to initialize default chats:', initResult.error)
-        }
-      } catch (error) {
-        console.warn('[BrowserInit] Error initializing default chats:', error)
-        // Continue anyway - not critical
-      }
+      // NOTE: Default chats are created automatically by AIAssistantHandler.init()
+      // which is called during Node.js ONE.core initialization in node-one-core.ts
+      // No separate IPC call needed here
 
       // Store Node info for debugging
       ;(window as any).nodeInstanceInfo = {
@@ -90,7 +99,7 @@ export class BrowserInit {
       }
 
       return { success: true, user: this.currentUser }
-      
+
     } catch (error) {
       console.error('[BrowserInit] Login failed:', error)
       throw error

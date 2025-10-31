@@ -13,9 +13,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@components': path.resolve(__dirname, './src/components'),
-      '@lib': path.resolve(__dirname, './src/lib'),
-      // Force all one.core imports to use the same instance
-      '@refinio/one.core': path.resolve(__dirname, './node_modules/@refinio/one.core')
+      '@lib': path.resolve(__dirname, './src/lib')
     }
   },
   define: {

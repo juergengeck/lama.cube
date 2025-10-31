@@ -146,15 +146,28 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
       if (data.messages && data.messages.length > 0) {
         const lastMessage = data.messages[data.messages.length - 1]
 
-        setConversations(prev => prev.map(conv =>
-          conv.id === data.conversationId
-            ? {
-                ...conv,
-                lastMessage: lastMessage.content || lastMessage.text || '',
-                lastMessageTime: new Date()
-              }
-            : conv
-        ))
+        setConversations(prev => {
+          const exists = prev.some(conv => conv.id === data.conversationId)
+
+          // If conversation doesn't exist yet, reload conversations to add it
+          if (!exists) {
+            console.log('[ChatLayout] 🆕 New conversation detected, reloading list:', data.conversationId)
+            // Add small delay to ensure topic is fully persisted before reloading
+            setTimeout(() => reloadConversations(), 300)
+            return prev
+          }
+
+          // Update existing conversation
+          return prev.map(conv =>
+            conv.id === data.conversationId
+              ? {
+                  ...conv,
+                  lastMessage: lastMessage.content || lastMessage.text || '',
+                  lastMessageTime: new Date()
+                }
+              : conv
+          )
+        })
       }
     }
 

@@ -46,12 +46,7 @@ export class CubeManager {
         this.oneCore = deps.oneCore;
 
         // Initialize CubeStorage
-        this.cubeStorage = new CubeStorage({
-            oneCore: deps.oneCore,
-            storeVersionedObject: deps.storeVersionedObject,
-            getObjectByIdHash: deps.getObjectByIdHash,
-            getObject: deps.getObject
-        });
+        this.cubeStorage = new CubeStorage();
 
         // Initialize AssemblyHandler
         this.assemblyHandler = new AssemblyHandler({
@@ -235,7 +230,7 @@ export class CubeManager {
      */
     async queryAssemblies(query: any): Promise<Assembly[]> {
         const results = await this.cubeStorage.query(query);
-        return results.objects as Assembly[];
+        return results.objects as unknown as Assembly[];
     }
 
     /**
@@ -243,7 +238,7 @@ export class CubeManager {
      */
     async queryPlans(query: any): Promise<Plan[]> {
         const results = await this.cubeStorage.query(query);
-        return results.objects as Plan[];
+        return results.objects as unknown as Plan[];
     }
 
     /**

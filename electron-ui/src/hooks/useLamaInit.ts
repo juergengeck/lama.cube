@@ -12,6 +12,10 @@ export interface LamaAuthState {
   isLoading: boolean
   error: Error | null
   user: { email: string; id: string; name: string } | null
+  initProgress: {
+    percent: number
+    message: string
+  } | null
 }
 
 export function useLamaInit() {
@@ -20,23 +24,43 @@ export function useLamaInit() {
     isAuthenticated: false,
     isLoading: false, // main.tsx handles the initial loading
     error: null,
-    user: null
+    user: null,
+    initProgress: null
   })
+
+  // Listen to initialization progress events
+  useEffect(() => {
+    const handleProgress = (event: Event) => {
+      const customEvent = event as CustomEvent<{ stage: string; percent: number; message: string }>
+      const { percent, message } = customEvent.detail
+
+      setState(prev => ({
+        ...prev,
+        initProgress: { percent, message }
+      }))
+    }
+
+    window.addEventListener('onecore-init-progress', handleProgress)
+
+    return () => {
+      window.removeEventListener('onecore-init-progress', handleProgress)
+    }
+  }, [])
 
   // Check initialization status on mount
   useEffect(() => {
     let mounted = true
-    
+
     const checkStatus = async () => {
       if (!mounted) return
-      
+
       try {
         const initialized = browserInit.isInitialized()
         const currentUser = browserInit.getCurrentUser()
-        
+
         // lamaBridge is already initialized via IPC in its constructor
         // No need to connect AppModel - browser is UI-only
-        
+
         setState({
           isInitialized: initialized,
           isAuthenticated: !!currentUser,
@@ -46,9 +70,10 @@ export function useLamaInit() {
             email: `${currentUser.name}@lama.local`,
             id: currentUser.id,
             name: currentUser.name
-          } : null
+          } : null,
+          initProgress: null
         })
-        
+
       } catch (error) {
         if (mounted) {
           setState(prev => ({
@@ -59,9 +84,9 @@ export function useLamaInit() {
         }
       }
     }
-    
+
     checkStatus()
-    
+
     return () => {
       mounted = false
     }

@@ -19,7 +19,7 @@ function App() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | undefined>(undefined)
   const [hasTopics, setHasTopics] = useState<boolean | null>(null)
   const [hasDefaultModel, setHasDefaultModel] = useState<boolean | null>(null)
-  const { isInitialized, isAuthenticated, isLoading, login, logout, error } = useLamaInit()
+  const { isInitialized, isAuthenticated, isLoading, login, logout, error, initProgress } = useLamaInit()
   // NO AppModel in browser - use IPC for everything
 
   // Check if any topics exist (for onboarding detection)
@@ -105,10 +105,26 @@ function App() {
   if (isLoading && !isInitialized) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
-        <div className="text-center">
+        <div className="text-center max-w-md">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
           <h2 className="text-2xl font-bold mb-2">Initializing LAMA Desktop</h2>
-          <p className="text-muted-foreground">Setting up encryption and local storage...</p>
+          {initProgress ? (
+            <>
+              <div className="mt-4 mb-2">
+                <div className="w-full bg-secondary rounded-full h-2.5">
+                  <div
+                    className="bg-primary h-2.5 rounded-full transition-all duration-300"
+                    style={{ width: `${initProgress.percent}%` }}
+                  />
+                </div>
+              </div>
+              <p className="text-muted-foreground text-sm">
+                {initProgress.message} ({initProgress.percent}%)
+              </p>
+            </>
+          ) : (
+            <p className="text-muted-foreground">Setting up encryption and local storage...</p>
+          )}
           {error && (
             <div className="mt-4 text-red-500">
               Error: {error.message}

@@ -1,0 +1,147 @@
+"use strict";
+/**
+ * LLM Config IPC Handlers (Thin Adapter)
+ *
+ * Maps Electron IPC calls to LLMConfigHandler methods.
+ * Business logic lives in ../../../lama.core/handlers/LLMConfigHandler.ts
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
+    return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (g && (g = 0, op[0] && (_ = 0)), _) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.handleTestOllamaConnection = handleTestOllamaConnection;
+exports.handleSetOllamaConfig = handleSetOllamaConfig;
+exports.handleGetOllamaConfig = handleGetOllamaConfig;
+exports.handleGetAvailableModels = handleGetAvailableModels;
+exports.handleDeleteOllamaConfig = handleDeleteOllamaConfig;
+exports.registerLlmConfigHandlers = registerLlmConfigHandlers;
+var electron_1 = require("electron");
+var LLMConfigHandler_js_1 = require("@lama/core/handlers/LLMConfigHandler.js");
+var ollama_validator_js_1 = require("../../services/ollama-validator.js");
+var ollama_config_manager_js_1 = require("../../services/ollama-config-manager.js");
+var node_one_core_js_1 = require("../../core/node-one-core.js");
+// Create handler instance with Electron-specific dependencies
+var llmConfigHandler = new LLMConfigHandler_js_1.LLMConfigHandler(node_one_core_js_1.default, {
+    testOllamaConnection: ollama_validator_js_1.testOllamaConnection,
+    fetchOllamaModels: ollama_validator_js_1.fetchOllamaModels,
+}, {
+    encryptToken: ollama_config_manager_js_1.encryptToken,
+    decryptToken: ollama_config_manager_js_1.decryptToken,
+    computeBaseUrl: ollama_config_manager_js_1.computeBaseUrl,
+    isEncryptionAvailable: ollama_config_manager_js_1.isEncryptionAvailable,
+});
+/**
+ * T012: llm:testOllamaConnection
+ * Validate connectivity to Ollama server and fetch available models
+ */
+function handleTestOllamaConnection(event, request) {
+    return __awaiter(this, void 0, void 0, function () {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0: return [4 /*yield*/, llmConfigHandler.testConnection(request)];
+                case 1: return [2 /*return*/, _a.sent()];
+            }
+        });
+    });
+}
+/**
+ * T013: llm:setOllamaConfig
+ * Save Ollama configuration to ONE.core storage
+ */
+function handleSetOllamaConfig(event, request) {
+    return __awaiter(this, void 0, void 0, function () {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0: return [4 /*yield*/, llmConfigHandler.setConfig(request)];
+                case 1: return [2 /*return*/, _a.sent()];
+            }
+        });
+    });
+}
+/**
+ * T014: llm:getOllamaConfig
+ * Retrieve current active Ollama configuration
+ */
+function handleGetOllamaConfig(event, request) {
+    return __awaiter(this, void 0, void 0, function () {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0: return [4 /*yield*/, llmConfigHandler.getConfig(request)];
+                case 1: return [2 /*return*/, _a.sent()];
+            }
+        });
+    });
+}
+/**
+ * T015: llm:getAvailableModels
+ * Fetch models from Ollama server (active config or specified URL)
+ */
+function handleGetAvailableModels(event, request) {
+    return __awaiter(this, void 0, void 0, function () {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0: return [4 /*yield*/, llmConfigHandler.getAvailableModels(request)];
+                case 1: return [2 /*return*/, _a.sent()];
+            }
+        });
+    });
+}
+/**
+ * T016: llm:deleteOllamaConfig
+ * Soft-delete an Ollama configuration
+ */
+function handleDeleteOllamaConfig(event, request) {
+    return __awaiter(this, void 0, void 0, function () {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0: return [4 /*yield*/, llmConfigHandler.deleteConfig(request)];
+                case 1: return [2 /*return*/, _a.sent()];
+            }
+        });
+    });
+}
+/**
+ * Register all IPC handlers
+ */
+function registerLlmConfigHandlers() {
+    console.log('[IPC] Registering LLM config handlers...');
+    electron_1.ipcMain.handle('llm:testOllamaConnection', handleTestOllamaConnection);
+    electron_1.ipcMain.handle('llm:setOllamaConfig', handleSetOllamaConfig);
+    electron_1.ipcMain.handle('llm:getOllamaConfig', handleGetOllamaConfig);
+    electron_1.ipcMain.handle('llm:getAvailableModels', handleGetAvailableModels);
+    electron_1.ipcMain.handle('llm:deleteOllamaConfig', handleDeleteOllamaConfig);
+    console.log('[IPC] ✅ LLM config handlers registered');
+}

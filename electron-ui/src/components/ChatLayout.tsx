@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { MessageSquare, Plus, Trash2, Bot, Loader2, MoreVertical, Edit, Check, CheckCheck, UserPlus, Users, ChevronLeft, ChevronRight } from 'lucide-react'
+import { MessageSquare, Plus, Trash2, Bot, Loader2, MoreVertical, Edit, Check, CheckCheck, UserPlus, Users, ChevronLeft, ChevronRight, Settings } from 'lucide-react'
 import { ChatView } from './ChatView'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -15,6 +15,7 @@ import { InputDialog } from './InputDialog'
 import { UserSelectionDialog } from './UserSelectionDialog'
 import { GroupChatDialog } from './GroupChatDialog'
 import { ParticipantAvatars } from './ParticipantAvatars'
+import { MCPConfigDialog } from './MCPConfigDialog'
 
 interface Conversation {
   id: string
@@ -45,6 +46,8 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
   const [conversationToRename, setConversationToRename] = useState<string | null>(null)
   const [showAddUsersDialog, setShowAddUsersDialog] = useState(false)
   const [conversationToAddUsers, setConversationToAddUsers] = useState<string | null>(null)
+  const [showMCPConfigDialog, setShowMCPConfigDialog] = useState(false)
+  const [conversationToConfigureMCP, setConversationToConfigureMCP] = useState<string | null>(null)
   const [sidebarWidth, setSidebarWidth] = useState(300)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [windowWidth, setWindowWidth] = useState(window.innerWidth)
@@ -299,6 +302,12 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
     setShowAddUsersDialog(true)
   }
 
+  // Open MCP config dialog
+  const openMCPConfigDialog = (id: string) => {
+    setConversationToConfigureMCP(id)
+    setShowMCPConfigDialog(true)
+  }
+
   // Handle adding users to conversation
   const handleAddUsers = async (selectedUserIds: string[]) => {
     if (!conversationToAddUsers) return
@@ -435,16 +444,10 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
   }
 
   // Filter conversations by search
-  console.log('[ChatLayout] Filtering conversations:', {
-    conversationsLength: conversations.length,
-    searchQuery,
-    conversations: conversations.map(c => ({ id: c.id, name: c.name }))
-  })
   const filteredConversations = conversations.filter(conv =>
     conv.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     conv.lastMessage?.toLowerCase().includes(searchQuery.toLowerCase())
   )
-  console.log('[ChatLayout] Filtered conversations:', filteredConversations.length)
 
   // Strip markdown formatting from text for preview
   const stripMarkdown = (text: string): string => {
@@ -661,6 +664,15 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
+                                openMCPConfigDialog(conv.id)
+                              }}
+                            >
+                              <Settings className="mr-2 h-4 w-4" />
+                              MCP Settings
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation()
                                 deleteConversation(conv.id)
                               }}
                               className="text-destructive"
@@ -756,7 +768,7 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
       </div>
     </div>
 
-    {/* New Chat Dialog */}
+    {/* Dialogs */}
     <InputDialog
       open={showNewChatDialog}
       onOpenChange={setShowNewChatDialog}
@@ -798,6 +810,17 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
       onOpenChange={setShowNewGroupDialog}
       onSubmit={handleCreateGroupConversation}
     />
-  </>
+
+    {/* MCP Configuration Dialog */}
+    <MCPConfigDialog
+      open={showMCPConfigDialog}
+      conversationId={conversationToConfigureMCP}
+      conversationName={conversations.find(c => c.id === conversationToConfigureMCP)?.name}
+      onClose={() => {
+        setShowMCPConfigDialog(false)
+        setConversationToConfigureMCP(null)
+      }}
+    />
+    </>
   )
 }

@@ -27,6 +27,7 @@
   "include": [
     "@OneCoreTypes.d.ts",
     "lama-electron-shadcn.ts",
+    "mcp-server-standalone.ts",
     "main/app.ts",
     "main/types/**/*.ts",
     "main/ipc/controller.ts",

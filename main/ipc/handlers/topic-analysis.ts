@@ -219,7 +219,8 @@ export const {
   extractKeywords,
   mergeSubjects,
   extractRealtimeKeywords,
-  extractConversationKeywords
+  extractConversationKeywords,
+  getKeywords
 } = topicAnalysisHandlers;
 
 export default topicAnalysisHandlers;

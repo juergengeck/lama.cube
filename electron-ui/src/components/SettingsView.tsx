@@ -1,22 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
-  Settings, User, Shield, Globe, Cpu, HardDrive,
-  Moon, Sun, Save, RefreshCw, LogOut, Brain, Download, CheckCircle, Circle, Zap, MessageSquare, Code, Key, AlertTriangle, Users, Trash2, Database, Hash, Clock, Package, Eye, ChevronDown, ChevronRight, Copy, FileText, Monitor, Smile, Frown, Angry, Wind, Sparkles, Coffee, Target, Minus
-} from 'lucide-react'
-import { Progress } from '@/components/ui/progress'
-import { lamaBridge } from '@/bridge/lama-bridge'
-import { ipcStorage } from '@/services/ipc-storage'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import InstancesView from './InstancesView'
-import { MCPSettings } from './settings/MCPSettings'
-import {
+  Card, CardContent, CardHeader, CardTitle, CardDescription,
+  Button,
+  Input,
+  Label,
+  Badge,
+  Separator,
+  ScrollArea,
+  Progress,
+  Alert, AlertDescription,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -26,7 +18,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+} from '@lama/ui'
+import {
+  Settings, User, Shield, Globe, Cpu, HardDrive,
+  Moon, Sun, Save, RefreshCw, LogOut, Brain, Download, CheckCircle, Circle, Zap, MessageSquare, Code, Key, AlertTriangle, Users, Trash2, Database, Hash, Clock, Package, Eye, ChevronDown, ChevronRight, Copy, FileText, Monitor, Smile, Frown, Angry, Wind, Sparkles, Coffee, Target, Minus
+} from 'lucide-react'
+import { lamaBridge } from '@/bridge/lama-bridge'
+import { ipcStorage } from '@/services/ipc-storage'
+import InstancesView from './InstancesView'
+import { MCPSettings } from './settings/MCPSettings'
 
 interface NetworkSettings {
   relayServer: string

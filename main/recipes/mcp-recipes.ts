@@ -81,7 +81,104 @@ export const MCPServerConfigRecipe = {
   ]
 };
 
+/**
+ * MCPTopicConfig - Per-topic MCP configuration
+ * Controls inbound/outbound MCP for each conversation
+ * Versioned object with topicId as ID
+ */
+export const MCPTopicConfigRecipe = {
+  $type$: 'Recipe',
+  name: 'MCPTopicConfig',
+  rule: [
+    {
+      itemprop: 'topicId',
+      isId: true,  // Topic ID is the unique identifier
+      itemtype: { type: 'string' }
+    },
+    {
+      itemprop: 'inboundEnabled',
+      itemtype: { type: 'boolean' }
+    },
+    {
+      itemprop: 'outboundEnabled',
+      itemtype: { type: 'boolean' }
+    },
+    {
+      itemprop: 'allowedTools',
+      itemtype: {
+        type: 'bag',
+        item: {
+          type: 'string'
+        }
+      },
+      optional: true
+    },
+    {
+      itemprop: 'createdAt',
+      itemtype: { type: 'number' }
+    },
+    {
+      itemprop: 'updatedAt',
+      itemtype: { type: 'number' }
+    }
+  ]
+};
+
+/**
+ * MCPToolCall - Record of an MCP tool invocation
+ * Stored as message attachment for auditability
+ */
+export const MCPToolCallRecipe = {
+  $type$: 'Recipe',
+  name: 'MCPToolCall',
+  rule: [
+    {
+      itemprop: 'id',
+      isId: true,  // Unique call ID
+      itemtype: { type: 'string' }
+    },
+    {
+      itemprop: 'toolName',
+      itemtype: { type: 'string' }
+    },
+    {
+      itemprop: 'parameters',
+      itemtype: { type: 'string' }  // JSON-serialized parameters
+    },
+    {
+      itemprop: 'result',
+      itemtype: { type: 'string' },  // JSON-serialized result
+      optional: true
+    },
+    {
+      itemprop: 'error',
+      itemtype: { type: 'string' },
+      optional: true
+    },
+    {
+      itemprop: 'timestamp',
+      itemtype: { type: 'number' }
+    },
+    {
+      itemprop: 'duration',
+      itemtype: { type: 'number' },  // Execution time in milliseconds
+      optional: true
+    },
+    {
+      itemprop: 'topicId',
+      itemtype: { type: 'string' }
+    },
+    {
+      itemprop: 'messageHash',
+      itemtype: { type: 'string' },  // Hash of the message this call is attached to
+      optional: true
+    }
+  ]
+};
+
 export const MCPRecipes = [
   MCPServerRecipe,
-  MCPServerConfigRecipe
+  MCPServerConfigRecipe,
+  MCPTopicConfigRecipe,
+  MCPToolCallRecipe
 ];

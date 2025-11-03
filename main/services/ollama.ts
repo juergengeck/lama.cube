@@ -89,6 +89,7 @@ async function chatWithOllama(
 ): Promise<any> {
   const requestId = getRequestId()
   const controller = new AbortController()
+  let timeout: NodeJS.Timeout | null = null
 
   // Track this request
   activeRequests.set(requestId, controller)
@@ -136,12 +137,20 @@ async function chatWithOllama(
       console.log('[Ollama] ==============================================');
     }
 
+    // Set up timeout (120 seconds for initial response)
+    timeout = setTimeout(() => {
+      console.error(`[Ollama] Request ${requestId} timed out after 120 seconds`)
+      controller.abort()
+    }, 120000)
+
     const response: any = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers,
       signal: controller.signal,
       body: JSON.stringify(requestBody)
     })
+
+    clearTimeout(timeout)
     
     if (!response.ok) {
       throw new Error(`Ollama API error: ${response.statusText}`)
@@ -207,10 +216,21 @@ async function chatWithOllama(
       }
     })
 
-    // Wait for the stream to finish
+    // Wait for the stream to finish with timeout
     await new Promise((resolve, reject) => {
-      response.body.on('end', resolve)
-      response.body.on('error', reject)
+      const streamTimeout = setTimeout(() => {
+        console.error(`[Ollama] Stream reading timed out after 120 seconds`)
+        reject(new Error('Stream reading timeout'))
+      }, 120000)
+
+      response.body.on('end', () => {
+        clearTimeout(streamTimeout)
+        resolve(null)
+      })
+      response.body.on('error', (err: any) => {
+        clearTimeout(streamTimeout)
+        reject(err)
+      })
     })
 
     // Process any remaining buffer
@@ -260,21 +280,27 @@ async function chatWithOllama(
     return fullResponse
   } catch (error) {
     console.error(`[Ollama] Chat error for request ${requestId}:`, error)
-    
+
     // Clean up on error
+    if (timeout) clearTimeout(timeout)
     activeRequests.delete(requestId)
-    
+
     // Handle abort
     if (error.name === 'AbortError') {
       console.log(`[Ollama] Request ${requestId} was aborted`)
-      throw new Error('Request was cancelled')
+      throw new Error('Request was cancelled or timed out')
     }
-    
-    // Fallback response if Ollama is not available
+
+    // Handle timeout
+    if ((error as Error).message.includes('timeout')) {
+      throw new Error('Ollama request timed out after 120 seconds - service may be overloaded or stuck')
+    }
+
+    // Fail fast with helpful error message
     if ((error as Error).message.includes('ECONNREFUSED')) {
-      return "I'm sorry, but I can't connect to the Ollama service. Please make sure Ollama is running on your system (http://localhost:11434). You can start it with 'ollama serve' in your terminal."
+      throw new Error("Can't connect to Ollama service at " + baseUrl + ". Make sure Ollama is running with 'ollama serve'")
     }
-    
+
     throw error
   }
 }

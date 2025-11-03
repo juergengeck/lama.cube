@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import type { Keyword } from '../types/topic-analysis.js';
 
 interface Message {
   id?: string;
@@ -14,9 +15,9 @@ interface Message {
 }
 
 export function useChatKeywords(topicId: string, messages: Message[] = []) {
-  console.log('[useChatKeywords] Hook called with topicId:', topicId, 'messages:', messages.length);
+  // console.log('[useChatKeywords] Hook called with topicId:', topicId, 'messages:', messages.length);
 
-  const [keywords, setKeywords] = useState<any[]>([]); // Changed from string[] to any[] to hold full keyword objects
+  const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,12 +33,12 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
   useEffect(() => {
     if (!topicId || !window.electronAPI) return;
 
-    const handleKeywordsUpdated = (data: any) => {
-      console.log(`[useChatKeywords-${topicId}] 🔔 Received keywords:updated event for: "${data.topicId}"`);
-      console.log(`[useChatKeywords-${topicId}] 🔍 My topicId: "${topicId}"`);
-      console.log(`[useChatKeywords-${topicId}] 🔍 Match: ${data.topicId === topicId}`);
+    const handleKeywordsUpdated = (data: { topicId: string }) => {
+      // console.log(`[useChatKeywords-${topicId}] 🔔 Received keywords:updated event for: "${data.topicId}"`);
+      // console.log(`[useChatKeywords-${topicId}] 🔍 My topicId: "${topicId}"`);
+      // console.log(`[useChatKeywords-${topicId}] 🔍 Match: ${data.topicId === topicId}`);
       if (data.topicId === topicId) {
-        console.log(`[useChatKeywords-${topicId}] ✅ Fetching updated keywords`);
+        // console.log(`[useChatKeywords-${topicId}] ✅ Fetching updated keywords`);
         // Trigger a refresh by incrementing request counter
         requestCounter.current++;
         // Re-fetch keywords immediately
@@ -49,18 +50,18 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
             });
             if (response.success && response.data?.keywords) {
               // Keep full keyword objects with subjects array
-              const keywords = response.data.keywords;
-              const keywordTerms = keywords.map((k: any) => k.term || k);
-              console.log(`[useChatKeywords-${topicId}] Refreshed keywords after update:`, keywordTerms.length);
+              const keywords = response.data.keywords as Keyword[];
+              const keywordTerms = keywords.map((k) => k.term);
+              // console.log(`[useChatKeywords-${topicId}] Refreshed keywords after update:`, keywordTerms.length);
               setKeywords(keywords);
             }
           } catch (err) {
-            console.error(`[useChatKeywords-${topicId}] Error refreshing keywords:`, err);
+            // console.error(`[useChatKeywords-${topicId}] Error refreshing keywords:`, err);
           }
         };
         fetchKeywords();
       } else {
-        console.log(`[useChatKeywords-${topicId}] ❌ Ignoring event for different topic`);
+        // console.log(`[useChatKeywords-${topicId}] ❌ Ignoring event for different topic`);
       }
     };
 
@@ -77,7 +78,7 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
   // Non-blocking keyword extraction
   useEffect(() => {
     // CRITICAL: Clear keywords immediately when topicId changes to prevent stale data
-    console.log('[useChatKeywords] 🧹 Clearing keywords for topic change to:', topicId);
+    // console.log('[useChatKeywords] 🧹 Clearing keywords for topic change to:', topicId);
     setKeywords([]);
 
     if (!topicId) {
@@ -98,7 +99,7 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
       const performExtraction = async () => {
         // Skip if another extraction is already in progress
         if (extractionInProgress.current) {
-          console.log('[useChatKeywords] Skipping - extraction already in progress');
+          // console.log('[useChatKeywords] Skipping - extraction already in progress');
           return;
         }
 
@@ -111,7 +112,7 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
           }
 
           if (messages && messages.length > 0) {
-            console.log('[useChatKeywords] Loading keywords from storage for', messages.length, 'messages');
+            // console.log('[useChatKeywords] Loading keywords from storage for', messages.length, 'messages');
 
             // Get keywords from storage (populated by analyzeMessages)
             const response = await window.electronAPI.invoke('topicAnalysis:getKeywords', {
@@ -123,20 +124,20 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
             if (currentRequest === requestCounter.current) {
               if (response.success && response.data?.keywords) {
                 // Keep full keyword objects with subjects array
-                const keywords = response.data.keywords;
-                const keywordTerms = keywords.map((k: any) => k.term || k);
-                console.log('[useChatKeywords] ✅ Keywords loaded from storage:', keywordTerms.length, 'keywords:', keywordTerms);
+                const keywords = response.data.keywords as Keyword[];
+                const keywordTerms = keywords.map((k) => k.term);
+                // console.log('[useChatKeywords] ✅ Keywords loaded from storage:', keywordTerms.length, 'keywords:', keywordTerms);
                 setKeywords(keywords);
                 setError(null);
               } else {
-                console.log('[useChatKeywords] ❌ No keywords in response:', response);
+                // console.log('[useChatKeywords] ❌ No keywords in response:', response);
               }
             } else {
-              console.log('[useChatKeywords] Ignoring stale response');
+              // console.log('[useChatKeywords] Ignoring stale response');
             }
           } else if (keywords.length === 0) {
             // Only try fallback if we have no keywords yet
-            console.log('[useChatKeywords] No messages, trying fallback to subjects');
+            // console.log('[useChatKeywords] No messages, trying fallback to subjects');
 
             const subjectsResponse = await window.electronAPI.invoke('topicAnalysis:getSubjects', {
               topicId,
@@ -146,20 +147,28 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
             // Only update if this is still the latest request
             if (currentRequest === requestCounter.current) {
               if (subjectsResponse.success && subjectsResponse.data?.subjects) {
-                const allKeywords = new Set<string>();
+                const allKeywordTerms = new Set<string>();
 
-                subjectsResponse.data.subjects.forEach((subject: any) => {
+                subjectsResponse.data.subjects.forEach((subject: { keywords?: string[] }) => {
                   if (subject.keywords && Array.isArray(subject.keywords)) {
                     subject.keywords.forEach((keyword: string) => {
                       // Only include single words
                       if (!keyword.includes(' ') && !keyword.includes('+')) {
-                        allKeywords.add(keyword);
+                        allKeywordTerms.add(keyword);
                       }
                     });
                   }
                 });
 
-                const keywordArray = Array.from(allKeywords).slice(0, 15);
+                // Create keyword objects from terms
+                const keywordArray = Array.from(allKeywordTerms).slice(0, 15).map(term => ({
+                  $type$: 'Keyword' as const,
+                  term,
+                  frequency: 1,
+                  subjects: [],
+                  createdAt: Date.now(),
+                  lastSeen: Date.now()
+                }));
                 setKeywords(keywordArray);
               }
             }
@@ -211,7 +220,7 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
         // Only update if this is still the latest request
         if (currentRequest === requestCounter.current) {
           if (response.success && response.data?.keywords) {
-            setKeywords(response.data.keywords);
+            setKeywords(response.data.keywords as Keyword[]);
           }
         }
       } catch (err) {

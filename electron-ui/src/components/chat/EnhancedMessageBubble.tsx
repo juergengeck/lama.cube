@@ -5,7 +5,7 @@
  * Web-compatible version for LAMA desktop integration.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Copy, ThumbsUp, ThumbsDown, Check } from 'lucide-react';
@@ -384,6 +384,18 @@ export const EnhancedMessageBubble: React.FC<EnhancedMessageBubbleProps> = ({
   const [disliked, setDisliked] = useState(false);
   const [showActions, setShowActions] = useState(false);
 
+  // Memoize markdown rendering to avoid re-parsing on every chunk during streaming
+  const renderedMarkdown = useMemo(() => {
+    if (message.format === 'markdown' && message.text) {
+      return (
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {message.text}
+        </ReactMarkdown>
+      );
+    }
+    return null;
+  }, [message.text, message.format]);
+
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     console.log('[EnhancedMessageBubble] Context menu triggered at:', e.clientX, e.clientY);
@@ -583,9 +595,7 @@ export const EnhancedMessageBubble: React.FC<EnhancedMessageBubbleProps> = ({
                 overflowX: 'auto',
                 maxWidth: '100%'
               }}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {message.text}
-                </ReactMarkdown>
+                {renderedMarkdown || message.text}
               </div>
             ) : (
               <div style={{color: 'red'}}>[No message text]</div>

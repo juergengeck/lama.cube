@@ -5,6 +5,7 @@
 
 import { SubjectsHandler } from '@lama/core/handlers/SubjectsHandler.js';
 import type { IpcMainInvokeEvent } from 'electron';
+import type { Subject } from '@lama/core/one-ai/types/Subject.js';
 
 // Initialize handler
 const subjectsHandler = new SubjectsHandler();
@@ -44,15 +45,15 @@ interface ExtractParams {
   minConfidence: number;
 }
 
-interface IpcResponse<T = any> {
+interface IpcResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
-  subject?: any;
-  attachment?: any;
-  subjects?: any[];
-  results?: any[];
-  resonance?: any;
+  subject?: Subject;
+  attachment?: unknown;
+  subjects?: Subject[];
+  results?: Subject[];
+  resonance?: unknown;
 }
 
 /**

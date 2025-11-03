@@ -11,7 +11,7 @@ import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
 import type { IpcMainInvokeEvent } from 'electron';
-import { ConnectionHandler } from '@lama/connection.core/src/handlers/ConnectionHandler.js';
+import { ConnectionHandler } from '@lama/connection.core';
 import nodeOneCore from '../../core/node-one-core.js';
 
 // Singleton handler instance

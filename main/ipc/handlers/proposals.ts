@@ -12,7 +12,9 @@ import { ProposalsHandler } from '@lama/core/handlers/ProposalsHandler.js';
 import { ProposalEngine } from '../../services/proposal-engine.js';
 import { ProposalRanker } from '../../services/proposal-ranker.js';
 import { ProposalCache } from '../../services/proposal-cache.js';
+import type { ProposalConfig } from '../../services/proposal-engine.js';
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { Subject } from '@lama/core/one-ai/types/Subject.js';
 import nodeOneCoreInstance from '../../core/node-one-core.js';
 
 // Initialize services
@@ -64,7 +66,7 @@ async function getForTopic(
     forceRefresh,
   }: {
     topicId: string;
-    currentSubjects?: SHA256IdHash<any>[];
+    currentSubjects?: SHA256IdHash<Subject>[];
     forceRefresh?: boolean;
   }
 ) {
@@ -78,7 +80,7 @@ async function getForTopic(
  */
 async function updateConfig(
   event: IpcMainInvokeEvent,
-  { config }: { config: Partial<any> }
+  { config }: { config: Partial<ProposalConfig> }
 ) {
   const handler = getProposalsHandler();
   return await handler.updateConfig({ config });
@@ -127,7 +129,7 @@ async function share(
   }: {
     proposalId: string;
     topicId: string;
-    pastSubjectIdHash: SHA256IdHash<any>;
+    pastSubjectIdHash: SHA256IdHash<Subject>;
     includeMessages?: boolean;
   }
 ) {

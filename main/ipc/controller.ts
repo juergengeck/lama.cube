@@ -27,6 +27,7 @@ import { registerContactHandlers } from './handlers/contacts.js';
 import * as topicHandlers from './handlers/topics.js';
 import topicAnalysisHandlers from './handlers/topic-analysis.js';
 import * as wordCloudSettingsHandlers from './handlers/word-cloud-settings.js';
+import registerMemoryHandlers from './handlers/memory.js';
 import keywordDetailHandlers from './handlers/keyword-detail.js';
 import auditHandlers from './handlers/audit.js';
 import exportHandlers from './handlers/export.js';
@@ -231,6 +232,9 @@ class IPCController {
     this.handle('topicAnalysis:extractConversationKeywords', topicAnalysisHandlers.extractConversationKeywords);
     this.handle('topicAnalysis:getKeywords', topicAnalysisHandlers.getKeywords);
 
+    // Chat Memory handlers
+    registerMemoryHandlers(ipcMain, nodeOneCore);
+
     // Word Cloud Settings handlers
     this.handle('wordCloudSettings:getSettings', wordCloudSettingsHandlers.getWordCloudSettings);
     this.handle('wordCloudSettings:updateSettings', wordCloudSettingsHandlers.updateWordCloudSettings);
@@ -252,6 +256,10 @@ class IPCController {
     this.handle('mcp:addServer', mcpHandlers.addServer);
     this.handle('mcp:updateServer', mcpHandlers.updateServer);
     this.handle('mcp:removeServer', mcpHandlers.removeServer);
+    this.handle('mcp:getStatus', mcpHandlers.getStatus);
+    this.handle('mcp:getAvailableTools', mcpHandlers.getAvailableTools);
+    this.handle('mcp:getTopicConfig', mcpHandlers.getTopicConfig);
+    this.handle('mcp:setTopicConfig', mcpHandlers.setTopicConfig);
 
     // Export handlers
     this.handle('export:file', exportHandlers.exportFile);

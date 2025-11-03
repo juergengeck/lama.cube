@@ -1,9 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Badge } from '../ui/badge.js';
+import type { Keyword } from '../../types/topic-analysis.js';
+
+interface Message {
+  id?: string;
+  content?: string;
+  text?: string;
+  sender?: string;
+  timestamp?: number | string;
+}
 
 interface KeywordDisplayProps {
   topicId: string;
-  messages: any[];
+  messages: Message[];
 }
 
 export function KeywordDisplay({ topicId, messages }: KeywordDisplayProps) {
@@ -31,7 +40,8 @@ export function KeywordDisplay({ topicId, messages }: KeywordDisplayProps) {
 
         if (result.success && result.data.keywords) {
           // Extract just the keyword terms
-          const keywordTerms = result.data.keywords.map((k: any) => k.term || k);
+          const keywords = result.data.keywords as Keyword[];
+          const keywordTerms = keywords.map((k) => k.term);
           setKeywords(keywordTerms);
         }
       } catch (error) {

@@ -9,11 +9,13 @@
 import { getObjectByIdHash } from '@refinio/one.core/lib/storage-versioned-objects.js';
 import { calculateIdHashOfObj } from '@refinio/one.core/lib/util/object.js';
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { Subject as CoreSubject } from '@lama/core/one-ai/types/Subject.js';
+import type { Keyword as CoreKeyword } from '@lama/core/one-ai/types/Keyword.js';
 
 export interface Proposal {
   id: string;
-  pastSubject: SHA256IdHash<any>;
-  currentSubject: SHA256IdHash<any>;
+  pastSubject: SHA256IdHash<CoreSubject>;
+  currentSubject: SHA256IdHash<CoreSubject>;
   matchedKeywords: string[];
   relevanceScore: number;
   sourceTopicId: string;
@@ -31,23 +33,14 @@ export interface ProposalConfig {
   updatedAt: number;
 }
 
-export interface Subject {
-  $type$: 'Subject';
-  id: string;
-  topic: string;
-  keywords: SHA256IdHash<any>[];
-  timeRanges?: Array<{ start: number; end: number }>;
-  messageCount?: number;
-  confidence?: number;
-  description?: string;
-  archived?: boolean;
-}
+// Re-export Subject type from core for compatibility
+export type Subject = CoreSubject;
 
 export class ProposalEngine {
-  private topicAnalysisModel: any;
-  private channelManager: any;
+  private topicAnalysisModel: unknown;
+  private channelManager: unknown;
 
-  constructor(topicAnalysisModel: any, channelManager: any) {
+  constructor(topicAnalysisModel: unknown, channelManager: unknown) {
     this.topicAnalysisModel = topicAnalysisModel;
     this.channelManager = channelManager;
   }
@@ -63,21 +56,21 @@ export class ProposalEngine {
    */
   async getProposalsForTopic(
     topicId: string,
-    currentSubjects: SHA256IdHash<any>[],
+    currentSubjects: SHA256IdHash<CoreSubject>[],
     config: ProposalConfig,
-    allSubjects?: Subject[]
+    allSubjects?: CoreSubject[]
   ): Promise<Proposal[]> {
     if (!currentSubjects || currentSubjects.length === 0) {
       return [];
     }
 
     // Fetch current subjects from ONE.core
-    const currentSubjectObjects: Subject[] = [];
+    const currentSubjectObjects: CoreSubject[] = [];
     for (const subjectIdHash of currentSubjects) {
       try {
         const result = await getObjectByIdHash(subjectIdHash);
         if (result && result.obj) {
-          currentSubjectObjects.push(result.obj as Subject);
+          currentSubjectObjects.push(result.obj as CoreSubject);
         }
       } catch (error) {
         console.error(`[ProposalEngine] Error fetching subject ${subjectIdHash}:`, error);
@@ -150,7 +143,7 @@ export class ProposalEngine {
           matchedKeywords,
           relevanceScore,
           sourceTopicId: pastSubject.topic,
-          pastSubjectName: pastSubject.id || pastSubject.description || 'Unknown Subject',
+          pastSubjectName: pastSubject.id || 'Unknown Subject',
           createdAt: pastCreatedAt,
         };
 
@@ -167,13 +160,16 @@ export class ProposalEngine {
   /**
    * Resolve keyword ID hashes to actual keyword terms
    */
-  private async resolveKeywordTerms(keywordIdHashes: SHA256IdHash<any>[]): Promise<string[]> {
+  private async resolveKeywordTerms(keywordIdHashes: SHA256IdHash<CoreKeyword>[]): Promise<string[]> {
     const terms: string[] = [];
     for (const idHash of keywordIdHashes || []) {
       try {
         const result = await getObjectByIdHash(idHash);
-        if (result && result.obj && result.obj.term) {
-          terms.push(result.obj.term.toLowerCase().trim());
+        if (result && result.obj) {
+          const keyword = result.obj as CoreKeyword;
+          if (keyword.term) {
+            terms.push(keyword.term.toLowerCase().trim());
+          }
         }
       } catch (error) {
         console.error(`[ProposalEngine] Error resolving keyword ${idHash}:`, error);
@@ -225,8 +221,8 @@ export class ProposalEngine {
    * Formula: |intersection| / |union|
    */
   private calculateJaccard(
-    keywordsA: SHA256IdHash<any>[],
-    keywordsB: SHA256IdHash<any>[]
+    keywordsA: SHA256IdHash<CoreKeyword>[],
+    keywordsB: SHA256IdHash<CoreKeyword>[]
   ): number {
     if (keywordsA.length === 0 || keywordsB.length === 0) {
       return 0;
@@ -249,8 +245,8 @@ export class ProposalEngine {
    * Returns keyword terms as strings
    */
   private async getMatchedKeywords(
-    keywordsA: SHA256IdHash<any>[],
-    keywordsB: SHA256IdHash<any>[]
+    keywordsA: SHA256IdHash<CoreKeyword>[],
+    keywordsB: SHA256IdHash<CoreKeyword>[]
   ): Promise<string[]> {
     const setA = new Set(keywordsA);
     const setB = new Set(keywordsB);
@@ -263,8 +259,11 @@ export class ProposalEngine {
     for (const keywordIdHash of intersection) {
       try {
         const result = await getObjectByIdHash(keywordIdHash);
-        if (result && result.obj && result.obj.term) {
-          terms.push(result.obj.term);
+        if (result && result.obj) {
+          const keyword = result.obj as CoreKeyword;
+          if (keyword.term) {
+            terms.push(keyword.term);
+          }
         }
       } catch (error) {
         console.error(`[ProposalEngine] Error fetching keyword ${keywordIdHash}:`, error);
@@ -277,7 +276,7 @@ export class ProposalEngine {
   /**
    * Fetch all subjects from ONE.core by querying all topics
    */
-  private async fetchAllSubjects(): Promise<Subject[]> {
+  private async fetchAllSubjects(): Promise<CoreSubject[]> {
     try {
       if (!this.channelManager || !this.topicAnalysisModel) {
         console.warn('[ProposalEngine] Missing dependencies for fetching subjects');
@@ -285,7 +284,7 @@ export class ProposalEngine {
       }
 
       // Get all channels (each channel ID is a topic ID)
-      const channels: any[] = await this.channelManager.channels();
+      const channels = (await (this.channelManager as { channels(): Promise<unknown[]> }).channels()) as Array<{ id?: string }>;
 
       // Get unique topic IDs
       const topicIds = new Set<string>();
@@ -298,10 +297,10 @@ export class ProposalEngine {
       console.log(`[ProposalEngine] Fetching subjects from ${topicIds.size} topics`);
 
       // Fetch subjects from each topic
-      const allSubjects: Subject[] = [];
+      const allSubjects: CoreSubject[] = [];
       for (const topicId of topicIds) {
         try {
-          const subjects = (await this.topicAnalysisModel.getSubjects(topicId)) as Subject[];
+          const subjects = (await (this.topicAnalysisModel as { getSubjects(topicId: string): Promise<CoreSubject[]> }).getSubjects(topicId));
           if (subjects && subjects.length > 0) {
             allSubjects.push(...subjects);
             console.log(`[ProposalEngine] Found ${subjects.length} subjects in topic ${topicId}`);

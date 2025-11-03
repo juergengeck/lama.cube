@@ -12,11 +12,20 @@ import { KeywordCloud } from './KeywordCloud.js';
 import { KeywordDetailPanel } from '../KeywordDetail/KeywordDetailPanel.js';
 import type { Summary, GetSummaryResponse } from '../../types/topic-analysis.js';
 
+interface Message {
+  id?: string;
+  content?: string;
+  text?: string;
+  sender?: string;
+  author?: string;
+  timestamp?: number | string;
+}
+
 interface TopicSummaryProps {
   topicId: string;
   onRefresh?: () => void;
   className?: string;
-  messages?: any[]; // Pass messages for analysis
+  messages?: Message[];
 }
 
 export const TopicSummary: React.FC<TopicSummaryProps> = ({

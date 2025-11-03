@@ -2,7 +2,24 @@ import type { ConnectionsModel } from '@refinio/one.models/lib/models/index.js';
 /**
  * LAMA Application MCP Server
  * Provides access to LAMA-specific features like chat, contacts, connections, etc.
- * 
+ *
+ * ⚠️ SECURITY WARNING: NO ACCESS CONTROL IMPLEMENTED
+ *
+ * Current state:
+ * - External MCP clients have FULL ACCESS to all LAMA data
+ * - No per-chat or per-assembly access grants
+ * - No client authentication or authorization
+ * - Only use with TRUSTED clients on personal machines
+ *
+ * Required for production:
+ * - Implement MCPClientAccess verification (per-chat, per-assembly grants)
+ * - Add client authentication with cryptographic verification
+ * - Implement MCPClientAudit logging for all operations
+ * - Add UI for managing client access grants
+ * - Support access revocation
+ *
+ * See MCP.md for full access control data model and implementation plan.
+ *
  * This runs in the Node.js main process where it has access to:
  * - ONE.core instance
  * - LLMManager
@@ -12,6 +29,7 @@ import type { ConnectionsModel } from '@refinio/one.models/lib/models/index.js';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { MCPToolInterface } from '../interfaces/tool-interface.js';
 
 export class LamaMCPServer {
@@ -20,11 +38,13 @@ export class LamaMCPServer {
 
   aiAssistantModel: any;
   toolInterface: any;
-  constructor(nodeOneCore: any, aiAssistantModel: any) {
+  private mcpClientPersonId: any = null;
+
+  constructor(nodeOneCore: any, aiAssistantModel?: any) {
 
     this.nodeOneCore = nodeOneCore;
-    this.aiAssistantModel = aiAssistantModel;
-    
+    this.aiAssistantModel = aiAssistantModel || null;
+
     this.server = new Server({
       name: 'lama-app',
       version: '1.0.0'
@@ -33,15 +53,30 @@ export class LamaMCPServer {
         tools: {}
       }
     });
-    
+
     // Initialize tool interface
     this.toolInterface = new MCPToolInterface(this as any, this.nodeOneCore);
-    
-    this.setupTools();
+
+    // Don't call setupTools() here - it must be called after server.connect()
   }
-  
+
+  /**
+   * Initialize MCP client AI identity
+   * Creates an AI Person for "Claude Desktop" (or other MCP client)
+   */
+  async initializeMCPClientIdentity(): Promise<void> {
+    // Check if nodeOneCore already has MCP client identity (set by standalone server)
+    if ((this.nodeOneCore as any).mcpClientPersonId) {
+      this.mcpClientPersonId = (this.nodeOneCore as any).mcpClientPersonId;
+      console.error(`[LamaMCPServer] Using MCP client identity from proxy: ${this.mcpClientPersonId}`);
+      return;
+    }
+
+    console.error('[LamaMCPServer] No MCP client identity available, messages will use owner identity');
+  }
+
   setupTools(): any {
-    this.server.setRequestHandler('tools/list', async () => ({
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         // Chat Tools
         {
@@ -192,11 +227,122 @@ export class LamaMCPServer {
             },
             required: ['message', 'modelId']
           }
+        },
+
+        // Chat Memory Tools
+        {
+          name: 'enable_chat_memories',
+          description: 'Enable automatic memory extraction for a chat topic',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              topicId: {
+                type: 'string',
+                description: 'The topic/chat ID to enable memories for'
+              },
+              autoExtract: {
+                type: 'boolean',
+                description: 'Automatically extract subjects from messages',
+                default: true
+              },
+              keywords: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Additional keywords to track'
+              }
+            },
+            required: ['topicId']
+          }
+        },
+        {
+          name: 'disable_chat_memories',
+          description: 'Disable memory extraction for a chat topic',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              topicId: {
+                type: 'string',
+                description: 'The topic/chat ID to disable memories for'
+              }
+            },
+            required: ['topicId']
+          }
+        },
+        {
+          name: 'toggle_chat_memories',
+          description: 'Toggle memory extraction on/off for a chat topic',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              topicId: {
+                type: 'string',
+                description: 'The topic/chat ID to toggle memories for'
+              }
+            },
+            required: ['topicId']
+          }
+        },
+        {
+          name: 'extract_chat_subjects',
+          description: 'Manually extract subjects from chat history',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              topicId: {
+                type: 'string',
+                description: 'The topic/chat ID to extract from'
+              },
+              limit: {
+                type: 'number',
+                description: 'Number of messages to analyze',
+                default: 50
+              }
+            },
+            required: ['topicId']
+          }
+        },
+        {
+          name: 'find_chat_memories',
+          description: 'Find related memories by keywords',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              topicId: {
+                type: 'string',
+                description: 'The topic/chat ID for context'
+              },
+              keywords: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Keywords to search for'
+              },
+              limit: {
+                type: 'number',
+                description: 'Maximum number of results',
+                default: 10
+              }
+            },
+            required: ['keywords']
+          }
+        },
+        {
+          name: 'get_chat_memory_status',
+          description: 'Get memory extraction status for a chat',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              topicId: {
+                type: 'string',
+                description: 'The topic/chat ID to check'
+              }
+            },
+            required: ['topicId']
+          }
         }
       ]
     }));
-    
-    this.server.setRequestHandler('tools/call', async (request: any) => {
+
+    this.server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       const { name, arguments: args } = request.params;
       
       if (!this.nodeOneCore) {
@@ -243,7 +389,21 @@ export class LamaMCPServer {
             return await this.createAITopic(args.modelId);
           case 'generate_ai_response':
             return await this.generateAIResponse(args.message, args.modelId, args.topicId);
-            
+
+          // Chat Memory operations
+          case 'enable_chat_memories':
+            return await this.enableChatMemories(args.topicId, args.autoExtract, args.keywords);
+          case 'disable_chat_memories':
+            return await this.disableChatMemories(args.topicId);
+          case 'toggle_chat_memories':
+            return await this.toggleChatMemories(args.topicId);
+          case 'extract_chat_subjects':
+            return await this.extractChatSubjects(args.topicId, args.limit);
+          case 'find_chat_memories':
+            return await this.findChatMemories(args.topicId, args.keywords, args.limit);
+          case 'get_chat_memory_status':
+            return await this.getChatMemoryStatus(args.topicId);
+
           default:
             throw new Error(`Unknown tool: ${name}`);
         }
@@ -260,12 +420,27 @@ export class LamaMCPServer {
     });
   }
   
-  // Chat implementations using ONE.core
+  // Chat implementations - use HTTP proxy for consistency
   async sendMessage(topicId: any, message: any): Promise<any> {
     try {
-      const topicRoom = await this.nodeOneCore.topicModel.enterTopicRoom(topicId);
-      await topicRoom.sendMessage(message);
-      
+      // Call via HTTP API (nodeOneCore is HTTP proxy client)
+      const response = await this.nodeOneCore.sendMessage({
+        conversationId: topicId,
+        content: message,
+        senderId: this.mcpClientPersonId || undefined
+      });
+
+      if (!response.success) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Failed to send message: ${response.error}`
+            }
+          ]
+        };
+      }
+
       return {
         content: [
           {
@@ -285,11 +460,14 @@ export class LamaMCPServer {
       };
     }
   }
-  
+
   async getMessages(topicId: any, limit = 10): Promise<unknown> {
     try {
-      const messages = await this.nodeOneCore.topicModel.getMessages(topicId, limit);
-      
+      // Use nodeOneCore's HTTP proxy method instead of ChatHandler
+      // (ChatHandler needs topicModel.enterTopicRoom which HTTP proxy doesn't have)
+      const response = await this.nodeOneCore.getMessages({ conversationId: topicId, limit });
+      const messages = response?.messages || [];
+
       return {
         content: [
           {
@@ -309,21 +487,17 @@ export class LamaMCPServer {
       };
     }
   }
-  
+
   async listTopics(): Promise<any> {
     try {
-      const topics = await this.nodeOneCore.topicModel.getTopics();
-      
+      // Call via HTTP API
+      const topics = await this.nodeOneCore.listTopics();
+
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(topics.map((t: any) => ({
-              id: t.id,
-              name: t.name,
-              type: t.type,
-              memberCount: t.members?.length
-            })), null, 2)
+            text: JSON.stringify(topics, null, 2)
           }
         ]
       };
@@ -342,8 +516,9 @@ export class LamaMCPServer {
   // Contact implementations
   async getContacts(): Promise<any> {
     try {
+      // Call via HTTP API
       const contacts = await this.nodeOneCore.getContacts();
-      
+
       return {
         content: [
           {
@@ -363,15 +538,16 @@ export class LamaMCPServer {
       };
     }
   }
-  
+
   async searchContacts(query: any): Promise<any> {
     try {
+      // Call via HTTP API
       const contacts = await this.nodeOneCore.getContacts();
-      const filtered = contacts.filter((c: any) => 
+      const filtered = contacts.filter((c: any) =>
         c.name?.toLowerCase().includes(query.toLowerCase()) ||
         c.id?.includes(query)
       );
-      
+
       return {
         content: [
           {
@@ -563,11 +739,224 @@ export class LamaMCPServer {
       };
     }
   }
-  
+
+  // Chat Memory implementations
+  async enableChatMemories(topicId: any, autoExtract = true, keywords: string[] = []): Promise<any> {
+    try {
+      if (!this.nodeOneCore?.chatMemoryHandler) {
+        throw new Error('Chat Memory Handler not initialized');
+      }
+
+      const config = await this.nodeOneCore.chatMemoryHandler.enableMemories(
+        topicId,
+        autoExtract,
+        keywords
+      );
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Memories enabled for topic ${String(topicId).substring(0, 8)}...\nAuto-extract: ${config.autoExtract}\nKeywords: ${keywords.join(', ') || 'none'}`
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Failed to enable memories: ${(error as Error).message}`
+          }
+        ]
+      };
+    }
+  }
+
+  async disableChatMemories(topicId: any): Promise<any> {
+    try {
+      if (!this.nodeOneCore?.chatMemoryHandler) {
+        throw new Error('Chat Memory Handler not initialized');
+      }
+
+      await this.nodeOneCore.chatMemoryHandler.disableMemories(topicId);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Memories disabled for topic ${String(topicId).substring(0, 8)}...`
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Failed to disable memories: ${(error as Error).message}`
+          }
+        ]
+      };
+    }
+  }
+
+  async toggleChatMemories(topicId: any): Promise<any> {
+    try {
+      if (!this.nodeOneCore?.chatMemoryHandler) {
+        throw new Error('Chat Memory Handler not initialized');
+      }
+
+      const enabled = await this.nodeOneCore.chatMemoryHandler.toggleMemories(topicId);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Memories ${enabled ? 'enabled' : 'disabled'} for topic ${String(topicId).substring(0, 8)}...`
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Failed to toggle memories: ${(error as Error).message}`
+          }
+        ]
+      };
+    }
+  }
+
+  async extractChatSubjects(topicId: any, limit = 50): Promise<any> {
+    try {
+      if (!this.nodeOneCore?.chatMemoryHandler) {
+        throw new Error('Chat Memory Handler not initialized');
+      }
+
+      const startTime = Date.now();
+      const result = await this.nodeOneCore.chatMemoryHandler.extractSubjects({
+        topicId,
+        limit,
+        includeContext: true
+      });
+
+      const processingTime = Date.now() - startTime;
+
+      let text = `Extracted ${result.subjects.length} subjects from ${result.totalMessages} messages\n`;
+      text += `Processing time: ${processingTime}ms\n\n`;
+      text += 'Subjects:\n';
+
+      for (const subject of result.subjects) {
+        text += `- ${subject.name} (confidence: ${subject.confidence.toFixed(2)})\n`;
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Failed to extract subjects: ${(error as Error).message}`
+          }
+        ]
+      };
+    }
+  }
+
+  async findChatMemories(topicId: any, keywords: string[], limit = 10): Promise<any> {
+    try {
+      if (!this.nodeOneCore?.chatMemoryHandler) {
+        throw new Error('Chat Memory Handler not initialized');
+      }
+
+      const result = await this.nodeOneCore.chatMemoryHandler.findRelatedMemories(
+        topicId,
+        keywords,
+        limit
+      );
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              totalFound: result.totalFound,
+              searchKeywords: result.searchKeywords,
+              memories: result.memories.map((m: any) => ({
+                name: m.name,
+                keywords: m.keywords,
+                relevance: m.relevanceScore.toFixed(2),
+                lastUpdated: new Date(m.lastUpdated).toISOString()
+              }))
+            }, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Failed to find memories: ${(error as Error).message}`
+          }
+        ]
+      };
+    }
+  }
+
+  async getChatMemoryStatus(topicId: any): Promise<any> {
+    try {
+      if (!this.nodeOneCore?.chatMemoryHandler) {
+        throw new Error('Chat Memory Handler not initialized');
+      }
+
+      const status = this.nodeOneCore.chatMemoryHandler.getMemoryStatus(topicId);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              enabled: status.enabled,
+              config: status.config || null
+            }, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Failed to get memory status: ${(error as Error).message}`
+          }
+        ]
+      };
+    }
+  }
+
   async start(): Promise<any> {
     const transport = new StdioServerTransport();
+
+    // Set up request handlers BEFORE connecting
+    this.setupTools();
+
+    // Now connect the transport
     await this.server.connect(transport);
-    console.log('[LamaMCPServer] ✅ LAMA MCP Server started');
+
+    // Initialize MCP client identity after connection
+    await this.initializeMCPClientIdentity();
+
+    console.error('[LamaMCPServer] ✅ LAMA MCP Server started');
   }
 }
 

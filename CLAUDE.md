@@ -73,8 +73,11 @@ npm run dist:all
 
 ### Cleanup & Utilities
 ```bash
-# Clear all ONE.core storage
+# Clear all ONE.core storage (PRESERVES MEMORIES)
 ./clear-all-storage.sh
+# Automatically backs up OneDB/memory-storage to /tmp/lama-memory-backup-{timestamp}
+# Restores memories after clearing other storage
+# Shows backup location and restore instructions
 
 # Clear specific data
 ./clear-storage.sh            # Clear main storage
@@ -84,6 +87,12 @@ npm run dist:all
 # Kill all Electron processes
 pkill -f Electron
 ```
+
+**Memory Storage Location**:
+- **Path**: `OneDB/memory-storage/` (alongside OneDB, NOT in dist/)
+- **Reason**: dist/ is build output and gets wiped on compilation
+- **Preservation**: clear-all-storage.sh automatically backs up and restores memories
+- **Subfolders**: subjects/, keywords/, associations/, metadata/
 
 ## Project Structure
 
@@ -230,7 +239,8 @@ AIAssistantHandler (orchestrator)
 ├── AITopicManager (390 lines) → Topic mappings & state
 ├── AITaskManager (310 lines) → IoM task execution
 ├── AIPromptBuilder (380 lines) → Prompt construction
-└── AIMessageProcessor (400 lines) → Message processing & LLM
+├── AIMessageProcessor (400 lines) → Message processing & LLM
+└── AnalysisService (350 lines) → Abstract analysis (chat/memory/files)
 ```
 
 **Key Features**:
@@ -239,6 +249,7 @@ AIAssistantHandler (orchestrator)
 - ✅ Platform-agnostic via LLMPlatform interface
 - ✅ Two-phase initialization resolves circular dependencies
 - ✅ Dependency injection pattern throughout
+- ✅ Analysis abstraction supports chat, memory, files, and custom content
 
 ### Platform Abstraction Layer
 
@@ -251,12 +262,60 @@ AIAssistantHandler (orchestrator)
 - **ElectronLLMPlatform** - `lama.electron/adapters/electron-llm-platform.ts` (BrowserWindow events)
 - **BrowserLLMPlatform** - `lama.browser/adapters/browser-llm-platform.ts` (postMessage events)
 
+### Analysis Service
+
+**Location**: `lama.core/services/analysis-service.ts`
+
+Abstract, reusable analysis service that extracts subjects, keywords, and summaries from various content types. Automatically fetches existing subjects from memory via MCP for consistency.
+
+**Supported Content Types**:
+```typescript
+interface AnalysisContent {
+  type: 'chat' | 'memory' | 'file' | 'custom';
+  messages?: Message[];      // For chat analysis
+  subjects?: Subject[];      // For memory analysis
+  text?: string;            // For file/custom analysis
+}
+```
+
+**Memory Context Integration**:
+- Automatically fetches existing subjects from memory via MCP `memory:subjects` tool
+- Includes them in analysis prompt to ensure consistency
+- Prevents duplicate subjects with different names
+- Example: If memory has "climate-change", won't create "global-warming" as separate subject
+
+**Usage**:
+```typescript
+// In AIAssistantHandler.chatWithAnalysis()
+const analysisContent: AnalysisContent = {
+  type: 'chat',
+  messages: [...history, { role: 'assistant', content: response }]
+};
+
+const analysisContext: AnalysisContext = {
+  modelId: 'qwen2.5:7b',
+  temperature: 0,
+  topicId: topicId,
+  disableTools: true
+};
+
+const result = await this.analysisService.analyze(analysisContent, analysisContext);
+// Returns: { subjects, keywords, summary, confidence }
+```
+
+**Key Principles**:
+- **Separation of Concerns**: Analysis belongs in AIAssistantHandler, NOT LLMManager
+- **LLMManager**: Only raw LLM calls (Ollama, Claude, LMStudio)
+- **AIAssistantHandler**: AI-specific operations including analysis
+- **AnalysisService**: Reusable abstraction for all analysis needs
+
 ### Integration Pattern
 
 **Electron** - `lama.electron/main/core/ai-assistant-handler-adapter.ts`:
 ```typescript
 import { AIAssistantHandler } from '@lama/core/handlers/AIAssistantHandler.js';
 import { ElectronLLMPlatform } from '../../adapters/electron-llm-platform.ts';
+import { mcpManager } from '@mcp/core';
 
 const platform = new ElectronLLMPlatform(mainWindow);
 const handler = new AIAssistantHandler({
@@ -265,6 +324,7 @@ const handler = new AIAssistantHandler({
   topicModel: nodeOneCore.topicModel,
   leuteModel: nodeOneCore.leuteModel,
   llmManager: llmManager,
+  mcpManager: mcpManager,  // For memory context in analysis
   platform: platform
 });
 
@@ -283,8 +343,14 @@ The old `ai-assistant-model.ts` is deprecated. The new `AIAssistantHandler` prov
 | `aiAssistantModel.isAITopic()` | `aiHandler.isAITopic()` | Same signature |
 | `aiAssistantModel.registerAITopic()` | `aiHandler.registerAITopic()` | Same signature |
 | `aiAssistantModel.isAIPerson()` | `aiHandler.isAIPerson()` | Same signature |
+| `llmManager.chatWithAnalysis()` | `aiHandler.chatWithAnalysis()` | **MOVED**: Analysis is AI-specific, not LLM-specific |
 
 **No breaking changes** - existing code works without modification.
+
+**Important**: `chatWithAnalysis()` has been moved from LLMManager to AIAssistantHandler:
+- **LLMManager**: Only raw LLM calls (chat, streamChat, etc.)
+- **AIAssistantHandler**: AI-specific operations including analysis
+- Old references to `llmManager.chatWithAnalysis()` will fail - use `aiHandler.chatWithAnalysis()` instead
 
 ### Documentation
 

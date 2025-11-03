@@ -7,7 +7,7 @@
 
 import nodeOneCore from '../../core/node-one-core.js';
 import llmManager from '../../services/llm-manager-singleton.js';
-import mcpManager from '../../services/mcp-manager.js';
+import { mcpManager } from '@mcp/core';
 import { SettingsStore } from '@refinio/one.core/lib/system/settings-store.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import electron from 'electron';
@@ -238,6 +238,83 @@ const aiHandlers = {
     try {
       await llmManager.discoverClaudeModels();
       return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Check if a topic is an AI topic
+   */
+  async isAITopic(
+    event: IpcMainInvokeEvent,
+    { topicId }: { topicId: string }
+  ) {
+    try {
+      const handler = getAIHandler();
+      const isAI = handler.isAITopic(topicId);
+      return { success: true, isAI };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Check if a person is an AI contact
+   */
+  async isAIPerson(
+    event: IpcMainInvokeEvent,
+    { personId }: { personId: string }
+  ) {
+    try {
+      const handler = getAIHandler();
+      const isAI = handler.isAIPerson(personId);
+      return { success: true, isAI };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Get model ID for a topic
+   */
+  async getModelIdForTopic(
+    event: IpcMainInvokeEvent,
+    { topicId }: { topicId: string }
+  ) {
+    try {
+      const handler = getAIHandler();
+      const modelId = handler.getModelIdForTopic(topicId);
+      return { success: true, modelId };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Get model ID for a person ID
+   */
+  async getModelIdForPersonId(
+    event: IpcMainInvokeEvent,
+    { personId }: { personId: string }
+  ) {
+    try {
+      const handler = getAIHandler();
+      const modelId = handler.getModelIdForPersonId(personId);
+      return { success: true, modelId };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Get all AI contacts
+   */
+  async getAllContacts(event: IpcMainInvokeEvent) {
+    try {
+      const handler = getAIHandler();
+      const contacts = handler.getAllContacts();
+      return { success: true, contacts };
     } catch (error: any) {
       return { success: false, error: error.message };
     }

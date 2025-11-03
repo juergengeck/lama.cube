@@ -42,7 +42,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   conversationId,
   className = ''
 }) => {
-  console.log('[ChatHeader] Rendering with:', { conversationName, subjects: subjects?.length || 0, hasAI, messageCount })
+  // console.log('[ChatHeader] Rendering with:', { conversationName, subjects: subjects?.length || 0, hasAI, messageCount })
 
   const [showLeftChevron, setShowLeftChevron] = useState(false)
   const [showRightChevron, setShowRightChevron] = useState(false)

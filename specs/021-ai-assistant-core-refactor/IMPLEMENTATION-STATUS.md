@@ -49,6 +49,13 @@ All platform-agnostic AI assistant components have been implemented in `lama.cor
    - Unified API for IPC handlers
    - Default model management
 
+7. **AnalysisService** (350 lines) - `lama.core/services/analysis-service.ts`
+   - Abstract, reusable analysis for chat/memory/files/custom content
+   - Automatically fetches existing subjects from memory via MCP
+   - Prevents duplicate subjects with different names
+   - Structured output: subjects, keywords, summary, confidence
+   - **CRITICAL**: Analysis belongs in AIAssistantHandler, NOT LLMManager
+
 ### ✅ Platform Abstraction Layer
 
 **LLMPlatform Interface** - `lama.core/services/llm-platform.ts`
@@ -109,14 +116,20 @@ AIAssistantHandler (orchestrator)
 ├── AITopicManager (390 lines) → Topic mappings & state
 ├── AITaskManager (310 lines) → IoM task execution
 ├── AIPromptBuilder (380 lines) → Prompt construction
-└── AIMessageProcessor (400 lines) → Message processing & LLM
+├── AIMessageProcessor (400 lines) → Message processing & LLM
+└── AnalysisService (350 lines) → Abstract analysis (chat/memory/files)
 
 Platform Abstraction:
 ├── LLMPlatform (interface) → Platform-agnostic events
 └── ElectronLLMPlatform → Electron-specific implementation
+
+Separation of Concerns:
+├── LLMManager → Raw LLM calls only (Ollama, Claude, LMStudio)
+└── AIAssistantHandler → AI-specific operations (analysis, processing)
 ```
 
-**Total:** ~2160 lines across 6 components (vs 1605-line monolith)
+**Total:** ~2510 lines across 7 components (vs 1605-line monolith)
+**Memory Storage:** `OneDB/memory-storage/` (not in dist/ - survives rebuilds)
 
 ### Key Achievements
 
@@ -126,6 +139,28 @@ Platform Abstraction:
 ✅ **Interface-driven design** - Easy to test and mock
 ✅ **Backward compatibility** - Same public API as old AIAssistantModel
 ✅ **Active in production** - Integrated into main process
+
+### Recent Improvements (November 2025)
+
+✅ **AnalysisService** - Created abstract, reusable analysis service
+- Supports chat, memory, files, and custom content analysis
+- Automatically fetches existing subjects from memory via MCP for consistency
+- Prevents duplicate subjects with different names
+- Returns structured output: subjects, keywords, summary, confidence
+
+✅ **Separation of Concerns** - Moved analysis from LLMManager to AIAssistantHandler
+- **LLMManager**: Only raw LLM calls (Ollama, Claude, LMStudio)
+- **AIAssistantHandler**: AI-specific operations including analysis
+- **Breaking Change**: `llmManager.chatWithAnalysis()` → `aiHandler.chatWithAnalysis()`
+
+✅ **Memory Storage Fix** - Fixed persistent memory storage path
+- **Before**: `dist/memory-storage/` (gets wiped on rebuild!)
+- **After**: `OneDB/memory-storage/` (survives rebuilds)
+- **Backup**: `clear-all-storage.sh` now preserves memories automatically
+
+✅ **MCP Integration** - Added mcpManager to AIAssistantHandler dependencies
+- Enables memory context fetching during analysis
+- Passed via dependency injection in ai-assistant-handler-adapter.ts
 
 ## 🔄 Partial Completions
 
@@ -140,6 +175,8 @@ Platform Abstraction:
 - Added LLMPlatform interface support
 - Updated constructor to accept optional platform
 - Refactored config loading to accept parameter
+- **Moved `chatWithAnalysis()` to AIAssistantHandler** (analysis is AI-specific, not LLM-specific)
+- LLMManager now only handles raw LLM calls
 
 🔲 **Remaining** (documented in `LLMManager-MIGRATION-STATUS.md`):
 - Remove child_process usage

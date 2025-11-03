@@ -76,18 +76,18 @@ class LamaBridge implements LamaAPI {
   public ipcListenersSetup = false
   
   constructor() {
-    console.log('[LamaBridge] IPC-only mode initialized')
-    console.log('[LamaBridge] window.electronAPI exists:', !!window.electronAPI)
-    
+    // console.log('[LamaBridge] IPC-only mode initialized')
+    // console.log('[LamaBridge] window.electronAPI exists:', !!window.electronAPI)
+
     // Set up IPC event listeners to forward Node.js events to UI
     if (window.electronAPI) {
-      console.log('[LamaBridge] Setting up IPC event listeners...')
+      // console.log('[LamaBridge] Setting up IPC event listeners...')
 
       // Helper function to handle IPC events consistently
       // The preload script now properly strips the IPC event and passes only data
       const createIPCHandler = (eventName: string, emitName?: string) => {
         return (data: any) => {
-          console.log(`[LamaBridge] IPC event received: ${eventName}`, data)
+          // console.log(`[LamaBridge] IPC event received: ${eventName}`, data)
           this.emit(emitName || eventName, data)
         }
       }
@@ -106,22 +106,22 @@ class LamaBridge implements LamaAPI {
 
       // Message events - single event for all message updates
       window.electronAPI.on('chat:newMessages', (data: any) => {
-        console.log('[LamaBridge] 🔥🔥🔥 chat:newMessages received from IPC:', JSON.stringify(data))
+        // console.log('[LamaBridge] 🔥🔥🔥 chat:newMessages received from IPC:', JSON.stringify(data))
         // Debug: log to main process
-        window.electronAPI.invoke('debug:log', `[LamaBridge] chat:newMessages received: ${data.conversationId}`)
+        // window.electronAPI.invoke('debug:log', `[LamaBridge] chat:newMessages received: ${data.conversationId}`)
         this.emit('chat:newMessages', data)
-        console.log('[LamaBridge] 🔥🔥🔥 Emitted chat:newMessages to React')
+        // console.log('[LamaBridge] 🔥🔥🔥 Emitted chat:newMessages to React')
         // Debug: check how many listeners are registered
-        const listeners = this.eventListeners.get('chat:newMessages')
-        const listenerCount = listeners?.size || 0
-        console.log(`[LamaBridge] Number of listeners for chat:newMessages: ${listenerCount}`)
-        window.electronAPI.invoke('debug:log', `[LamaBridge] Emitted to ${listenerCount} listeners`)
+        // const listeners = this.eventListeners.get('chat:newMessages')
+        // const listenerCount = listeners?.size || 0
+        // console.log(`[LamaBridge] Number of listeners for chat:newMessages: ${listenerCount}`)
+        // window.electronAPI.invoke('debug:log', `[LamaBridge] Emitted to ${listenerCount} listeners`)
       })
 
       // Navigation events
       window.electronAPI.on('navigate', createIPCHandler('navigate'))
 
-      console.log('[LamaBridge] IPC event listeners registered successfully')
+      // console.log('[LamaBridge] IPC event listeners registered successfully')
       this.ipcListenersSetup = true
     } else {
       console.warn('[LamaBridge] No window.electronAPI - IPC not available')
@@ -172,17 +172,17 @@ class LamaBridge implements LamaAPI {
     if (!window.electronAPI) {
       throw new Error('IPC not available')
     }
-    
-    console.log('[LamaBridge] Sending message via IPC:', { recipientId, content })
-    
+
+    // console.log('[LamaBridge] Sending message via IPC:', { recipientId, content })
+
     const result = await window.electronAPI.invoke('chat:sendMessage', {
       conversationId: recipientId,
       text: content,
       attachments: attachments || []
     })
-    
+
     if (result.success) {
-      console.log('[LamaBridge] Message sent via IPC:', result.data.id)
+      // console.log('[LamaBridge] Message sent via IPC:', result.data.id)
       // Emit local event for UI update
       this.emit('message:sent', { 
         id: result.data.id, 
@@ -208,11 +208,11 @@ class LamaBridge implements LamaAPI {
     })
     
     if (!result?.success || !result.messages) {
-      console.error('[LamaBridge] Failed to get messages from Node')
+      // console.error('[LamaBridge] Failed to get messages from Node')
       return []
     }
-    
-    console.log(`[LamaBridge] Got ${result.messages.length} messages from Node via IPC`)
+
+    // console.log(`[LamaBridge] Got ${result.messages.length} messages from Node via IPC`)
     
     // Transform Node messages to our Message format
     return result.messages.map((msg: any) => ({
@@ -402,30 +402,30 @@ class LamaBridge implements LamaAPI {
       this.eventListeners.set(event, new Set())
     }
     this.eventListeners.get(event)!.add(callback)
-    console.log(`[LamaBridge] ON: Added listener for ${event}, total listeners: ${this.eventListeners.get(event)!.size}`)
+    // console.log(`[LamaBridge] ON: Added listener for ${event}, total listeners: ${this.eventListeners.get(event)!.size}`)
   }
 
   off(event: string, callback: (...args: any[]) => void): void {
     const listeners = this.eventListeners.get(event)
     if (listeners) {
       listeners.delete(callback)
-      console.log(`[LamaBridge] OFF: Removed listener for ${event}, remaining: ${listeners.size}`)
+      // console.log(`[LamaBridge] OFF: Removed listener for ${event}, remaining: ${listeners.size}`)
     }
   }
-  
+
   private emit(event: string, ...args: any[]): void {
     const listeners = this.eventListeners.get(event)
-    console.log(`[LamaBridge] EMIT event: ${event}, listeners count: ${listeners?.size || 0}`)
-    if (event === 'chat:newMessages') {
-      console.log('[LamaBridge] chat:newMessages data:', args[0])
-    }
+    // console.log(`[LamaBridge] EMIT event: ${event}, listeners count: ${listeners?.size || 0}`)
+    // if (event === 'chat:newMessages') {
+    //   console.log('[LamaBridge] chat:newMessages data:', args[0])
+    // }
     if (listeners) {
       listeners.forEach(callback => {
-        console.log(`[LamaBridge] Calling listener for ${event}`)
+        // console.log(`[LamaBridge] Calling listener for ${event}`)
         callback(...args)
       })
     } else {
-      console.log(`[LamaBridge] NO LISTENERS for event: ${event}`)
+      // console.log(`[LamaBridge] NO LISTENERS for event: ${event}`)
     }
   }
   

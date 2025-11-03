@@ -673,24 +673,28 @@ What can I help you with today?`
         })
       }
       
-      // Get AI response with analysis in a single call
-      const result: any = await this.llmManager?.chatWithAnalysis(history, modelId, {
-        onStream: (chunk: string) => {
-          fullResponse += chunk
+      // DEPRECATED: This file is replaced by AIAssistantHandler from lama.core
+      // Use ai-assistant-handler-adapter.ts instead
+      throw new Error('[AIAssistantModel] DEPRECATED: Use AIAssistantHandler from lama.core instead')
 
-          // Send streaming updates to UI
-          for (const window of BrowserWindow.getAllWindows()) {
-            window.webContents.send('message:stream', {
-              conversationId,
-              messageId,
-              chunk,
-              partial: fullResponse,
-              senderId: aiPersonId,
-              isAI: true
-            })
-          }
-        }
-      }, topicId) // Pass topicId for analysis
+      // Old code kept for reference only - DO NOT USE
+      // const result: any = await this.llmManager?.chatWithAnalysis(history, modelId, {
+      //   onStream: (chunk: string) => {
+      //     fullResponse += chunk
+      //     for (const window of BrowserWindow.getAllWindows()) {
+      //       window.webContents.send('message:stream', {
+      //         conversationId,
+      //         messageId,
+      //         chunk,
+      //         partial: fullResponse,
+      //         senderId: aiPersonId,
+      //         isAI: true
+      //       })
+      //     }
+      //   }
+      // }, topicId)
+
+      const result: any = {response: '', analysis: {subjects: [], summaryUpdate: ''}}
 
       const response = (result as any)?.response
 

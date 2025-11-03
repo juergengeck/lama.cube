@@ -17,6 +17,7 @@ import TopicAnalysisModel from '@lama/core/one-ai/models/TopicAnalysisModel.js';
 // import RefinioApiServer from '../api/refinio-api-server.js';
 import TopicGroupManager from './topic-group-manager.js';
 import QuicTransport from './quic-transport.js';
+import CubeManager from './cube-manager.js';
 import type { NodeOneCore as INodeOneCore } from '../types/one-core.js';
 
 // Import ONE.core model classes at the top as singletons
@@ -56,6 +57,7 @@ class NodeOneCore implements INodeOneCore {
   public aiAssistantModel?: any; // AIAssistantHandler from lama.core
   public apiServer: any;
   public topicGroupManager?: TopicGroupManager;
+  public cubeManager?: any; // CubeManager for Assembly/Plan system
   public federationGroup: any;
 
   onPairingStarted: any;
@@ -84,6 +86,7 @@ class NodeOneCore implements INodeOneCore {
   localInstanceId?: string
   models?: any
   topicAnalysisModel?: TopicAnalysisModel
+  chatMemoryHandler?: any  // ChatMemoryHandler for automatic memory extraction
   commServerModel?: any
   commServerUrl?: string  // CommServer URL for invitations and connections
   llmManager?: any
@@ -490,7 +493,7 @@ class NodeOneCore implements INodeOneCore {
 
             // Step 3: Detect invitation type and create appropriate topic
             console.log('[NodeOneCore] 💬 Step 3: Handling pairing completion...')
-            const { handlePairingCompletion } = await import('../../../connection.core/dist/esm/index.js')
+            const { handlePairingCompletion } = await import('@lama/connection.core')
 
             const pairingResult = await handlePairingCompletion({
               leuteModel: this.leuteModel,
@@ -878,15 +881,11 @@ class NodeOneCore implements INodeOneCore {
     const { default: ContentSharingManager } = await import('./content-sharing.js')
     this.contentSharing = new ContentSharingManager(this)
     console.log('[NodeOneCore] ✅ Content Sharing Manager initialized')
-    
+
     // Remove browser access - browser has no ONE instance
-    
-    // Initialize ChannelManager - needs leuteModel
-    // Use the imported ChannelManager class - no dynamic import
-    this.channelManager = new ChannelManager(this.leuteModel)
-    await this.channelManager.init()
-    console.log('[NodeOneCore] ✅ ChannelManager initialized')
-    onProgress?.('channels', 60, 'Communication channels initialized')
+
+    // CRITICAL: Initialize LLM/AI infrastructure BEFORE channels/topics
+    // This ensures LLM cache is populated before any message processing
 
     // Initialize LLMObjectManager for AI contact management
     this.llmObjectManager = new LLMObjectManager(
@@ -901,10 +900,40 @@ class NodeOneCore implements INodeOneCore {
     await this.llmObjectManager.initialize();
     console.log('[NodeOneCore] ✅ LLMObjectManager initialized')
 
+    // Initialize CubeManager for Assembly/Plan system
+    this.cubeManager = new CubeManager({
+      oneCore: this,
+      storeVersionedObject: async (obj: any) => {
+        const result = await storeVersionedObject(obj);
+        // CubeManager expects versionHash, but ONE.core returns hash/idHash/status
+        // For compatibility, add versionHash as alias to hash
+        return {
+          hash: result.hash,
+          idHash: result.idHash,
+          versionHash: result.hash // Use hash as versionHash
+        };
+      },
+      getObjectByIdHash: async (idHash: any) => {
+        return await getObjectByIdHash(idHash);
+      },
+      getObject: async (hash: any) => {
+        return await getObject(hash);
+      }
+    });
+    await this.cubeManager.init();
+    console.log('[NodeOneCore] ✅ CubeManager initialized')
+
+    // Initialize ChannelManager - needs leuteModel
+    // Use the imported ChannelManager class - no dynamic import
+    this.channelManager = new ChannelManager(this.leuteModel)
+    await this.channelManager.init()
+    console.log('[NodeOneCore] ✅ ChannelManager initialized')
+    onProgress?.('channels', 60, 'Communication channels initialized')
+
     // Set up proper access rights using AccessRightsManager
     // TEMPORARILY DISABLED: Empty string hash error in group creation needs fixing
     // await this.setupProperAccessRights()
-    
+
     // Set up federation-aware channel sync
     const { setupChannelSyncListeners } = await import('./federation-channel-sync.js')
     setupChannelSyncListeners(this.channelManager, 'Node', (channelId: any, messages: any) => {
@@ -1507,6 +1536,60 @@ class NodeOneCore implements INodeOneCore {
       console.log('[NodeOneCore] ✅ Topic Analysis Model initialized')
     }
 
+    // Initialize Chat Memory Service for automatic memory extraction
+    console.log('[NodeOneCore] Initializing Chat Memory Service...')
+    const { FileStorageService, SubjectHandler } = await import('@memory/storage')
+    const { MemoryHandler } = await import('@memory/core')
+    const { ChatMemoryService } = await import('@memory/core')
+    const { ChatMemoryHandler } = await import('@memory/core')
+    const { implode } = await import('@refinio/one.core/lib/microdata-imploder.js')
+    const { explode } = await import('@refinio/one.core/lib/microdata-exploder.js')
+
+    // Configure memory storage - CRITICAL: Store alongside OneDB, NOT in dist/
+    // dist/ is build output and gets wiped on compilation
+    const storageDir = global.lamaConfig?.instance.directory || path.join(process.cwd(), 'OneDB')
+    const memoryStoragePath = path.join(storageDir, 'memory-storage')
+    const memoryConfig = {
+      basePath: memoryStoragePath,
+      subfolders: {
+        subjects: 'subjects'
+      }
+    }
+
+    // Create FileStorageService
+    const fileStorageService = new FileStorageService(memoryConfig, {
+      storeVersionedObject,
+      implode,
+      explode
+    })
+    await fileStorageService.initialize()
+    console.log('[NodeOneCore] ✅ FileStorageService initialized at:', memoryStoragePath)
+
+    // Create SubjectHandler
+    const subjectHandler = new SubjectHandler({
+      storageService: fileStorageService
+    })
+
+    // Create MemoryHandler (lama.core wrapper)
+    const memoryHandler = new MemoryHandler(subjectHandler)
+    console.log('[NodeOneCore] ✅ MemoryHandler created')
+
+    // Create ChatMemoryService
+    const chatMemoryService = new ChatMemoryService({
+      nodeOneCore: this,
+      topicAnalyzer: this.topicAnalysisModel,
+      memoryHandler: memoryHandler,
+      storeVersionedObject,
+      getObjectByIdHash
+    })
+    console.log('[NodeOneCore] ✅ ChatMemoryService created')
+
+    // Create ChatMemoryHandler
+    this.chatMemoryHandler = new ChatMemoryHandler({
+      chatMemoryService
+    })
+    console.log('[NodeOneCore] ✅ ChatMemoryHandler initialized')
+
     // Discover Claude models BEFORE AIAssistantModel initialization
     // This ensures Claude models are available when loadExistingAIContacts() runs
     console.log('[NodeOneCore] Discovering Claude models before AI Assistant init...')
@@ -1525,21 +1608,23 @@ class NodeOneCore implements INodeOneCore {
 
     // Register NodeOneCore with MCPManager to enable memory tools
     console.log('[NodeOneCore] Registering memory tools with MCP Manager...')
-    const { default: mcpManager } = await import('../services/mcp-manager.js')
+    const { mcpManager } = await import('@mcp/core')
     mcpManager.setNodeOneCore(this)
     console.log('[NodeOneCore] ✅ Memory tools registered with MCP Manager')
+
+    // Initialize MCP Manager to connect to configured servers
+    console.log('[NodeOneCore] Initializing MCP Manager...')
+    await mcpManager.init()
+    console.log('[NodeOneCore] ✅ MCP Manager initialized')
 
     // Groups are created when topics are created via createGroupTopic()
     // No retroactive group creation - that's legacy garbage
 
-    // Initialize Refinio API Server as part of this ONE.core instance
-    // TODO: Re-enable after fixing packages/refinio.api imports
-    // if (!this.apiServer) {
-    //   this.apiServer = new RefinioApiServer(this.aiAssistantModel)
-    //   // The API server will use THIS instance, not create a new one
-    //   await this.apiServer.start()
-    // }
-    
+    // Initialize HTTP API Server for MCP clients
+    const { lamaAPIServer } = await import('../services/lama-api-server.js')
+    await lamaAPIServer.start()
+    console.log('[NodeOneCore] ✅ HTTP API server started for MCP clients')
+
     // Start the listeners
     this.aiMessageListener.start()
 

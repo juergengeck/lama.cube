@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-// import { ScrollArea } from '@/components/ui/scroll-area'
+import { Button } from '@lama/ui'
+// import { ScrollArea } from '@lama/ui'
 import { ChatLayout } from '@/components/ChatLayout'
 import { JournalView } from '@/components/JournalView'
 import { ContactsView } from '@/components/ContactsView'
 import { SettingsView } from '@/components/SettingsView'
 import { DataDashboard } from '@/components/DataDashboard'
 import { DevicesView } from '@/components/DevicesView'
-import { LoginDeploy } from '@/components/LoginDeploy'
+import { LoginDeploy } from '@lama/ui'
 import { ModelOnboarding } from '@/components/ModelOnboarding'
-import { MessageSquare, BookOpen, Users, Settings, Loader2, Smartphone, BarChart3 } from 'lucide-react'
+import { MessageSquare, BookOpen, Users, Settings, Loader2, Smartphone, BarChart3, Wifi, WifiOff } from 'lucide-react'
 import { useLamaInit } from '@/hooks/useLamaInit'
 import { lamaBridge } from '@/bridge/lama-bridge'
 import { ipcStorage } from '@/services/ipc-storage'
@@ -19,6 +19,7 @@ function App() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | undefined>(undefined)
   const [hasTopics, setHasTopics] = useState<boolean | null>(null)
   const [hasDefaultModel, setHasDefaultModel] = useState<boolean | null>(null)
+  const [mcpApiStatus, setMcpApiStatus] = useState<{ running: boolean; requestCount: number }>({ running: false, requestCount: 0 })
   const { isInitialized, isAuthenticated, isLoading, login, logout, error, initProgress } = useLamaInit()
   // NO AppModel in browser - use IPC for everything
 
@@ -64,6 +65,31 @@ function App() {
       )
     }
   }, [isAuthenticated])
+
+  // Poll MCP status via IPC
+  useEffect(() => {
+    const checkMCPStatus = async () => {
+      if (!window.electronAPI) return;
+
+      try {
+        const response = await window.electronAPI.invoke('mcp:getStatus');
+        if (response.success && response.data) {
+          setMcpApiStatus({
+            running: response.data.running,
+            requestCount: response.data.toolCount || 0
+          });
+        } else {
+          setMcpApiStatus({ running: false, requestCount: 0 });
+        }
+      } catch {
+        setMcpApiStatus({ running: false, requestCount: 0 });
+      }
+    };
+
+    checkMCPStatus(); // Initial check
+    const interval = setInterval(checkMCPStatus, 5000); // Poll every 5 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   // Global listener for new messages - keeps conversation list updated app-wide
   useEffect(() => {
@@ -144,8 +170,6 @@ function App() {
   // Check if we need to show model onboarding
   // Show onboarding only if no default model has been configured
   const shouldShowOnboarding = hasDefaultModel === false
-  console.log('[App] hasDefaultModel state:', hasDefaultModel)
-  console.log('[App] shouldShowOnboarding:', shouldShowOnboarding)
 
   if (shouldShowOnboarding) {
     console.log('[App] Showing ModelOnboarding component')
@@ -312,11 +336,22 @@ function App() {
           <div className="flex items-center space-x-4">
             <span>LAMA Desktop v1.0.0</span>
             <span>·</span>
-            <span>Browser: Sparse Storage</span>
-            <span>·</span>
-            <span>Node: Archive Storage</span>
-            <span>·</span>
-            <span>CHUM: Connected</span>
+            <div className="flex items-center gap-1.5">
+              {mcpApiStatus.running ? (
+                <>
+                  <Wifi className="h-3.5 w-3.5 text-green-500" />
+                  <span>MCP API: Online</span>
+                  {mcpApiStatus.requestCount > 0 && (
+                    <span className="text-muted-foreground">({mcpApiStatus.requestCount} requests)</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <WifiOff className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span>MCP API: Offline</span>
+                </>
+              )}
+            </div>
           </div>
           <div className="flex items-center space-x-4">
             <span>Identity: {isAuthenticated ? 'Active' : 'None'}</span>

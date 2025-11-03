@@ -18,6 +18,7 @@ export function useLamaMessages(conversationId: string) {
   // Load messages from backend
   const loadMessages = useCallback(async () => {
     console.log('🔄 Loading messages for:', conversationId)
+
     try {
       setLoading(true)
       const msgs = await lamaBridge.getMessages(conversationId)

@@ -4,39 +4,24 @@
  * Maps Electron IPC calls to service and handler methods.
  * Business logic distributed across:
  * - @chat/core/services/* (ContactService, ProfileService)
- * - @lama/core/services/* (LLMKeyStorageService)
+ * - @refinio/one.core/* (Native ONE.core storage)
  * - ./main/handlers/* (NodePlatformHandler)
  */
 
 import { ContactService } from '@chat/core/services/ContactService.js';
 import { ProfileService } from '@chat/core/services/ProfileService.js';
-import { LLMKeyStorageService } from '@lama/core/services/LLMKeyStorageService.js';
 import { NodePlatformHandler } from '../../handlers/NodePlatformHandler.js';
 import nodeOneCore from '../../core/node-one-core.js';
 import stateManager from '../../state/manager.js';
 import chumSettings from '../../services/chum-settings.js';
 import credentialsManager from '../../services/credentials-manager.js';
-import { decryptToken } from '../../services/ollama-config-manager.js';
 import { clearAppDataShared } from '../../../lama-electron-shadcn.js';
 import nodeProvisioning from '../../services/node-provisioning.js';
 import type { IpcMainInvokeEvent } from 'electron';
 
-// Import llmConfigHandler for secure storage operations
-let llmConfigHandler: any;
-import('./llm-config.js').then(module => {
-  // Get the handler instance after it's initialized
-  const { handleSetOllamaConfig } = module;
-  llmConfigHandler = {
-    setConfig: async (request: any) => {
-      return await handleSetOllamaConfig({} as any, request);
-    }
-  };
-});
-
 // Lazy service instances - created after NodeOneCore is initialized
 let contactService: ContactService | null = null;
 let profileService: ProfileService | null = null;
-let llmKeyStorageService: LLMKeyStorageService | null = null;
 
 // Platform handler can be created immediately (doesn't depend on models)
 const platformHandler = new NodePlatformHandler(
@@ -75,18 +60,6 @@ function getProfileService(): ProfileService {
   return profileService;
 }
 
-/**
- * Get LLMKeyStorageService instance - creates on first use after NodeOneCore init
- */
-function getLLMKeyStorageService(): LLMKeyStorageService {
-  if (!nodeOneCore.channelManager) {
-    throw new Error('NodeOneCore not initialized - channelManager is null');
-  }
-  if (!llmKeyStorageService) {
-    llmKeyStorageService = new LLMKeyStorageService(nodeOneCore.channelManager);
-  }
-  return llmKeyStorageService;
-}
 
 // Export function to invalidate cache when contacts change
 export function invalidateContactsCache(): void {
@@ -233,17 +206,87 @@ const oneCoreHandlers = {
   },
 
   /**
-   * Store data securely using LLM objects
+   * Store data securely using ONE.core versioned objects
    */
   async secureStore(event: IpcMainInvokeEvent, params: { key: string; value: any; encrypted?: boolean }) {
-    return await getLLMKeyStorageService().secureStore(params.key, params.value, llmConfigHandler);
+    console.log(`[OneCoreHandler] secureStore: ${params.key}`);
+
+    try {
+      if (params.key === 'claude_api_key') {
+        // Store Claude API key as LLM object in ONE.core
+        const { storeVersionedObject } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
+
+        const now = Date.now();
+        const nowString = new Date(now).toISOString();
+
+        const llmObj = {
+          $type$: 'LLM' as const,
+          name: 'claude',
+          modelId: 'claude-api',
+          provider: 'anthropic',
+          filename: 'claude-api-config',
+          modelType: 'remote' as const,
+          baseUrl: 'https://api.anthropic.com',
+          authType: 'bearer' as const,
+          encryptedAuthToken: params.value,
+          active: true,
+          deleted: false,
+          created: now,
+          modified: now,
+          createdAt: nowString,
+          lastUsed: nowString
+        };
+
+        const result = await storeVersionedObject(llmObj);
+        console.log(`[OneCoreHandler] Stored Claude API key with hash: ${result.hash}`);
+
+        return {
+          success: true,
+          data: { stored: true, configHash: result.hash }
+        };
+      }
+
+      throw new Error(`Unsupported secure storage key: ${params.key}`);
+    } catch (error) {
+      console.error('[OneCoreHandler] secureStore error:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
   },
 
   /**
-   * Retrieve data from LLM objects
+   * Retrieve data from ONE.core versioned objects
    */
   async secureRetrieve(event: IpcMainInvokeEvent, params: { key: string }) {
-    return await getLLMKeyStorageService().secureRetrieve(params.key, decryptToken);
+    console.log(`[OneCoreHandler] secureRetrieve: ${params.key}`);
+
+    try {
+      if (params.key === 'claude_api_key') {
+        // Retrieve Claude API key from ONE.core LLM objects
+        const iterator = nodeOneCore.channelManager.objectIteratorWithType('LLM', {
+          channelId: 'lama'
+        });
+
+        for await (const llmObj of iterator) {
+          if (llmObj?.data?.name === 'claude' && llmObj.data.active && !llmObj.data.deleted) {
+            const apiKey = llmObj.data.encryptedAuthToken;
+            return { success: true, value: apiKey };
+          }
+        }
+
+        throw new Error('API key not found');
+      }
+
+      throw new Error(`Unsupported secure storage key: ${params.key}`);
+    } catch (error) {
+      console.error('[OneCoreHandler] secureRetrieve error:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
   },
 
   /**

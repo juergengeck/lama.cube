@@ -126,7 +126,7 @@ function createWindow(): void {
   
   // In development, load from Vite dev server
   if (process.env.NODE_ENV !== 'production') {
-    mainWindow?.loadURL('http://localhost:5174');
+    mainWindow?.loadURL('http://localhost:5176');
     
     // Workaround: Inject electronAPI after page loads when webSecurity is disabled
     mainWindow?.webContents.once('dom-ready', () => {
@@ -231,7 +231,7 @@ function createWindow(): void {
 function startViteServer(): Promise<void> {
   return new Promise<void>((resolve) => {
     // Check if server is already running
-    (http as any)?.get('http://localhost:5174', (res: any) => {
+    (http as any)?.get('http://localhost:5176', (res: any) => {
       console.log('Vite server already running');
       resolve();
     }).on('error', () => {
@@ -390,7 +390,21 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
     // Step 1: Set clearing flag immediately to prevent any saves
     global.isClearing = true;
 
-    // Step 2: Shutdown services properly
+    // Step 2: Capture paths BEFORE shutdown (shutdown may delete them)
+    const oneDbPath = global.lamaConfig?.instance.directory || path.join(process.cwd(), 'OneDB');
+    const userDataPath = app.getPath('userData');
+
+    // Log paths for debugging
+    console.log('[ClearData] ========================================');
+    console.log('[ClearData] CRITICAL PATH INFORMATION:');
+    console.log('[ClearData] global.lamaConfig?.instance.directory:', global.lamaConfig?.instance.directory);
+    console.log('[ClearData] process.cwd():', process.cwd());
+    console.log('[ClearData] Resolved OneDB path to DELETE:', oneDbPath);
+    console.log('[ClearData] User data path:', userDataPath);
+    console.log('[ClearData] OneDB exists BEFORE shutdown:', fs.existsSync(oneDbPath));
+    console.log('[ClearData] ========================================');
+
+    // Step 3: Shutdown services properly
     console.log('[ClearData] Shutting down services...');
 
     // Shutdown main app first
@@ -427,13 +441,13 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
 
       // CRITICAL: Wait for OS to release file handles
       // Without this delay, rmSync fails because files are still locked
-      console.log('[ClearData] Waiting 2 seconds for file handles to be released...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log('[ClearData] Waiting 3 seconds for file handles to be released...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
     } catch (e) {
       console.error('[ClearData] Error shutting down Node.js instance:', e);
     }
 
-    // Step 3: Clear browser storage
+    // Step 4: Clear browser storage
     console.log('[ClearData] Clearing browser storage...');
 
     try {
@@ -450,49 +464,26 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
       console.error('[ClearData] Error clearing browser storage:', error);
     }
 
-    // Step 4: Delete data folders
+    // Step 5: Delete data folders (using paths captured BEFORE shutdown)
     console.log('[ClearData] Deleting data folders...');
-
-    // Use runtime configuration path (respects --storage CLI arg and config files)
-    // Falls back to default if config not loaded yet
-    const oneDbPath = global.lamaConfig?.instance.directory || path.join(process.cwd(), 'OneDB');
-    const userDataPath = app.getPath('userData');
-
-    // Log paths for debugging
-    console.log('[ClearData] ========================================');
-    console.log('[ClearData] CRITICAL PATH INFORMATION:');
-    console.log('[ClearData] global.lamaConfig?.instance.directory:', global.lamaConfig?.instance.directory);
-    console.log('[ClearData] process.cwd():', process.cwd());
-    console.log('[ClearData] Resolved OneDB path to DELETE:', oneDbPath);
-    console.log('[ClearData] User data path:', userDataPath);
-    console.log('[ClearData] ========================================');
-
     console.log('[ClearData] OneDB path:', oneDbPath);
-    console.log('[ClearData] OneDB exists:', fs.existsSync(oneDbPath));
+    console.log('[ClearData] OneDB exists AFTER shutdown:', fs.existsSync(oneDbPath));
 
     // Delete OneDB - CRITICAL for removing all chat history
     if (fs.existsSync(oneDbPath)) {
-      try {
-        // List contents before deletion for debugging
-        const oneDbContents = fs.readdirSync(oneDbPath);
-        console.log(`[ClearData] OneDB contains ${oneDbContents.length} items:`, oneDbContents);
+      const oneDbContents = fs.readdirSync(oneDbPath);
+      console.log(`[ClearData] OneDB contains ${oneDbContents.length} items`);
 
-        // Delete the entire directory
-        fs.rmSync(oneDbPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      // Delete the entire directory
+      fs.rmSync(oneDbPath, { recursive: true, force: true });
 
-        // Verify it's gone
-        if (fs.existsSync(oneDbPath)) {
-          console.error('[ClearData] OneDB STILL EXISTS after deletion!');
-          throw new Error('Failed to delete OneDB directory');
-        } else {
-          console.log('[ClearData] ✅ OneDB directory successfully deleted');
-        }
-      } catch (error) {
-        console.error('[ClearData] CRITICAL ERROR deleting OneDB:', error);
-        throw error; // Re-throw to fail the whole operation
+      // Verify it's gone
+      if (fs.existsSync(oneDbPath)) {
+        throw new Error('Failed to delete OneDB directory');
       }
+      console.log('[ClearData] ✅ OneDB directory successfully deleted');
     } else {
-      console.log('[ClearData] OneDB directory does not exist - nothing to delete');
+      console.log('[ClearData] OneDB directory does not exist');
     }
 
     // IMPORTANT: userData directory cannot be deleted while app is running

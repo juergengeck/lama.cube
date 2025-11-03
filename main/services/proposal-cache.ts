@@ -7,6 +7,7 @@
 
 import type { Proposal } from './proposal-engine.js';
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { Subject } from '@lama/core/one-ai/types/Subject.js';
 
 interface CacheEntry {
   proposals: Proposal[];
@@ -37,7 +38,7 @@ export class ProposalCache {
    * @param currentSubjects - Array of current subject ID hashes
    * @returns Cached proposals or null if not found/expired
    */
-  get(topicId: string, currentSubjects: SHA256IdHash<any>[]): Proposal[] | null {
+  get(topicId: string, currentSubjects: SHA256IdHash<Subject>[]): Proposal[] | null {
     const key = this.cacheKey(topicId, currentSubjects);
     const entry = this.cache.get(key);
 
@@ -61,7 +62,7 @@ export class ProposalCache {
    * @param currentSubjects - Array of current subject ID hashes
    * @param proposals - Proposals to cache
    */
-  set(topicId: string, currentSubjects: SHA256IdHash<any>[], proposals: Proposal[]): void {
+  set(topicId: string, currentSubjects: SHA256IdHash<Subject>[], proposals: Proposal[]): void {
     const key = this.cacheKey(topicId, currentSubjects);
 
     // LRU eviction: Remove oldest entry if cache is full
@@ -110,7 +111,7 @@ export class ProposalCache {
    * @param currentSubjects - Array of current subject ID hashes
    * @returns Cache key
    */
-  private cacheKey(topicId: string, currentSubjects: SHA256IdHash<any>[]): string {
+  private cacheKey(topicId: string, currentSubjects: SHA256IdHash<Subject>[]): string {
     // Sort subject IDs for consistent keys
     const subjectIds = currentSubjects.map((s) => String(s)).sort();
     return `${topicId}:${subjectIds.join(',')}`;

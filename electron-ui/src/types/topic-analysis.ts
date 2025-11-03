@@ -6,29 +6,39 @@
 /**
  * Subject represents a distinct discussion topic within a conversation
  * Identified by topic + keyword combination
+ *
+ * Note: keywords is typed as string[] here for UI compatibility,
+ * but backend uses SHA256IdHash<Keyword>[] (referenceToId in recipe)
  */
 export interface Subject {
   $type$: 'Subject';
-  id: string;           // Format: `${topicId}:${sortedKeywords.join('-')}`
-  name: string;         // Human-readable 1-2 word name (e.g., "Pizza Delivery")
-  topic: string;        // Hash reference to parent Topic
-  keywords: string[];   // Sorted array of keywords identifying this subject
-  messageCount: number; // Number of messages related to this subject
-  timestamp: number;    // Unix timestamp from latest source message
-  archived?: boolean;   // Whether subject is archived (optional)
+  id: string; // Keyword combination used as ID
+  topic: string; // Topic ID (plain string, Topic is unversioned)
+  keywords: string[]; // Array of Keyword ID hashes (SHA256IdHash<Keyword> from backend)
+  timeRanges: Array<{
+    start: number;
+    end: number;
+  }>;
+  messageCount: number;
+  createdAt: number;
+  lastSeenAt: number;
+  archived?: boolean;
 }
 
 /**
  * Keyword extracted from message content
+ *
+ * Note: subjects is typed as string[] here for UI compatibility,
+ * but backend uses SHA256IdHash<Subject>[] (referenceToId in recipe)
  */
 export interface Keyword {
-  $type$?: 'Keyword';
-  id?: string;          // Hash of the keyword text
-  term?: string;        // The actual keyword term (from backend)
-  text?: string;        // The actual keyword text (alternative field)
-  frequency?: number;   // How often it appears
-  subjects?: string[];  // Subject IDs this keyword belongs to
-  score?: number;       // Relevance score
+  $type$: 'Keyword';
+  term: string; // Normalized keyword term (lowercase, trimmed), isId: true
+  frequency: number;
+  subjects: string[]; // Array of Subject ID hashes (SHA256IdHash<Subject> from backend)
+  score?: number;
+  createdAt: number;
+  lastSeen: number;
 }
 
 /**

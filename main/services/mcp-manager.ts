@@ -27,6 +27,7 @@ class MCPManager {
   public tools: Map<string, MCPTool>;
   public isInitialized: boolean;
   public memoryTools: any;
+  public cubeTools: any;
   public nodeOneCore: any;
 
   constructor() {
@@ -35,6 +36,7 @@ class MCPManager {
     this.servers = [];
     this.isInitialized = false;
     this.memoryTools = null;
+    this.cubeTools = null;
     this.nodeOneCore = null;
   }
 
@@ -479,6 +481,28 @@ class MCPManager {
       }).catch(err => {
         console.error('[MCPManager] Failed to load memory tools:', err);
       });
+
+      // Initialize cube tools
+      import('./mcp/cube-tools.js').then(async ({ CubeTools }) => {
+        this.cubeTools = new CubeTools(nodeOneCore);
+        await this.cubeTools.init();
+
+        // Register cube tool definitions
+        const toolDefs = this.cubeTools.getToolDefinitions();
+        for (const toolDef of toolDefs) {
+          this.tools.set(toolDef.name, {
+            name: toolDef.name,
+            fullName: toolDef.name,
+            description: toolDef.description,
+            inputSchema: toolDef.inputSchema,
+            server: 'cube' // Virtual server for cube tools
+          });
+        }
+
+        console.log(`[MCPManager] Registered ${toolDefs.length} cube tools`);
+      }).catch(err => {
+        console.error('[MCPManager] Failed to load cube tools:', err);
+      });
     }
   }
 
@@ -664,6 +688,24 @@ class MCPManager {
       }
     }
 
+    // Handle cube tools (virtual server)
+    if (toolData.server === 'cube') {
+      if (!this.cubeTools) {
+        throw new Error('Cube tools not initialized - ONE.core may not be ready');
+      }
+
+      console.log(`[MCPManager] Executing cube tool ${toolName} with params:`, parameters);
+
+      try {
+        const result = await this.cubeTools.executeTool(toolName, parameters, context);
+        console.log(`[MCPManager] Cube tool ${toolName} executed successfully`);
+        return result;
+      } catch (error) {
+        console.error(`[MCPManager] Cube tool execution failed:`, error);
+        throw error;
+      }
+    }
+
     // Handle external MCP server tools
     const serverData = this.clients.get(toolData.server);
 
@@ -685,6 +727,45 @@ class MCPManager {
       console.error(`[MCPManager] Tool execution failed:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Store MCP tool call for auditability
+   * Stores the tool call as a versioned ONE.core object
+   */
+  async storeToolCall(toolCallData: {
+    id: string;
+    toolName: string;
+    parameters: any;
+    result?: any;
+    error?: string;
+    timestamp: number;
+    duration?: number;
+    topicId: string;
+    messageHash?: string;
+  }): Promise<void> {
+    if (!this.nodeOneCore) {
+      console.warn('[MCPManager] Cannot store tool call - NodeOneCore not available');
+      return;
+    }
+
+    const { storeVersionedObject } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
+
+    const mcpToolCall = {
+      $type$: 'MCPToolCall',
+      id: toolCallData.id,
+      toolName: toolCallData.toolName,
+      parameters: JSON.stringify(toolCallData.parameters),
+      result: toolCallData.result ? JSON.stringify(toolCallData.result) : undefined,
+      error: toolCallData.error,
+      timestamp: toolCallData.timestamp,
+      duration: toolCallData.duration,
+      topicId: toolCallData.topicId,
+      messageHash: toolCallData.messageHash
+    };
+
+    await storeVersionedObject(mcpToolCall as any);
+    console.log(`[MCPManager] Stored tool call: ${toolCallData.toolName} (ID: ${toolCallData.id})`);
   }
 
   // Debug method to check state

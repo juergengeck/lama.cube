@@ -307,10 +307,11 @@ class NodeProvisioning {
         const models = llmManager.getModels()
 
         if (models && models.length > 0) {
-          const defaultModel = models[0].id
-          console.log('[NodeProvisioning] Creating default chats with model:', defaultModel)
-          await nodeOneCore.aiAssistantModel.setDefaultModel(defaultModel)
-          console.log('[NodeProvisioning] ✅ Default AI chats created')
+          // DO NOT auto-select a model - let the user choose
+          // const defaultModel = models[0].id
+          // await nodeOneCore.aiAssistantModel.setDefaultModel(defaultModel)
+          console.log('[NodeProvisioning] Found', models.length, 'models - user will select preferred model')
+          console.log('[NodeProvisioning] ✅ Skipping auto-selection - user chooses')
         } else {
           console.log('[NodeProvisioning] No models available, skipping default chats')
         }

@@ -1,4 +1,5 @@
 import type { ChannelManager } from '@refinio/one.models/lib/models/index.js';
+import type { Subject } from '@lama/core/one-ai/types/Subject.js';
 /**
  * IPC handlers for topic operations (TypeScript)
  */
@@ -137,7 +138,7 @@ export async function getOrCreateTopicForContact(
 export async function recordSubjectFeedback(
   event: IpcMainInvokeEvent,
   params: { subjectId: string; feedbackType: 'like' | 'dislike' }
-): Promise<{ success: boolean; subject?: any; error?: string }> {
+): Promise<{ success: boolean; subject?: Partial<Subject>; error?: string }> {
   console.log(`[Topics IPC] Recording ${params.feedbackType} for subject:`, params.subjectId);
 
   const nodeInstance = nodeOneCore;
@@ -152,13 +153,13 @@ export async function recordSubjectFeedback(
     const { calculateIdHashOfObj } = await import('@refinio/one.core/lib/util/object.js');
 
     // Get the subject by ID
-    const result: any = await getObjectByIdHash(params.subjectId as any);
+    const result = await getObjectByIdHash(params.subjectId as any);
     if (!result || !result.obj) {
       console.error('[Topics IPC] Subject not found:', params.subjectId);
       return { success: false, error: 'Subject not found' };
     }
 
-    const subject: any = result.obj;
+    const subject = result.obj as Subject & { likes?: number; dislikes?: number };
     console.log('[Topics IPC] Found subject:', subject.id, 'Current likes:', subject.likes, 'dislikes:', subject.dislikes);
 
     // Update feedback counters
@@ -178,7 +179,7 @@ export async function recordSubjectFeedback(
         id: subject.id,
         likes: subject.likes,
         dislikes: subject.dislikes
-      }
+      } as any
     };
   } catch (error) {
     console.error('[Topics IPC] Failed to record feedback:', error);

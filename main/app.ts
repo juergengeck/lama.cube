@@ -124,7 +124,7 @@ class MainApplication {
 
     // Load the app
     if (process.env.NODE_ENV !== 'production') {
-      this.mainWindow.loadURL('http://localhost:5174')
+      this.mainWindow.loadURL('http://localhost:5176')
       this.mainWindow.webContents.openDevTools()
     } else {
       this.mainWindow.loadFile(path.join(__dirname, '..', 'electron-ui', 'dist', 'index.html'))

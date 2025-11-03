@@ -36,10 +36,10 @@ export const ChatView = memo(function ChatView({
   const chatHeaderRef = useRef<HTMLDivElement>(null)
 
   // Debug: log messages received from hook
-  console.log('[ChatView] Received from hook - messages:', messages?.length || 0, 'loading:', loading)
-  if (messages && messages.length > 0) {
-    console.log('[ChatView] First message in ChatView:', messages[0])
-  }
+  // console.log('[ChatView] Received from hook - messages:', messages?.length || 0, 'loading:', loading)
+  // if (messages && messages.length > 0) {
+  //   console.log('[ChatView] First message in ChatView:', messages[0])
+  // }
 
   // Separate effect for updating parent
   useEffect(() => {
@@ -72,7 +72,7 @@ export const ChatView = memo(function ChatView({
 
   // Clear AI processing state when conversation changes
   useEffect(() => {
-    console.log(`[ChatView] Conversation changed to: ${conversationId}, clearing AI state`)
+    // console.log(`[ChatView] Conversation changed to: ${conversationId}, clearing AI state`)
     setIsAIProcessing(false)
     setAiStreamingContent('')
   }, [conversationId])
@@ -86,16 +86,16 @@ export const ChatView = memo(function ChatView({
     
     // Handle thinking indicator (used for all AI messages including welcome)
     const handleThinking = (data: any) => {
-      console.log(`[ChatView-${conversationId}] 🔔 Received thinking event for: "${data.conversationId}"`)
-      console.log(`[ChatView-${conversationId}] 🔍 My conversationId: "${conversationId}"`)
-      console.log(`[ChatView-${conversationId}] 🔍 Match: ${data.conversationId === conversationId}`)
+      // console.log(`[ChatView-${conversationId}] 🔔 Received thinking event for: "${data.conversationId}"`)
+      // console.log(`[ChatView-${conversationId}] 🔍 My conversationId: "${conversationId}"`)
+      // console.log(`[ChatView-${conversationId}] 🔍 Match: ${data.conversationId === conversationId}`)
       if (data.conversationId === conversationId) {
-        console.log(`[ChatView-${conversationId}] ✅ Setting AI processing to TRUE`)
+        // console.log(`[ChatView-${conversationId}] ✅ Setting AI processing to TRUE`)
         setIsAIProcessing(true)
         setAiStreamingContent('')
         onProcessingChange?.(true) // Update parent state
       } else {
-        console.log(`[ChatView-${conversationId}] ❌ Ignoring event for different conversation`)
+        // console.log(`[ChatView-${conversationId}] ❌ Ignoring event for different conversation`)
       }
     }
     
@@ -327,9 +327,9 @@ export const ChatView = memo(function ChatView({
                           <span className="font-medium text-sm">Keywords:</span>
                           <div className="flex flex-wrap gap-1 mt-1">
                             {subject.keywords?.map((kw: string, kwIdx: number) => {
-                              if (kw.length === 64 && /^[0-9a-f]+$/.test(kw)) {
-                                console.warn('[ChatView] Keyword is still a hash:', kw);
-                              }
+                              // if (kw.length === 64 && /^[0-9a-f]+$/.test(kw)) {
+                              //   console.warn('[ChatView] Keyword is still a hash:', kw);
+                              // }
                               return (
                                 <Badge key={kwIdx} variant="secondary" className="text-xs">
                                   {kw}

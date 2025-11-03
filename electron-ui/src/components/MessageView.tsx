@@ -49,11 +49,11 @@ export function MessageView({
   subjectsJustAppeared = false,
   chatHeaderRef
 }: MessageViewProps) {
-  console.log('[MessageView] 🎨 Rendering with', messages.length, 'messages')
-  if (messages.length > 0) {
-    console.log('[MessageView] First message:', messages[0])
-    console.log('[MessageView] Last message:', messages[messages.length - 1])
-  }
+  // console.log('[MessageView] 🎨 Rendering with', messages.length, 'messages')
+  // if (messages.length > 0) {
+  //   console.log('[MessageView] First message:', messages[0])
+  //   console.log('[MessageView] Last message:', messages[messages.length - 1])
+  // }
   const [contactNames, setContactNames] = useState<Record<string, string>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -120,7 +120,7 @@ export function MessageView({
   // Adjust scroll position when subjects appear to compensate for header height change
   useEffect(() => {
     if (subjectsJustAppeared && chatHeaderRef?.current && scrollAreaRef.current) {
-      console.log('[MessageView] Subjects just appeared, adjusting scroll position')
+      // console.log('[MessageView] Subjects just appeared, adjusting scroll position')
 
       // Measure the height of the subject line that just appeared
       // We use requestAnimationFrame to wait for the DOM to update
@@ -130,7 +130,7 @@ export function MessageView({
         // The subject line is roughly 48px (py-2 + text height + border)
         // But let's measure it to be precise
         const headerHeight = chatHeaderRef.current.offsetHeight
-        console.log('[MessageView] Header height after subjects:', headerHeight)
+        // console.log('[MessageView] Header height after subjects:', headerHeight)
 
         // Adjust scroll to compensate for the header growth
         // This keeps the visible content in the same position
@@ -164,7 +164,7 @@ export function MessageView({
     // If streaming just ended (was streaming but now not), don't scroll
     // The final message is already visible from the streaming view
     if (wasStreaming && !isStreaming) {
-      console.log('[MessageView] Streaming ended, skipping scroll')
+      // console.log('[MessageView] Streaming ended, skipping scroll')
       return
     }
 
@@ -203,24 +203,24 @@ export function MessageView({
   // Enhanced send handler with proper attachment storage
   const handleEnhancedSend = async (text: string, attachments?: EnhancedAttachment[]) => {
     if (!text.trim() && (!attachments || attachments.length === 0)) {
-      console.log('[MessageView] Empty message, not sending')
+      // console.log('[MessageView] Empty message, not sending')
       return
     }
 
     try {
-      console.log('[MessageView] 🎯 Enhanced send with:', text, attachments?.length, 'attachments')
+      // console.log('[MessageView] 🎯 Enhanced send with:', text, attachments?.length, 'attachments')
 
       // Extract hashtags from text
       const hashtagRegex = /#[\w-]+/g
       const hashtags = text.match(hashtagRegex) || []
-      console.log('[MessageView] Extracted hashtags:', hashtags)
+      // console.log('[MessageView] Extracted hashtags:', hashtags)
 
       let messageContent = text
       const messageAttachments: MessageAttachment[] = []
 
       // Process and store attachments using AttachmentService
       if (attachments && attachments.length > 0) {
-        console.log('[MessageView] Processing attachments with AttachmentService')
+        // console.log('[MessageView] Processing attachments with AttachmentService')
 
         for (const attachment of attachments) {
           try {
@@ -261,7 +261,7 @@ export function MessageView({
               return newMap
             })
 
-            console.log(`[MessageView] Stored attachment ${attachment.file.name} with hash: ${hash}`)
+            // console.log(`[MessageView] Stored attachment ${attachment.file.name} with hash: ${hash}`)
           } catch (error) {
             console.error(`[MessageView] Failed to store attachment ${attachment.file.name}:`, error)
           }
@@ -289,7 +289,7 @@ export function MessageView({
 
   // Handle hashtag clicks - open keyword detail dialog
   const handleHashtagClick = (hashtag: string) => {
-    console.log('[MessageView] Hashtag/keyword clicked:', hashtag, '| topicId:', topicId)
+    // console.log('[MessageView] Hashtag/keyword clicked:', hashtag, '| topicId:', topicId)
 
     if (topicId) {
       // Open keyword detail dialog
@@ -357,15 +357,15 @@ export function MessageView({
             const isCurrentUser = message.senderId === 'user' || message.senderId === currentUserId
             // Use the isAI flag from the message
             const isAIMessage = message.isAI === true
-            console.log(`[MessageView] Rendering message - senderId: "${message.senderId}", currentUserId: "${currentUserId}", isCurrentUser: ${isCurrentUser}, isAI: ${isAIMessage}, content: "${message.content.substring(0, 50)}..."`)
-            
+            // console.log(`[MessageView] Rendering message - senderId: "${message.senderId}", currentUserId: "${currentUserId}", isCurrentUser: ${isCurrentUser}, isAI: ${isAIMessage}, content: "${message.content.substring(0, 50)}..."`)
+
             // Always use EnhancedMessageBubble for consistent rendering and features
             // Extract hashtags from message content
             const hashtagRegex = /#[\w-]+/g
             const hashtags = message.content.match(hashtagRegex) || []
             const subjects = hashtags.map(tag => tag.slice(1)) // Remove # prefix
 
-            
+
 
             const enhancedMessage: EnhancedMessageData = {
               id: message.id,
@@ -381,12 +381,12 @@ export function MessageView({
               format: message.format || 'markdown' // Use message format if available, otherwise markdown
             }
 
-            console.log(`[MessageView] Passing to EnhancedMessageBubble:`, {
-              id: enhancedMessage.id,
-              hasText: !!enhancedMessage.text,
-              textLength: enhancedMessage.text?.length,
-              format: enhancedMessage.format
-            })
+            // console.log(`[MessageView] Passing to EnhancedMessageBubble:`, {
+            //   id: enhancedMessage.id,
+            //   hasText: !!enhancedMessage.text,
+            //   textLength: enhancedMessage.text?.length,
+            //   format: enhancedMessage.format
+            // })
 
             return (
               <EnhancedMessageBubble

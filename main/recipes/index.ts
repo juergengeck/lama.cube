@@ -17,6 +17,9 @@ import { AvatarPreferenceRecipe } from './avatar-recipes.js'
 // LLM Recipe - represents an AI model/assistant
 import { LLMRecipe } from './LLM.js'
 
+// Chat Memory Config - memory extraction configuration per topic
+import { ChatMemoryConfigRecipe } from './chat-memory-config.js'
+
 // Assembly.core recipes - Demand/Supply/Assembly/Plan/Story
 import { AssemblyCoreRecipes } from '@assembly/core'
 
@@ -163,6 +166,7 @@ const LamaRecipes = [
     KeywordAccessStateRecipe,
     ProposalConfigRecipe,
     AvatarPreferenceRecipe,
+    ChatMemoryConfigRecipe,
     ...MCPRecipes,
     // ...FeedForwardRecipes
     // Assembly.core recipes (Demand/Supply/Assembly/Plan/Story)

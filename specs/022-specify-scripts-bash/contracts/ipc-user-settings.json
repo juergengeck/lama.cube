@@ -1,0 +1,226 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UserSettings IPC API Contract",
+  "description": "IPC contract for unified user settings management",
+  "version": "1.0.0",
+  "channels": {
+    "settings:get": {
+      "description": "Get all user settings",
+      "request": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "response": {
+        "type": "object",
+        "required": ["$type$", "userEmail", "ai", "ui", "proposals", "updatedAt"],
+        "properties": {
+          "$type$": {
+            "type": "string",
+            "const": "UserSettings"
+          },
+          "userEmail": {
+            "type": "string",
+            "format": "email",
+            "description": "User's email (ID field)"
+          },
+          "ai": {
+            "type": "object",
+            "required": ["temperature", "maxTokens", "defaultProvider", "autoSelectBestModel", "preferredModelIds", "streamResponses", "autoSummarize", "enableMCP"],
+            "properties": {
+              "defaultModelId": {"type": "string", "description": "Selected AI model"},
+              "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+              "maxTokens": {"type": "number", "minimum": 1, "maximum": 100000},
+              "defaultProvider": {"type": "string"},
+              "autoSelectBestModel": {"type": "boolean"},
+              "preferredModelIds": {"type": "array", "items": {"type": "string"}},
+              "systemPrompt": {"type": "string"},
+              "streamResponses": {"type": "boolean"},
+              "autoSummarize": {"type": "boolean"},
+              "enableMCP": {"type": "boolean"}
+            }
+          },
+          "ui": {
+            "type": "object",
+            "required": ["theme", "notifications", "wordCloud"],
+            "properties": {
+              "theme": {"type": "string", "enum": ["dark", "light"]},
+              "notifications": {"type": "boolean"},
+              "wordCloud": {
+                "type": "object",
+                "required": ["maxWordsPerSubject", "relatedWordThreshold", "minWordFrequency", "showSummaryKeywords", "fontScaleMin", "fontScaleMax", "colorScheme", "layoutDensity"],
+                "properties": {
+                  "maxWordsPerSubject": {"type": "number", "minimum": 1, "maximum": 1000},
+                  "relatedWordThreshold": {"type": "number", "minimum": 0, "maximum": 1},
+                  "minWordFrequency": {"type": "number", "minimum": 1},
+                  "showSummaryKeywords": {"type": "boolean"},
+                  "fontScaleMin": {"type": "number", "minimum": 1},
+                  "fontScaleMax": {"type": "number"},
+                  "colorScheme": {"type": "string"},
+                  "layoutDensity": {"type": "string"}
+                }
+              }
+            }
+          },
+          "proposals": {
+            "type": "object",
+            "required": ["matchWeight", "recencyWeight", "recencyWindow", "minJaccard", "maxProposals"],
+            "properties": {
+              "matchWeight": {"type": "number", "minimum": 0, "maximum": 1},
+              "recencyWeight": {"type": "number", "minimum": 0, "maximum": 1},
+              "recencyWindow": {"type": "number", "minimum": 0},
+              "minJaccard": {"type": "number", "minimum": 0, "maximum": 1},
+              "maxProposals": {"type": "number", "minimum": 1, "maximum": 50}
+            }
+          },
+          "updatedAt": {
+            "type": "number",
+            "description": "Unix timestamp of last update"
+          }
+        }
+      },
+      "errors": [
+        {
+          "code": "NOT_INITIALIZED",
+          "message": "NodeOneCore not initialized"
+        },
+        {
+          "code": "STORAGE_ERROR",
+          "message": "Failed to load settings from storage"
+        }
+      ]
+    },
+    "settings:updateAI": {
+      "description": "Update AI settings",
+      "request": {
+        "type": "object",
+        "required": ["updates"],
+        "properties": {
+          "updates": {
+            "type": "object",
+            "properties": {
+              "defaultModelId": {"type": "string"},
+              "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+              "maxTokens": {"type": "number", "minimum": 1, "maximum": 100000},
+              "defaultProvider": {"type": "string"},
+              "autoSelectBestModel": {"type": "boolean"},
+              "preferredModelIds": {"type": "array", "items": {"type": "string"}},
+              "systemPrompt": {"type": "string"},
+              "streamResponses": {"type": "boolean"},
+              "autoSummarize": {"type": "boolean"},
+              "enableMCP": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "response": {
+        "$ref": "#/channels/settings:get/response"
+      },
+      "errors": [
+        {
+          "code": "VALIDATION_ERROR",
+          "message": "Invalid AI settings values"
+        },
+        {
+          "code": "STORAGE_ERROR",
+          "message": "Failed to save settings"
+        }
+      ]
+    },
+    "settings:updateUI": {
+      "description": "Update UI settings",
+      "request": {
+        "type": "object",
+        "required": ["updates"],
+        "properties": {
+          "updates": {
+            "type": "object",
+            "properties": {
+              "theme": {"type": "string", "enum": ["dark", "light"]},
+              "notifications": {"type": "boolean"},
+              "wordCloud": {
+                "type": "object",
+                "properties": {
+                  "maxWordsPerSubject": {"type": "number", "minimum": 1, "maximum": 1000},
+                  "relatedWordThreshold": {"type": "number", "minimum": 0, "maximum": 1},
+                  "minWordFrequency": {"type": "number", "minimum": 1},
+                  "showSummaryKeywords": {"type": "boolean"},
+                  "fontScaleMin": {"type": "number", "minimum": 1},
+                  "fontScaleMax": {"type": "number"},
+                  "colorScheme": {"type": "string"},
+                  "layoutDensity": {"type": "string"}
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "response": {
+        "$ref": "#/channels/settings:get/response"
+      },
+      "errors": [
+        {
+          "code": "VALIDATION_ERROR",
+          "message": "Invalid UI settings values"
+        }
+      ]
+    },
+    "settings:updateProposals": {
+      "description": "Update proposal settings",
+      "request": {
+        "type": "object",
+        "required": ["updates"],
+        "properties": {
+          "updates": {
+            "type": "object",
+            "properties": {
+              "matchWeight": {"type": "number", "minimum": 0, "maximum": 1},
+              "recencyWeight": {"type": "number", "minimum": 0, "maximum": 1},
+              "recencyWindow": {"type": "number", "minimum": 0},
+              "minJaccard": {"type": "number", "minimum": 0, "maximum": 1},
+              "maxProposals": {"type": "number", "minimum": 1, "maximum": 50}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "response": {
+        "$ref": "#/channels/settings:get/response"
+      }
+    },
+    "settings:setDefaultModel": {
+      "description": "Convenience method to set default AI model",
+      "request": {
+        "type": "object",
+        "required": ["modelId"],
+        "properties": {
+          "modelId": {
+            "type": ["string", "null"],
+            "description": "Model ID or null to clear"
+          }
+        }
+      },
+      "response": {
+        "$ref": "#/channels/settings:get/response"
+      }
+    },
+    "settings:setTheme": {
+      "description": "Convenience method to set UI theme",
+      "request": {
+        "type": "object",
+        "required": ["theme"],
+        "properties": {
+          "theme": {
+            "type": "string",
+            "enum": ["dark", "light"]
+          }
+        }
+      },
+      "response": {
+        "$ref": "#/channels/settings:get/response"
+      }
+    }
+  }
+}

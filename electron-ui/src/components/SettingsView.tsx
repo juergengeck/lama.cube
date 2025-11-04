@@ -27,6 +27,7 @@ import { lamaBridge } from '@/bridge/lama-bridge'
 import { ipcStorage } from '@/services/ipc-storage'
 import InstancesView from './InstancesView'
 import { MCPSettings } from './settings/MCPSettings'
+import { AISettingsPanel, UISettingsPanel, ProposalSettingsPanel, SettingsErrorBoundary } from './settings'
 
 interface NetworkSettings {
   relayServer: string
@@ -134,6 +135,7 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
   })
 
   const [hasChanges, setHasChanges] = useState(false)
+  const [activeTab, setActiveTab] = useState<'general' | 'ai' | 'ui' | 'proposals' | 'mcp'>('general')
 
   useEffect(() => {
     loadModels()
@@ -755,9 +757,93 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
         </CardHeader>
       </Card>
 
+      {/* Tab Navigation */}
+      <div className="mb-4 flex space-x-2 border-b">
+        <Button
+          variant={activeTab === 'general' ? 'default' : 'ghost'}
+          onClick={() => setActiveTab('general')}
+          className="rounded-b-none"
+        >
+          General
+        </Button>
+        <Button
+          variant={activeTab === 'ai' ? 'default' : 'ghost'}
+          onClick={() => setActiveTab('ai')}
+          className="rounded-b-none"
+        >
+          <Brain className="h-4 w-4 mr-2" />
+          AI Settings
+        </Button>
+        <Button
+          variant={activeTab === 'ui' ? 'default' : 'ghost'}
+          onClick={() => setActiveTab('ui')}
+          className="rounded-b-none"
+        >
+          <Monitor className="h-4 w-4 mr-2" />
+          UI Settings
+        </Button>
+        <Button
+          variant={activeTab === 'proposals' ? 'default' : 'ghost'}
+          onClick={() => setActiveTab('proposals')}
+          className="rounded-b-none"
+        >
+          <Sparkles className="h-4 w-4 mr-2" />
+          Proposals
+        </Button>
+        <Button
+          variant={activeTab === 'mcp' ? 'default' : 'ghost'}
+          onClick={() => setActiveTab('mcp')}
+          className="rounded-b-none"
+        >
+          <Code className="h-4 w-4 mr-2" />
+          MCP
+        </Button>
+      </div>
+
       {/* Settings Content */}
       <ScrollArea className="flex-1">
         <div className="space-y-4">
+          {/* AI Settings Panel */}
+          {activeTab === 'ai' && (
+            <SettingsErrorBoundary>
+              <Card>
+                <CardContent className="pt-6">
+                  <AISettingsPanel />
+                </CardContent>
+              </Card>
+            </SettingsErrorBoundary>
+          )}
+
+          {/* UI Settings Panel */}
+          {activeTab === 'ui' && (
+            <SettingsErrorBoundary>
+              <Card>
+                <CardContent className="pt-6">
+                  <UISettingsPanel />
+                </CardContent>
+              </Card>
+            </SettingsErrorBoundary>
+          )}
+
+          {/* Proposal Settings Panel */}
+          {activeTab === 'proposals' && (
+            <SettingsErrorBoundary>
+              <Card>
+                <CardContent className="pt-6">
+                  <ProposalSettingsPanel />
+                </CardContent>
+              </Card>
+            </SettingsErrorBoundary>
+          )}
+
+          {/* MCP Settings Tab */}
+          {activeTab === 'mcp' && (
+            <MCPSettings />
+          )}
+
+          {/* General Settings Tab */}
+          {activeTab === 'general' && (
+            <>
           {/* Profile Settings */}
           <Card>
             <CardHeader>
@@ -1089,9 +1175,6 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
               </div>
             </CardContent>
           </Card>
-
-          {/* MCP Server Configuration */}
-          <MCPSettings />
 
           {/* Privacy Settings */}
           <Card>
@@ -1661,8 +1744,8 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full"
                   onClick={onLogout}
                 >
@@ -1671,6 +1754,8 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
                 </Button>
               </CardContent>
             </Card>
+          )}
+          </>
           )}
         </div>
       </ScrollArea>

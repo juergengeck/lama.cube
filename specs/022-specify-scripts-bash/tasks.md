@@ -27,11 +27,11 @@
 
 **Purpose**: Type definitions and recipe registration required by all user stories
 
-- [ ] T001 [P] Create UserSettings type definitions in specs/022-specify-scripts-bash/contracts/user-settings-types.ts (copy from contract)
-- [ ] T002 [P] Create migration contract types in specs/022-specify-scripts-bash/contracts/migration-contract.ts (copy from contract)
-- [ ] T003 Add UserSettings interface to @OneCoreTypes.d.ts extending OneVersionedObjectInterfaces
-- [ ] T004 Create UserSettings ONE.core recipe in main/recipes/user-settings-recipe.ts following data-model.md
-- [ ] T005 Register UserSettings recipe in main/core/node-one-core.ts initialization
+- [X] T001 [P] Create UserSettings type definitions in main/types/user-settings-types.ts (copied from contract)
+- [X] T002 [P] Create migration contract types in main/types/migration-contract.ts (copied from contract)
+- [X] T003 Add UserSettings interface to @OneCoreTypes.d.ts extending OneVersionedObjectInterfaces
+- [X] T004 Create UserSettings ONE.core recipe in main/recipes/user-settings-recipe.ts following data-model.md
+- [X] T005 Register UserSettings recipe in main/recipes/index.ts LamaRecipes array
 
 ---
 
@@ -41,15 +41,15 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 Create UserSettingsManager class in main/core/user-settings-manager.ts with methods: getSettings(), updateSettings(), updateAI(), updateUI(), updateProposals()
-- [ ] T007 Implement in-memory cache with invalidation in UserSettingsManager per research.md Decision 4
-- [ ] T008 Implement settings validation helpers in main/core/user-settings-manager.ts using contracts/user-settings-types.ts validators
-- [ ] T009 Create IPC handlers in main/ipc/handlers/user-settings.ts implementing all 6 channels from contracts/ipc-user-settings.json
-- [ ] T010 Register user-settings IPC handlers in main/ipc/controller.ts
-- [ ] T011 [P] Create React useSettings hook in electron-ui/src/hooks/useSettings.ts wrapping IPC calls
-- [ ] T012 [P] Update electron-preload.ts to expose user-settings IPC channels via electronAPI
+- [X] T006 Create UserSettingsManager class in main/core/user-settings-manager.ts with methods: getSettings(), updateSettings(), updateAI(), updateUI(), updateProposals()
+- [X] T007 Implement in-memory cache with invalidation in UserSettingsManager per research.md Decision 4
+- [X] T008 Implement settings validation helpers in main/core/user-settings-manager.ts using contracts/user-settings-types.ts validators
+- [X] T009 Create IPC handlers in main/ipc/handlers/user-settings.ts implementing all 6 channels from contracts/ipc-user-settings.json
+- [X] T010 Register user-settings IPC handlers in main/ipc/controller.ts
+- [X] T011 [P] Create React useSettings hook in electron-ui/src/hooks/useSettings.ts wrapping IPC calls
+- [X] T012 [P] User-settings IPC channels already exposed via electronAPI.invoke() generic interface
 
-**Checkpoint**: Foundation ready - user story implementation can now begin in parallel
+**Checkpoint**: ✅ Foundation ready - user story implementation can now begin in parallel
 
 ---
 
@@ -61,16 +61,16 @@
 
 ### Implementation for User Story 1
 
-- [ ] T013 [P] [US1] Update LamaConfig interface in main/config/lama-config.ts to add network.direct section per data-model.md
-- [ ] T014 [P] [US1] Add DEFAULT_USER_SETTINGS export to contracts/user-settings-types.ts matching data-model.md defaults
-- [ ] T015 [US1] Create getSettings() implementation in UserSettingsManager that queries by ID hash and falls back to defaults
-- [ ] T016 [US1] Create updateSettings() implementation in UserSettingsManager that validates, stores, and invalidates cache
-- [ ] T017 [P] [US1] Update CLAUDE.md with "Configuration Architecture" section documenting the 3 layers (bootstrap/user/entity)
-- [ ] T018 [P] [US1] Create quickstart.md in docs/config-quickstart.md (copy from specs/022-specify-scripts-bash/quickstart.md)
-- [ ] T019 [US1] Update specs/022-specify-scripts-bash/quickstart.md with decision tree flowchart per quickstart.md
-- [ ] T020 [US1] Add configuration layer examples to CLAUDE.md showing when to use each layer
+- [X] T013 [P] [US1] Update LamaConfig interface in main/config/lama-config.ts to add network.direct section with backward compatibility
+- [X] T014 [P] [US1] DEFAULT_USER_SETTINGS export already exists in main/types/user-settings-types.ts
+- [X] T015 [US1] getSettings() implementation already complete in UserSettingsManager (T006)
+- [X] T016 [US1] updateSettings() implementation already complete in UserSettingsManager (T006)
+- [X] T017 [P] [US1] Update CLAUDE.md with "Configuration Architecture" section documenting the 3 layers (bootstrap/user/entity)
+- [X] T018 [P] [US1] Create quickstart.md in docs/config-quickstart.md (copied from specs)
+- [X] T019 [US1] Decision tree flowchart already present in specs/022-specify-scripts-bash/quickstart.md
+- [X] T020 [US1] Configuration layer examples and decision tree added to CLAUDE.md
 
-**Checkpoint**: At this point, the 3-layer architecture should be fully defined and documented. Developers can read documentation and correctly identify where new config belongs.
+**Checkpoint**: ✅ The 3-layer architecture is fully defined and documented. Developers can read documentation and correctly identify where new config belongs.
 
 ---
 
@@ -102,15 +102,15 @@
 
 ### Implementation for User Story 2
 
-- [ ] T028 [P] [US2] Update SettingsView.tsx in electron-ui/src/components/SettingsView.tsx to use useSettings hook instead of direct IPC
-- [ ] T029 [P] [US2] Create AI Settings panel in SettingsView.tsx for all UserSettings.ai fields (temperature, maxTokens, defaultProvider, etc.)
-- [ ] T030 [P] [US2] Create UI Settings panel in SettingsView.tsx for theme and wordCloud preferences
-- [ ] T031 [P] [US2] Create Proposal Settings panel in SettingsView.tsx for matchWeight, recencyWeight, minJaccard, maxProposals
-- [ ] T032 [US2] Implement settings:updateAI IPC handler in main/ipc/handlers/user-settings.ts with validation
-- [ ] T033 [US2] Implement settings:updateUI IPC handler in main/ipc/handlers/user-settings.ts with validation
-- [ ] T034 [US2] Implement settings:updateProposals IPC handler in main/ipc/handlers/user-settings.ts with validation
+- [x] T028 [P] [US2] Update SettingsView.tsx in electron-ui/src/components/SettingsView.tsx to use useSettings hook instead of direct IPC (integrated with tab navigation)
+- [x] T029 [P] [US2] Create AI Settings panel in SettingsView.tsx for all UserSettings.ai fields (temperature, maxTokens, defaultProvider, etc.)
+- [x] T030 [P] [US2] Create UI Settings panel in SettingsView.tsx for theme and wordCloud preferences
+- [x] T031 [P] [US2] Create Proposal Settings panel in SettingsView.tsx for matchWeight, recencyWeight, minJaccard, maxProposals
+- [x] T032 [US2] Implement settings:updateAI IPC handler in main/ipc/handlers/user-settings.ts with validation (completed in Phase 2)
+- [x] T033 [US2] Implement settings:updateUI IPC handler in main/ipc/handlers/user-settings.ts with validation (completed in Phase 2)
+- [x] T034 [US2] Implement settings:updateProposals IPC handler in main/ipc/handlers/user-settings.ts with validation (completed in Phase 2)
 - [ ] T035 [US2] Verify CHUM sync behavior for UserSettings (last-write-wins) per research.md Decision 3
-- [ ] T036 [US2] Add updatedAt timestamp update in UserSettingsManager.updateSettings() for sync tracking
+- [x] T036 [US2] Add updatedAt timestamp update in UserSettingsManager.updateSettings() for sync tracking (completed in Phase 2)
 
 **Checkpoint**: At this point, all user preferences should sync across instances via CHUM within 30 seconds. Settings UI should be fully functional.
 
@@ -142,13 +142,13 @@
 
 **Purpose**: Documentation, validation, and final cleanup
 
-- [ ] T046 [P] Add JSDoc comments to UserSettingsManager public methods with @example usage
-- [ ] T047 [P] Add JSDoc comments to IPC handlers documenting request/response schemas
+- [x] T046 [P] Add JSDoc comments to UserSettingsManager public methods with @example usage
+- [x] T047 [P] Add JSDoc comments to IPC handlers documenting request/response schemas
 - [ ] T048 Update specs/022-specify-scripts-bash/IMPLEMENTATION-STATUS.md with completion status and metrics
 - [ ] T049 Run quickstart.md validation with new developer (measure time to identify config location)
 - [ ] T050 [P] Add performance metrics logging for cache hit rate in UserSettingsManager
 - [ ] T051 Verify rollback procedure documented in migration guide matches research.md Decision 5
-- [ ] T052 Add error boundary in SettingsView.tsx for graceful settings load failures
+- [x] T052 Add error boundary in SettingsView.tsx for graceful settings load failures
 - [ ] T053 Update plan.md "Status" sections to mark all phases as COMPLETE
 
 ---

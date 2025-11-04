@@ -133,6 +133,24 @@ const chatHandlers = {
       content: text,  // Map 'text' to 'content'
       attachments
     });
+
+    // Trigger AI response if this is an AI topic
+    if (response.success && nodeOneCore.aiAssistantModel) {
+      try {
+        const isAITopic = nodeOneCore.aiAssistantModel.isAITopic(conversationId);
+        if (isAITopic) {
+          const senderId = nodeOneCore.ownerId;
+          console.log(`[Chat] Triggering AI response for topic: ${conversationId}`);
+          // Fire and forget - AI response happens in background
+          nodeOneCore.aiAssistantModel.processMessage(conversationId, text, senderId).catch((error: Error) => {
+            console.error('[Chat] AI processMessage error:', error);
+          });
+        }
+      } catch (error: any) {
+        console.error('[Chat] Error checking AI topic:', error);
+      }
+    }
+
     return {
       success: response.success,
       data: response.data,

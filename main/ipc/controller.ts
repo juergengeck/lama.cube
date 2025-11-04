@@ -36,6 +36,7 @@ import { registerLlmConfigHandlers } from './handlers/llm-config.js';
 // @ts-ignore - TS file with named export
 import { proposalHandlers } from './handlers/proposals.js';
 import mcpHandlers from './handlers/mcp.js';
+import createUserSettingsHandlers from './handlers/user-settings.js';
 
 // Node error type
 interface NodeError extends Error {
@@ -174,13 +175,19 @@ class IPCController {
     this.handle('crypto:getCertificates', cryptoHandlers.getCertificates);
     this.handle('crypto:export', cryptoHandlers.exportCryptoObject);
 
-    // Settings handlers
+    // Settings handlers (old - to be deprecated)
     this.handle('settings:get', settingsHandlers.getSetting);
     this.handle('settings:set', settingsHandlers.setSetting);
     this.handle('settings:getAll', settingsHandlers.getSettings);
     this.handle('settings:syncIoM', settingsHandlers.syncIoMSettings);
     this.handle('settings:subscribe', settingsHandlers.subscribeToSettings);
     this.handle('settings:getConfig', settingsHandlers.getInstanceConfig);
+
+    // User Settings handlers (new unified settings)
+    const userSettingsHandlers = createUserSettingsHandlers(nodeOneCore);
+    Object.entries(userSettingsHandlers).forEach(([channel, handler]) => {
+      this.handle(channel, handler);
+    });
 
     // AI/LLM handlers
     this.handle('ai:chat', aiHandlers.chat);

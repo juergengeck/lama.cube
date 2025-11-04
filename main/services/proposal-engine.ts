@@ -275,6 +275,7 @@ export class ProposalEngine {
 
   /**
    * Fetch all subjects from ONE.core by querying all topics
+   * INCLUDES memory subjects from the "lama" topic
    */
   private async fetchAllSubjects(): Promise<CoreSubject[]> {
     try {
@@ -294,7 +295,11 @@ export class ProposalEngine {
         }
       }
 
-      console.log(`[ProposalEngine] Fetching subjects from ${topicIds.size} topics`);
+      // CRITICAL: Explicitly include "lama" topic for memory subjects
+      // Even if no channel exists, memories may have subjects/keywords
+      topicIds.add('lama');
+
+      console.log(`[ProposalEngine] Fetching subjects from ${topicIds.size} topics (including memory topic "lama")`);
 
       // Fetch subjects from each topic
       const allSubjects: CoreSubject[] = [];
@@ -303,10 +308,13 @@ export class ProposalEngine {
           const subjects = (await (this.topicAnalysisModel as { getSubjects(topicId: string): Promise<CoreSubject[]> }).getSubjects(topicId));
           if (subjects && subjects.length > 0) {
             allSubjects.push(...subjects);
-            console.log(`[ProposalEngine] Found ${subjects.length} subjects in topic ${topicId}`);
+            console.log(`[ProposalEngine] Found ${subjects.length} subjects in topic ${topicId}${topicId === 'lama' ? ' (MEMORY)' : ''}`);
           }
         } catch (error) {
-          console.error(`[ProposalEngine] Error fetching subjects for topic ${topicId}:`, error);
+          // Don't log error for "lama" topic if it has no subjects yet
+          if (topicId !== 'lama') {
+            console.error(`[ProposalEngine] Error fetching subjects for topic ${topicId}:`, error);
+          }
         }
       }
 

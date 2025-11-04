@@ -17,6 +17,24 @@ export class MemoryTools {
   getToolDefinitions() {
     return [
       {
+        name: 'memory:store',
+        description: 'Store a new memory (insight, learning, or important information) to your long-term memory. Use this to remember things across conversations.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            content: {
+              type: 'string',
+              description: 'The memory content to store - a fact, insight, or important information you want to remember'
+            },
+            category: {
+              type: 'string',
+              description: 'Optional category/tag for organizing memories (e.g., "user-preference", "technical-knowledge", "conversation-context")'
+            }
+          },
+          required: ['content']
+        }
+      },
+      {
         name: 'memory:search',
         description: 'Search your own conversation history (LAMA topic) for relevant past discussions. Use this to recall what you\'ve learned.',
         inputSchema: {
@@ -77,6 +95,9 @@ export class MemoryTools {
     // Access control is enforced by the topic system itself
 
     switch (toolName) {
+      case 'memory:store':
+        return await this.storeMemory(params.content, params.category)
+
       case 'memory:search':
         return await this.searchMemory(params.query, params.limit || 10)
 
@@ -94,6 +115,133 @@ export class MemoryTools {
           }],
           isError: true
         }
+    }
+  }
+
+  /**
+   * Store a new memory to the LAMA topic with full journal entry
+   * Creates: Message + Keywords + Subject + Summary
+   */
+  async storeMemory(content, category) {
+    try {
+      console.log(`[MemoryTools] Storing memory (category: ${category || 'general'})`)
+
+      // Enter LAMA topic room
+      const topicRoom = await this.nodeOneCore.topicModel.enterTopicRoom('lama')
+
+      // Create message object
+      const message = {
+        text: content,
+        timestamp: Date.now(),
+        author: 'LAMA',  // Mark as system memory
+        category: category || 'general'
+      }
+
+      // Post to channel (stores the memory)
+      await topicRoom.postMessage(message)
+      console.log(`[MemoryTools] Memory message stored`)
+
+      // Extract keywords, subject, summary using LLM analysis
+      // Run analysis in background (non-blocking)
+      setImmediate(async () => {
+        try {
+          await this.analyzeAndJournalize('lama', content, category)
+        } catch (error) {
+          console.error('[MemoryTools] Failed to create journal entry:', error)
+        }
+      })
+
+      return {
+        content: [{
+          type: 'text',
+          text: `Memory stored successfully${category ? ` (category: ${category})` : ''} - journal entry being created`
+        }]
+      }
+    } catch (error) {
+      console.error('[MemoryTools] Failed to store memory:', error)
+      return {
+        content: [{
+          type: 'text',
+          text: `Failed to store memory: ${error.message}`
+        }],
+        isError: true
+      }
+    }
+  }
+
+  /**
+   * Analyze memory content and create journal entry (keywords, subject, summary)
+   */
+  async analyzeAndJournalize(topicId, content, category) {
+    const topicAnalysisModel = this.nodeOneCore.topicAnalysisModel
+    const llmManager = this.nodeOneCore.llmManager
+
+    if (!topicAnalysisModel || !llmManager) {
+      console.warn('[MemoryTools] Topic analysis or LLM not available, skipping journalization')
+      return
+    }
+
+    console.log(`[MemoryTools] Creating journal entry for memory in topic: ${topicId}`)
+
+    // Use LLM to extract keywords, subject, and summary
+    const analysisPrompt = [{
+      role: 'user',
+      content: `Extract keywords, identify the main subject, and create a brief summary for this memory:\n\n"${content}"\n\nCategory: ${category || 'general'}`
+    }]
+
+    try {
+      // Use chatWithAnalysis to get structured analysis
+      const result = await llmManager.chatWithAnalysis(analysisPrompt, undefined, {
+        temperature: 0,
+        disableTools: true
+      })
+
+      console.log(`[MemoryTools] Analysis result:`, {
+        hasSubjects: !!result?.analysis?.subjects,
+        hasSummary: !!result?.analysis?.summaryUpdate,
+        subjectCount: result?.analysis?.subjects?.length || 0
+      })
+
+      // Process subjects and keywords
+      if (result?.analysis?.subjects && Array.isArray(result.analysis.subjects)) {
+        for (const subjectData of result.analysis.subjects) {
+          const { name, description, keywords } = subjectData
+          const keywordTerms = keywords?.map(k => k.term) || []
+
+          console.log(`[MemoryTools] Creating subject: ${name} with ${keywordTerms.length} keywords`)
+
+          // Create or get subject
+          const subject = await topicAnalysisModel.createSubject(
+            topicId,
+            keywordTerms,
+            name,
+            description || `Subject identified in ${category || 'general'} category`,
+            0.8  // confidence score
+          )
+
+          // Add each keyword to subject
+          for (const kw of keywords || []) {
+            await topicAnalysisModel.addKeywordToSubject(topicId, kw.term, subject.idHash)
+          }
+
+          console.log(`[MemoryTools] ✅ Subject created: ${name}`)
+        }
+      }
+
+      // Update summary
+      if (result?.analysis?.summaryUpdate) {
+        await topicAnalysisModel.updateSummary(
+          topicId,
+          result.analysis.summaryUpdate,
+          0.8  // confidence score
+        )
+        console.log(`[MemoryTools] ✅ Summary updated`)
+      }
+
+      console.log(`[MemoryTools] ✅ Journal entry complete for topic: ${topicId}`)
+    } catch (error) {
+      console.error('[MemoryTools] Analysis failed:', error)
+      throw error
     }
   }
 

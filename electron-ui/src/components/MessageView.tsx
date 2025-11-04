@@ -24,6 +24,7 @@ interface MessageViewProps {
   messages: Message[]
   currentUserId?: string
   onSendMessage: (content: string, attachments?: MessageAttachment[]) => Promise<void>
+  onStopStreaming?: () => void // Stop AI streaming
   placeholder?: string
   showSender?: boolean
   loading?: boolean
@@ -39,6 +40,7 @@ export function MessageView({
   messages,
   currentUserId = 'user-1',
   onSendMessage,
+  onStopStreaming,
   placeholder = 'Type a message...',
   showSender = true,
   loading = false,
@@ -474,10 +476,12 @@ export function MessageView({
       {/* Message input */}
       <EnhancedMessageInput
         onSendMessage={handleEnhancedSend}
+        onStopStreaming={onStopStreaming}
         onHashtagClick={handleHashtagClick}
         placeholder={placeholder}
         theme="dark"
         conversationId={topicId}
+        isStreaming={isAIProcessing}
       />
     </div>
   )

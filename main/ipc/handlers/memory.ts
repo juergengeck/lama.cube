@@ -173,5 +173,95 @@ export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
     }
   );
 
+  /**
+   * Get all journal entries (subjects) sorted chronologically
+   */
+  ipcMain.handle('memory:journal:list', async (event: IpcMainInvokeEvent, params?: { limit?: number }) => {
+    try {
+      if (!nodeOneCore?.subjectHandler) {
+        throw new Error('Subject Handler not initialized');
+      }
+
+      // Get all subject ID hashes
+      const idHashes = await nodeOneCore.subjectHandler.listSubjects();
+
+      // Retrieve all subjects with details
+      const subjects = await Promise.all(
+        idHashes.map(async (idHash: any) => {
+          const subject = await nodeOneCore.subjectHandler.getSubject(idHash);
+          if (!subject) return null;
+
+          return {
+            idHash,
+            id: subject.id,
+            name: subject.name,
+            description: subject.description,
+            created: subject.created,
+            modified: subject.modified,
+            metadata: subject.metadata ? Object.fromEntries(subject.metadata) : {}
+          };
+        })
+      );
+
+      // Filter out nulls and sort by created date (newest first)
+      const validSubjects = subjects.filter((s: any) => s !== null);
+      validSubjects.sort((a: any, b: any) => (b.created || 0) - (a.created || 0));
+
+      // Apply limit if specified
+      const limited = params?.limit ? validSubjects.slice(0, params.limit) : validSubjects;
+
+      return {
+        entries: limited,
+        total: validSubjects.length
+      };
+    } catch (error) {
+      console.error('[IPC:memory:journal:list] Error:', error);
+      throw error;
+    }
+  });
+
+  /**
+   * Get a single journal entry (subject) with HTML content
+   */
+  ipcMain.handle('memory:journal:get', async (event: IpcMainInvokeEvent, params: { idHash: string }) => {
+    try {
+      if (!nodeOneCore?.subjectHandler) {
+        throw new Error('Subject Handler not initialized');
+      }
+
+      if (!nodeOneCore?.fileStorageService) {
+        throw new Error('File Storage Service not initialized');
+      }
+
+      // Get subject details
+      const subject = await nodeOneCore.subjectHandler.getSubject(params.idHash);
+
+      if (!subject) {
+        return null;
+      }
+
+      // Get the HTML file path
+      const filePath = nodeOneCore.fileStorageService.getFilePath(params.idHash, 'subjects');
+
+      // Read raw HTML for display
+      const html = await nodeOneCore.fileStorageService.readRawHtml(params.idHash, 'subjects');
+
+      return {
+        idHash: params.idHash,
+        id: subject.id,
+        name: subject.name,
+        description: subject.description,
+        created: subject.created,
+        modified: subject.modified,
+        metadata: subject.metadata ? Object.fromEntries(subject.metadata) : {},
+        filePath,
+        html
+      };
+    } catch (error) {
+      console.error('[IPC:memory:journal:get] Error:', error);
+      throw error;
+    }
+  });
+
   console.log('[IPC] ✅ Memory handlers registered');
 }

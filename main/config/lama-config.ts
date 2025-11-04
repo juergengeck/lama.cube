@@ -8,9 +8,22 @@ export interface LamaConfig {
         email: string;
         secret: string;
         directory: string;
+        memoryDirectory?: string;  // Path for memory storage (subjects, keywords, HTML exports)
         wipeStorage?: boolean;
     };
-    commServer: {
+    network: {
+        commServer: {
+            url: string;
+            enabled: boolean;
+        };
+        direct: {
+            enabled: boolean;
+            endpoint: string;
+        };
+        priority: 'direct' | 'commserver' | 'both';
+    };
+    // Legacy commServer field for backward compatibility
+    commServer?: {
         url: string;
     };
     web: {
@@ -27,10 +40,19 @@ const defaultConfig: LamaConfig = {
         email: 'user@lama.local',
         secret: '', // Must be provided
         directory: path.join(process.cwd(), 'OneDB'),  // Keep app data in project directory
+        memoryDirectory: path.join(process.cwd(), 'memory'),  // Memory storage (subjects, keywords, HTML)
         wipeStorage: false
     },
-    commServer: {
-        url: 'wss://comm.refinio.one'  // Production commserver (was: wss://comm10.dev.refinio.one)
+    network: {
+        commServer: {
+            url: 'wss://comm.refinio.one',  // Production commserver
+            enabled: true
+        },
+        direct: {
+            enabled: false,
+            endpoint: 'ws://localhost:8765'
+        },
+        priority: 'commserver'
     },
     web: {
         url: undefined  // No default web URL - must be configured
@@ -51,10 +73,15 @@ function parseCLIArgs(): Partial<LamaConfig> {
         const arg = args[i];
 
         if (arg.startsWith('--commserver=') || arg.startsWith('--comm-server=')) {
-            config.commServer = { url: arg.split('=')[1] };
+            if (!config.network) config.network = {};
+            if (!config.network.commServer) config.network.commServer = {};
+            config.network.commServer.url = arg.split('=')[1];
         } else if (arg.startsWith('--storage=') || arg.startsWith('--instance-directory=')) {
             if (!config.instance) config.instance = {};
             config.instance.directory = arg.split('=')[1];
+        } else if (arg.startsWith('--memory-directory=')) {
+            if (!config.instance) config.instance = {};
+            config.instance.memoryDirectory = arg.split('=')[1];
         } else if (arg.startsWith('--instance-name=')) {
             if (!config.instance) config.instance = {};
             config.instance.name = arg.split('=')[1];
@@ -134,12 +161,16 @@ export async function loadConfig(): Promise<LamaConfig> {
         config.instance.directory = process.env.LAMA_INSTANCE_DIRECTORY;
     }
 
+    if (process.env.LAMA_MEMORY_DIRECTORY) {
+        config.instance.memoryDirectory = process.env.LAMA_MEMORY_DIRECTORY;
+    }
+
     if (process.env.LAMA_WIPE_STORAGE !== undefined) {
         config.instance.wipeStorage = process.env.LAMA_WIPE_STORAGE === 'true';
     }
 
     if (process.env.LAMA_COMM_SERVER_URL) {
-        config.commServer.url = process.env.LAMA_COMM_SERVER_URL;
+        config.network.commServer.url = process.env.LAMA_COMM_SERVER_URL;
     }
 
     if (process.env.LAMA_WEB_URL) {
@@ -157,11 +188,23 @@ export async function loadConfig(): Promise<LamaConfig> {
         config = mergeConfig(config, cliConfig);
     }
 
+    // Backward compatibility: Migrate legacy commServer to network.commServer
+    if ((config as any).commServer && (config as any).commServer.url) {
+        console.log('[LamaConfig] Migrating legacy commServer config to network.commServer');
+        config.network.commServer.url = (config as any).commServer.url;
+        delete (config as any).commServer;
+    }
+
     console.log('[LamaConfig] Final configuration:', {
         instanceName: config.instance.name,
         instanceEmail: config.instance.email,
         instanceDirectory: config.instance.directory,
-        commServerUrl: config.commServer.url,
+        memoryDirectory: config.instance.memoryDirectory,
+        commServerUrl: config.network.commServer.url,
+        commServerEnabled: config.network.commServer.enabled,
+        directEnabled: config.network.direct.enabled,
+        directEndpoint: config.network.direct.endpoint,
+        networkPriority: config.network.priority,
         webUrl: config.web.url,
         wipeStorage: config.instance.wipeStorage,
         logLevel: config.logging.level

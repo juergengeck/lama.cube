@@ -318,6 +318,40 @@ const aiHandlers = {
     } catch (error: any) {
       return { success: false, error: error.message };
     }
+  },
+
+  /**
+   * Process a message in an AI topic
+   * Generates AI response with keyword/subject extraction
+   */
+  async processMessage(
+    event: IpcMainInvokeEvent,
+    { topicId, message, senderId }: { topicId: string; message: string; senderId: string }
+  ) {
+    try {
+      const handler = getAIHandler();
+      const response = await handler.processMessage(topicId, message, senderId);
+      return { success: true, response };
+    } catch (error: any) {
+      console.error('[AI IPC] processMessage error:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Stop streaming for a specific topic
+   */
+  async stopStreaming(
+    event: IpcMainInvokeEvent,
+    { topicId }: { topicId: string }
+  ) {
+    try {
+      const cancelled = llmManager.stopStreaming(topicId);
+      return { success: true, cancelled };
+    } catch (error: any) {
+      console.error('[AI IPC] stopStreaming error:', error);
+      return { success: false, error: error.message };
+    }
   }
 };
 

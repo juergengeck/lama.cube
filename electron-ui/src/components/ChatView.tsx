@@ -219,6 +219,21 @@ export const ChatView = memo(function ChatView({
     }
   }
 
+  const handleStopStreaming = async () => {
+    console.log('[ChatView] Stopping streaming for:', conversationId)
+    try {
+      const result = await window.electronAPI.invoke('ai:stopStreaming', { topicId: conversationId })
+      console.log('[ChatView] Stop streaming result:', result)
+      if (result.success) {
+        setIsAIProcessing(false)
+        setAiStreamingContent('')
+        onProcessingChange?.(false)
+      }
+    } catch (error) {
+      console.error('[ChatView] Failed to stop streaming:', error)
+    }
+  }
+
   // Test function to trigger message update
   const testMessageUpdate = useCallback(async () => {
     console.log('[ChatView] TEST: Triggering message update for:', conversationId)
@@ -356,6 +371,7 @@ export const ChatView = memo(function ChatView({
           messages={messages}
           currentUserId={user?.id}
           onSendMessage={handleSendMessage}
+          onStopStreaming={handleStopStreaming}
           placeholder="Type a message..."
           showSender={true}
           loading={loading}

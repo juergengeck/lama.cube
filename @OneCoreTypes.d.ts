@@ -203,6 +203,46 @@ declare module '@OneObjectInterfaces' {
         updatedAt: number;
     }
 
+    // UserSettings - Unified user settings (consolidates GlobalLLMSettings, WordCloudSettings, ProposalConfig)
+    export interface UserSettings {
+        $type$: 'UserSettings';
+        userEmail: string; // ID field - user identifier
+        ai: {
+            defaultModelId?: string;
+            temperature: number;
+            maxTokens: number;
+            defaultProvider: string;
+            autoSelectBestModel: boolean;
+            preferredModelIds: string[];
+            systemPrompt?: string;
+            streamResponses: boolean;
+            autoSummarize: boolean;
+            enableMCP: boolean;
+        };
+        ui: {
+            theme: 'dark' | 'light';
+            notifications: boolean;
+            wordCloud: {
+                maxWordsPerSubject: number;
+                relatedWordThreshold: number;
+                minWordFrequency: number;
+                showSummaryKeywords: boolean;
+                fontScaleMin: number;
+                fontScaleMax: number;
+                colorScheme: string;
+                layoutDensity: string;
+            };
+        };
+        proposals: {
+            matchWeight: number;
+            recencyWeight: number;
+            recencyWindow: number;
+            minJaccard: number;
+            maxProposals: number;
+        };
+        updatedAt: number;
+    }
+
     // AvatarPreference - Stores avatar color preference for a person
     export interface AvatarPreference {
         $type$: 'AvatarPreference';
@@ -235,6 +275,7 @@ declare module '@OneObjectInterfaces' {
         MCPServer: MCPServer;
         MCPServerConfig: MCPServerConfig;
         ProposalConfig: ProposalConfig;
+        UserSettings: UserSettings;
         AvatarPreference: AvatarPreference;
     }
 }

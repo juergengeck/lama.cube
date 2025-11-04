@@ -73,11 +73,8 @@ npm run dist:all
 
 ### Cleanup & Utilities
 ```bash
-# Clear all ONE.core storage (PRESERVES MEMORIES)
+# Clear all ONE.core storage
 ./clear-all-storage.sh
-# Automatically backs up OneDB/memory-storage to /tmp/lama-memory-backup-{timestamp}
-# Restores memories after clearing other storage
-# Shows backup location and restore instructions
 
 # Clear specific data
 ./clear-storage.sh            # Clear main storage
@@ -88,11 +85,23 @@ npm run dist:all
 pkill -f Electron
 ```
 
-**Memory Storage Location**:
-- **Path**: `OneDB/memory-storage/` (alongside OneDB, NOT in dist/)
-- **Reason**: dist/ is build output and gets wiped on compilation
-- **Preservation**: clear-all-storage.sh automatically backs up and restores memories
-- **Subfolders**: subjects/, keywords/, associations/, metadata/
+**MCP Memory Storage & Journaling**:
+- **Storage**: Memories are stored in ONE.core as Message objects in the "lama" topic
+- **Location**: `OneDB/` (content-addressed storage, hashed filenames)
+- **Journal Entries**: Every memory automatically creates:
+  - **Keywords** - Extracted key terms from the memory content
+  - **Subject** - Main theme/topic identified by LLM analysis
+  - **Summary** - Brief summary integrated into topic summary
+  - All stored as versioned ONE.core objects linked to the memory
+- **Access**: Via MCP memory tools:
+  - `memory:store` - Store new memory + create journal entry (keywords, subject, summary)
+  - `memory:search` - Search past memories by keyword
+  - `memory:recent` - Get recent memories
+  - `memory:subjects` - Get learned subjects/themes across all memories
+- **Implementation**: `main/services/mcp/memory-tools.js`
+- **Analysis**: Uses `llmManager.chatWithAnalysis()` for keyword/subject extraction
+- **Topic**: All memories posted to the special "lama" topic for AI persistence
+- **Non-blocking**: Journal entry creation runs in background via `setImmediate()`
 
 ## Project Structure
 
@@ -145,6 +154,173 @@ lama.cube/                          # Electron desktop app
 ├── tsconfig.json                   # TypeScript config (main process)
 └── electron-builder.yml            # Installer configuration
 ```
+
+## Configuration Architecture
+
+**IMPORTANT**: LAMA uses a 3-layer configuration system. Always identify which layer your configuration belongs to before adding it.
+
+### Layer 1: Bootstrap Config (File-Based)
+
+**When to use**: Required before ONE.core starts, network settings, instance identity
+
+**File**: `lama.config.json` or `~/.lama/config.json`
+**Type**: `LamaConfig` interface
+**Loaded**: Once at startup
+**Precedence**: CLI args > Environment variables > Config file > Defaults
+
+```typescript
+interface LamaConfig {
+  instance: { name, email, secret, directory, wipeStorage };
+  network: {
+    commServer: { url, enabled };
+    direct: { enabled, endpoint };
+    priority: 'direct' | 'commserver' | 'both';
+  };
+  web: { url? };
+  logging: { level };
+}
+```
+
+**Examples**:
+- ✅ Instance name/email
+- ✅ ONE.core storage directory
+- ✅ CommServer URL
+- ✅ Direct P2P endpoint
+- ✅ Log level
+- ❌ User preferences (use Layer 2)
+- ❌ AI model settings (use Layer 2 or 3)
+
+**File**: `main/config/lama-config.ts`
+
+### Layer 2: User Settings (ONE.core Versioned)
+
+**When to use**: User preferences that sync across instances
+
+**Type**: `UserSettings` ONE.core object
+**ID Field**: `userEmail`
+**Sync**: Via CHUM protocol
+**Access**: Through `UserSettingsManager`
+
+```typescript
+interface UserSettings {
+  $type$: 'UserSettings';
+  userEmail: string;  // ID field
+  ai: {
+    defaultModelId?, temperature, maxTokens,
+    defaultProvider, autoSelectBestModel,
+    preferredModelIds, systemPrompt?,
+    streamResponses, autoSummarize, enableMCP
+  };
+  ui: {
+    theme: 'dark' | 'light',
+    notifications: boolean,
+    wordCloud: { /* 8 fields */ }
+  };
+  proposals: {
+    matchWeight, recencyWeight, recencyWindow,
+    minJaccard, maxProposals
+  };
+  updatedAt: number;
+}
+```
+
+**Examples**:
+- ✅ AI temperature/maxTokens
+- ✅ Default AI model
+- ✅ UI theme (dark/light)
+- ✅ Word cloud preferences
+- ✅ Proposal matching weights
+- ❌ Bootstrap parameters (use Layer 1)
+- ❌ Per-model auth tokens (use Layer 3)
+
+**Files**:
+- Manager: `main/core/user-settings-manager.ts`
+- Recipe: `main/recipes/user-settings-recipe.ts`
+- IPC: `main/ipc/handlers/user-settings.ts`
+- API: `main/api/handlers/SettingsHandler.ts`
+- React Hook (Electron): `electron-ui/src/hooks/useSettings.ts`
+
+**Platform Support**:
+- ✅ **Electron**: Via IPC (`window.electronAPI.invoke('settings:get')`)
+- 🚧 **Web Browser**: Via REST API (`GET /settings`) - requires enabling refinio.api server
+- 🚧 **CLI Tools**: Via REST API (curl/HTTP client) - requires enabling refinio.api server
+
+See `docs/config-platform-support.md` for full architecture details.
+
+### Layer 3: Entity Configs (ONE.core Versioned)
+
+**When to use**: Per-entity configuration (servers, topics, models)
+
+**Types**: `MCPServerConfig`, `MCPTopicConfig`, `LLM`
+**ID Fields**: Varies by type
+**Sync**: Via CHUM protocol
+**Access**: Via dedicated managers
+
+**MCPServerConfig** (ID: `userEmail`):
+```typescript
+{
+  $type$: 'MCPServerConfig',
+  userEmail: string,
+  servers: SHA256IdHash<MCPServer>[],
+  updatedAt: number
+}
+```
+
+**MCPTopicConfig** (ID: `topicId`):
+```typescript
+{
+  $type$: 'MCPTopicConfig',
+  topicId: string,
+  inboundEnabled: boolean,
+  outboundEnabled: boolean,
+  allowedTools?: string[]
+}
+```
+
+**LLM** (ID: `name`):
+```typescript
+{
+  $type$: 'LLM',
+  name: string,
+  modelId: string,
+  personId?: SHA256IdHash<Person>,  // AI contact linkage
+  encryptedAuthToken?: string,       // Via Electron safeStorage
+  temperature?, maxTokens?, contextSize?
+}
+```
+
+**Examples**:
+- ✅ Per-model auth tokens
+- ✅ Per-topic MCP settings
+- ✅ Per-server MCP configuration
+- ❌ Global AI preferences (use Layer 2)
+- ❌ Network settings (use Layer 1)
+
+### Decision Tree: Where Does My Config Go?
+
+```
+Is it required before ONE.core starts?
+├─ YES → Layer 1 (LamaConfig - bootstrap)
+└─ NO  → Continue...
+
+Does it belong to a specific entity (server/topic/model)?
+├─ YES → Layer 3 (Entity Configs - MCPServerConfig/MCPTopicConfig/LLM)
+└─ NO  → Continue...
+
+Is it a user preference that should sync?
+├─ YES → Layer 2 (UserSettings - ai/ui/proposals)
+└─ NO  → Reconsider - probably Layer 1
+```
+
+### Quick Reference
+
+| Layer | Storage | Type | Sync | Use Case |
+|-------|---------|------|------|----------|
+| Bootstrap | File | LamaConfig | No | Startup params, network config |
+| User Settings | ONE.core | UserSettings | CHUM | User preferences (AI, UI, proposals) |
+| Entity Configs | ONE.core | Multiple | CHUM | Per-entity configs (servers, topics, models) |
+
+**Documentation**: See `docs/config-quickstart.md` for detailed examples and API usage.
 
 ## Architecture: lama.core vs lama.electron
 
@@ -857,6 +1033,8 @@ Structured JSON-based protocol for LLM responses using Ollama's native `format` 
 ### Overview
 Displays context-aware proposals above the chat entry field to suggest relevant past conversations based on subject/keyword matching. Users see a single proposal at a time, with horizontal swipe navigation through ranked proposals. Configurable matching algorithm with initial implementation using Jaccard similarity.
 
+**INCLUDES MEMORIES**: Proposals match against subjects from ALL topics including the "lama" memory topic. When Claude AI stores memories via `memory:store`, they create journal entries (keywords + subjects) that are factored into proposal matching alongside regular conversation subjects.
+
 ### Data Model
 - **Proposal** (computed, not stored): Links past subject to current subject via matched keywords
   - `pastSubject`: SHA256IdHash<Subject> - Reference to past subject
@@ -904,8 +1082,11 @@ const relevanceScore = jaccard * config.matchWeight + recencyBoost * config.rece
 
 ### Integration Points
 - **Depends on Feature 018**: Uses Subject and Keyword objects from topic analysis
+- **Memory Integration**: Queries subjects from "lama" topic created by `memory:store` MCP tool
+  - Memory subjects included in `ProposalEngine.fetchAllSubjects()` (line 300)
+  - Enables proposals based on stored memories, not just conversation history
 - **Node.js Services**:
-  - `/main/services/proposal-engine.ts` - Core matching logic
+  - `/main/services/proposal-engine.ts` - Core matching logic (includes memory subjects)
   - `/main/services/proposal-ranker.ts` - Ranking algorithm
   - `/main/ipc/handlers/proposals.ts` - IPC handler implementations
 - **React UI Components**:

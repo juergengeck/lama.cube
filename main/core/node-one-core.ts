@@ -87,6 +87,8 @@ class NodeOneCore implements INodeOneCore {
   models?: any
   topicAnalysisModel?: TopicAnalysisModel
   chatMemoryHandler?: any  // ChatMemoryHandler for automatic memory extraction
+  fileStorageService?: any  // FileStorageService for HTML memory storage
+  subjectHandler?: any  // SubjectHandler for subject management
   commServerModel?: any
   commServerUrl?: string  // CommServer URL for invitations and connections
   llmManager?: any
@@ -627,7 +629,7 @@ class NodeOneCore implements INodeOneCore {
     console.log('[NodeOneCore] Initializing models...')
 
     // Use commserver URL from config (supports local testing)
-    const commServerUrl = global.lamaConfig?.commServer.url || 'wss://comm10.dev.refinio.one'
+    const commServerUrl = global.lamaConfig?.network?.commServer?.url || 'wss://comm10.dev.refinio.one'
     this.commServerUrl = commServerUrl  // Store as property for node-provisioning to access
     console.log('[NodeOneCore] Using CommServer URL:', commServerUrl)
     
@@ -1545,10 +1547,12 @@ class NodeOneCore implements INodeOneCore {
     const { implode } = await import('@refinio/one.core/lib/microdata-imploder.js')
     const { explode } = await import('@refinio/one.core/lib/microdata-exploder.js')
 
-    // Configure memory storage - CRITICAL: Store alongside OneDB, NOT in dist/
-    // dist/ is build output and gets wiped on compilation
-    const storageDir = global.lamaConfig?.instance.directory || path.join(process.cwd(), 'OneDB')
-    const memoryStoragePath = path.join(storageDir, 'memory-storage')
+    // Configure memory storage - Path is configurable via LamaConfig
+    // Defaults to project_root/memory but can be overridden via:
+    // - CLI: --memory-directory=/path/to/memory
+    // - ENV: LAMA_MEMORY_DIRECTORY=/path/to/memory
+    // - File: lama.config.json { instance: { memoryDirectory: "/path/to/memory" } }
+    const memoryStoragePath = global.lamaConfig?.instance.memoryDirectory || path.join(process.cwd(), 'memory')
     const memoryConfig = {
       basePath: memoryStoragePath,
       subfolders: {
@@ -1557,21 +1561,22 @@ class NodeOneCore implements INodeOneCore {
     }
 
     // Create FileStorageService
-    const fileStorageService = new FileStorageService(memoryConfig, {
+    this.fileStorageService = new FileStorageService(memoryConfig, {
       storeVersionedObject,
       implode,
       explode
     })
-    await fileStorageService.initialize()
+    await this.fileStorageService.initialize()
     console.log('[NodeOneCore] ✅ FileStorageService initialized at:', memoryStoragePath)
 
     // Create SubjectHandler
-    const subjectHandler = new SubjectHandler({
-      storageService: fileStorageService
+    this.subjectHandler = new SubjectHandler({
+      storageService: this.fileStorageService
     })
+    console.log('[NodeOneCore] ✅ SubjectHandler initialized')
 
     // Create MemoryHandler (lama.core wrapper)
-    const memoryHandler = new MemoryHandler(subjectHandler)
+    const memoryHandler = new MemoryHandler(this.subjectHandler)
     console.log('[NodeOneCore] ✅ MemoryHandler created')
 
     // Create ChatMemoryService

@@ -34,11 +34,13 @@ export interface HashtagSuggestion {
 
 export interface EnhancedMessageInputProps {
   onSendMessage: (text: string, attachments?: EnhancedAttachment[]) => Promise<void>;
+  onStopStreaming?: () => void;
   onHashtagClick?: (hashtag: string) => void;
   placeholder?: string;
   disabled?: boolean;
   theme?: 'light' | 'dark';
   conversationId?: string; // Used to detect conversation changes for auto-focus
+  isStreaming?: boolean; // Show stop button when streaming
 }
 
 // Subject hashtag extractor (simplified web version)
@@ -246,11 +248,13 @@ const HashtagSuggestionsPanel: React.FC<{
 // Main enhanced message input component
 export const EnhancedMessageInput: React.FC<EnhancedMessageInputProps> = ({
   onSendMessage,
+  onStopStreaming,
   onHashtagClick,
   placeholder = "Type a message...",
   disabled = false,
   theme = 'light',
-  conversationId
+  conversationId,
+  isStreaming = false
 }) => {
   const [messageText, setMessageText] = useState('');
   const [attachments, setAttachments] = useState<EnhancedAttachment[]>([]);
@@ -590,15 +594,26 @@ export const EnhancedMessageInput: React.FC<EnhancedMessageInputProps> = ({
           rows={1}
         />
         
-        {/* Send button */}
-        <button
-          className={`send-button ${canSend ? 'active' : ''}`}
-          onClick={handleSend}
-          disabled={!canSend}
-          title="Send message"
-        >
-          {isUploading ? '⏳' : '➤'}
-        </button>
+        {/* Send or Stop button */}
+        {isStreaming ? (
+          <button
+            className="send-button active stop-button"
+            onClick={onStopStreaming}
+            title="Stop streaming"
+            style={{ backgroundColor: '#ff4444' }}
+          >
+            ⏹
+          </button>
+        ) : (
+          <button
+            className={`send-button ${canSend ? 'active' : ''}`}
+            onClick={handleSend}
+            disabled={!canSend}
+            title="Send message"
+          >
+            {isUploading ? '⏳' : '➤'}
+          </button>
+        )}
       </div>
       
       {isDragOver && (

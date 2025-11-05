@@ -181,6 +181,124 @@ export default function createUserSettingsHandlers(nodeOneCoreInstance: typeof n
                 console.error('[IPC:settings:setTheme] Failed:', error);
                 throw new Error(error.message || 'Failed to set theme');
             }
+        },
+
+        /**
+         * settings:setApiKey - Set API key for a provider
+         *
+         * @channel settings:setApiKey
+         * @request {Object} request
+         * @request.provider {string} - Provider name (e.g., "anthropic", "openai")
+         * @request.apiKey {string} - The API key to store
+         * @response {UserSettings} - Updated user settings
+         *
+         * @example
+         * ```typescript
+         * const settings = await window.electronAPI.invoke('settings:setApiKey', {
+         *   provider: 'anthropic',
+         *   apiKey: 'sk-ant-...'
+         * });
+         * ```
+         */
+        'settings:setApiKey': async (
+            event: IpcMainInvokeEvent,
+            request: { provider: string; apiKey: string }
+        ) => {
+            try {
+                const manager = getManager();
+                const settings = await manager.setApiKey(request.provider, request.apiKey);
+                console.log('[IPC:settings:setApiKey] Set API key for', request.provider);
+                return settings;
+            } catch (error: any) {
+                console.error('[IPC:settings:setApiKey] Failed:', error);
+                throw new Error(error.message || 'Failed to set API key');
+            }
+        },
+
+        /**
+         * settings:getApiKey - Get API key for a provider
+         *
+         * @channel settings:getApiKey
+         * @request {Object} request
+         * @request.provider {string} - Provider name (e.g., "anthropic", "openai")
+         * @response {string | undefined} - API key or undefined if not found
+         *
+         * @example
+         * ```typescript
+         * const apiKey = await window.electronAPI.invoke('settings:getApiKey', {
+         *   provider: 'anthropic'
+         * });
+         * ```
+         */
+        'settings:getApiKey': async (
+            event: IpcMainInvokeEvent,
+            request: { provider: string }
+        ) => {
+            try {
+                const manager = getManager();
+                const apiKey = await manager.getApiKey(request.provider);
+                return apiKey;
+            } catch (error: any) {
+                console.error('[IPC:settings:getApiKey] Failed:', error);
+                throw new Error(error.message || 'Failed to get API key');
+            }
+        },
+
+        /**
+         * settings:removeApiKey - Remove API key for a provider
+         *
+         * @channel settings:removeApiKey
+         * @request {Object} request
+         * @request.provider {string} - Provider name (e.g., "anthropic", "openai")
+         * @response {UserSettings} - Updated user settings
+         *
+         * @example
+         * ```typescript
+         * const settings = await window.electronAPI.invoke('settings:removeApiKey', {
+         *   provider: 'anthropic'
+         * });
+         * ```
+         */
+        'settings:removeApiKey': async (
+            event: IpcMainInvokeEvent,
+            request: { provider: string }
+        ) => {
+            try {
+                const manager = getManager();
+                const settings = await manager.removeApiKey(request.provider);
+                console.log('[IPC:settings:removeApiKey] Removed API key for', request.provider);
+                return settings;
+            } catch (error: any) {
+                console.error('[IPC:settings:removeApiKey] Failed:', error);
+                throw new Error(error.message || 'Failed to remove API key');
+            }
+        },
+
+        /**
+         * settings:getAllApiKeys - Get all API keys
+         *
+         * @channel settings:getAllApiKeys
+         * @request {} - No parameters required
+         * @response {Record<string, string>} - Object with all stored API keys
+         *
+         * @example
+         * ```typescript
+         * const allKeys = await window.electronAPI.invoke('settings:getAllApiKeys', {});
+         * console.log(allKeys); // { anthropic: 'sk-ant-...', openai: 'sk-...' }
+         * ```
+         */
+        'settings:getAllApiKeys': async (
+            event: IpcMainInvokeEvent,
+            request: {}
+        ) => {
+            try {
+                const manager = getManager();
+                const apiKeys = await manager.getAllApiKeys();
+                return apiKeys;
+            } catch (error: any) {
+                console.error('[IPC:settings:getAllApiKeys] Failed:', error);
+                throw new Error(error.message || 'Failed to get API keys');
+            }
         }
     };
 }

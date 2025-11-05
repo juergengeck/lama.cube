@@ -36,7 +36,16 @@ export const UserSettingsRecipe: Recipe = {
                     { itemprop: 'systemPrompt', itemtype: { type: 'string' }, optional: true },
                     { itemprop: 'streamResponses', itemtype: { type: 'boolean' } },
                     { itemprop: 'autoSummarize', itemtype: { type: 'boolean' } },
-                    { itemprop: 'enableMCP', itemtype: { type: 'boolean' } }
+                    { itemprop: 'enableMCP', itemtype: { type: 'boolean' } },
+                    {
+                        itemprop: 'apiKeys',
+                        itemtype: {
+                            type: 'map',
+                            key: { type: 'string' },
+                            value: { type: 'string' }
+                        },
+                        optional: true
+                    }
                 ]
             }
         },

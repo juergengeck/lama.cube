@@ -166,8 +166,10 @@ export class UserSettingsManager {
             throw new Error(`AI settings validation failed: ${errors.join(', ')}`);
         }
 
+        const updatedAI: AISettings = { ...current.ai, ...updates };
+
         return await this.updateSettings({
-            ai: { ...current.ai, ...updates }
+            ai: updatedAI
         });
     }
 
@@ -291,5 +293,93 @@ export class UserSettingsManager {
      */
     clearCache(): void {
         this.cachedSettings = undefined;
+    }
+
+    /**
+     * Set API key for a specific provider
+     *
+     * @param provider - Provider name (e.g., "anthropic", "openai")
+     * @param apiKey - The API key to store
+     * @returns Updated user settings
+     *
+     * @example
+     * ```typescript
+     * // Store Claude API key
+     * await userSettingsManager.setApiKey('anthropic', 'sk-ant-...');
+     *
+     * // Store OpenAI API key
+     * await userSettingsManager.setApiKey('openai', 'sk-...');
+     * ```
+     */
+    async setApiKey(provider: string, apiKey: string): Promise<UserSettings> {
+        const current = await this.getSettings();
+
+        const updatedApiKeys = {
+            ...current.ai.apiKeys,
+            [provider]: apiKey
+        };
+
+        return await this.updateAI({
+            apiKeys: updatedApiKeys
+        });
+    }
+
+    /**
+     * Get API key for a specific provider
+     *
+     * @param provider - Provider name (e.g., "anthropic", "openai")
+     * @returns API key or undefined if not found
+     *
+     * @example
+     * ```typescript
+     * const claudeKey = await userSettingsManager.getApiKey('anthropic');
+     * const openaiKey = await userSettingsManager.getApiKey('openai');
+     * ```
+     */
+    async getApiKey(provider: string): Promise<string | undefined> {
+        const settings = await this.getSettings();
+        return settings.ai.apiKeys?.[provider];
+    }
+
+    /**
+     * Remove API key for a specific provider
+     *
+     * @param provider - Provider name (e.g., "anthropic", "openai")
+     * @returns Updated user settings
+     *
+     * @example
+     * ```typescript
+     * await userSettingsManager.removeApiKey('anthropic');
+     * ```
+     */
+    async removeApiKey(provider: string): Promise<UserSettings> {
+        const current = await this.getSettings();
+
+        if (!current.ai.apiKeys) {
+            return current; // No API keys to remove
+        }
+
+        const updatedApiKeys = { ...current.ai.apiKeys };
+        delete updatedApiKeys[provider];
+
+        return await this.updateAI({
+            apiKeys: updatedApiKeys
+        });
+    }
+
+    /**
+     * Get all API keys
+     *
+     * @returns Object with all stored API keys
+     *
+     * @example
+     * ```typescript
+     * const allKeys = await userSettingsManager.getAllApiKeys();
+     * console.log(allKeys); // { anthropic: 'sk-ant-...', openai: 'sk-...' }
+     * ```
+     */
+    async getAllApiKeys(): Promise<Record<string, string>> {
+        const settings = await this.getSettings();
+        return settings.ai.apiKeys || {};
     }
 }

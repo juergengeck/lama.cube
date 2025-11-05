@@ -221,6 +221,45 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
     }
   }
 
+  const handleStartChat = async (modelId: string, modelName: string) => {
+    try {
+      console.log(`[SettingsView] Starting chat with model: ${modelId}`)
+
+      // First, ensure the AI contact exists (creates it if not)
+      const contactResult = await window.electronAPI?.invoke('ai:getOrCreateContact', {
+        modelId: modelId
+      })
+
+      if (!contactResult?.success || !contactResult.data?.personId) {
+        console.error(`[SettingsView] Failed to get or create AI contact for ${modelId}`)
+        return
+      }
+
+      const aiPersonId = contactResult.data.personId
+      console.log(`[SettingsView] Got AI contact person ID:`, aiPersonId)
+
+      // Create a direct conversation with this AI contact
+      const result = await window.electronAPI?.invoke('chat:createConversation', {
+        type: 'direct',
+        participants: [aiPersonId],
+        name: modelName
+      })
+
+      if (result?.success && result?.data) {
+        console.log(`[SettingsView] Created conversation:`, result.data.id)
+
+        // Trigger a custom event to switch to the chat view
+        window.dispatchEvent(new CustomEvent('open-conversation', {
+          detail: { conversationId: result.data.id }
+        }))
+      } else {
+        console.error('[SettingsView] Failed to create conversation:', result?.error)
+      }
+    } catch (error) {
+      console.error('[SettingsView] Error starting chat:', error)
+    }
+  }
+
   const loadSystemObjects = async () => {
     setLoadingSystemObjects(true)
     try {
@@ -1133,17 +1172,22 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
                                 )}
                               </Button>
                             )}
-                            {model.isLoaded && (
+                            {model.isLoaded && model.modelType === 'local' && (
                               <Badge variant="secondary" className="text-xs">
                                 <CheckCircle className="h-3 w-3 mr-1" />
                                 Loaded
                               </Badge>
                             )}
-                            {model.modelType === 'remote' && (
-                              <Badge variant="secondary" className="text-xs">
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Ready
-                              </Badge>
+                            {(model.isLoaded || model.modelType === 'remote') && (
+                              <Button
+                                size="sm"
+                                variant="default"
+                                onClick={() => handleStartChat(model.id, model.name)}
+                                className="text-xs"
+                              >
+                                <MessageSquare className="h-3 w-3 mr-1" />
+                                Chat
+                              </Button>
                             )}
                           </div>
                         </div>
@@ -1153,7 +1197,7 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
                         <div className="flex items-center space-x-4 text-xs text-muted-foreground">
                           {model.size !== undefined && <span>{formatSize(model.size)}</span>}
                           {model.size !== undefined && <span>·</span>}
-                          <span>{model.contextLength.toLocaleString()} tokens</span>
+                          {model.contextLength !== undefined && <span>{model.contextLength.toLocaleString()} tokens</span>}
                           {model.capabilities && model.capabilities.length > 0 && (
                             <>
                               <span>·</span>

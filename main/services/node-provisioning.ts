@@ -416,6 +416,23 @@ class NodeProvisioning {
       console.warn('[NodeProvisioning] Failed to initialize memory tools:', error)
     }
 
+    // Update LLMManager SystemPromptBuilder with NodeOneCore dependencies
+    try {
+      const { default: llmManager } = await import('./llm-manager-singleton.js')
+      const userSettingsManager = (nodeOneCore as any).userSettingsManager
+      const topicAnalysisModel = (nodeOneCore as any).topicAnalysisModel
+      const channelManager = nodeOneCore.channelManager
+
+      llmManager.updateSystemPromptDependencies(
+        userSettingsManager,
+        topicAnalysisModel,
+        channelManager
+      )
+      console.log('[NodeProvisioning] LLMManager SystemPromptBuilder dependencies updated')
+    } catch (error) {
+      console.warn('[NodeProvisioning] Failed to update LLMManager dependencies:', error)
+    }
+
     // Skip heavy configuration during init - use minimal setup
     // Full capabilities can be enabled on-demand
   }

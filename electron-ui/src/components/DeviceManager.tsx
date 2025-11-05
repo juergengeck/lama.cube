@@ -33,9 +33,9 @@ export const DeviceManager: React.FC = () => {
   // Load devices on mount
   useEffect(() => {
     loadDevices()
-    
-    // Refresh every 5 seconds to update connection status
-    const interval = setInterval(loadDevices, 5000)
+
+    // Refresh every 30 seconds to update connection status (network devices can disconnect)
+    const interval = setInterval(loadDevices, 30000)
     return () => clearInterval(interval)
   }, [])
 

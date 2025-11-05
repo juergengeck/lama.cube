@@ -143,10 +143,9 @@ export function InstanceManager() {
 
   useEffect(() => {
     loadData()
-    
-    // Refresh data periodically
-    const interval = setInterval(loadData, 10000)
-    return () => clearInterval(interval)
+
+    // REMOVED: Periodic polling - should use events instead
+    // Instance data is local state and should be event-driven
   }, [])
 
   const getDeviceIcon = (platform: string, type: string) => {

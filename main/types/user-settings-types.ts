@@ -33,6 +33,11 @@ export interface AISettings {
   streamResponses: boolean;        // Enable response streaming
   autoSummarize: boolean;          // Auto-generate summaries
   enableMCP: boolean;              // Enable MCP tool integration
+  apiKeys?: {                      // API keys for LLM providers
+    anthropic?: string;            // Anthropic/Claude API key
+    openai?: string;               // OpenAI API key
+    [provider: string]: string | undefined;  // Extensible for other providers
+  };
 }
 
 /**
@@ -83,7 +88,8 @@ export const DEFAULT_USER_SETTINGS: Omit<UserSettings, '$type$' | 'userEmail' | 
     preferredModelIds: [],
     streamResponses: true,
     autoSummarize: false,
-    enableMCP: false
+    enableMCP: false,
+    apiKeys: {}
   },
   ui: {
     theme: 'dark',

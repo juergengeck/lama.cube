@@ -8,7 +8,6 @@
 import nodeOneCore from '../../core/node-one-core.js';
 import llmManager from '../../services/llm-manager-singleton.js';
 import { mcpManager } from '@mcp/core';
-import { SettingsStore } from '@refinio/one.core/lib/system/settings-store.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import electron from 'electron';
 const { BrowserWindow } = electron;
@@ -46,11 +45,31 @@ const aiHandlers = {
     }
 
     try {
-      const response = await llmManager.chat(messages, modelId, {
+      // Build options object
+      const options: any = {
         onStream: stream ? (chunk: string) => {
           event.sender.send('ai:stream', { chunk, topicId });
         } : undefined
-      });
+      };
+
+      // Inject API key for Claude models
+      if (modelId.startsWith('claude:')) {
+        try {
+          const settingsModule = await import('./user-settings.js');
+          const handlers = settingsModule.default(nodeOneCore);
+          const apiKey = await handlers['settings:getApiKey'](event, { provider: 'anthropic' });
+          if (apiKey) {
+            options.apiKey = apiKey;
+          } else {
+            return { success: false, error: 'Claude API key not configured. Please add your Anthropic API key in settings.' };
+          }
+        } catch (error: any) {
+          console.error('[AI IPC] Failed to retrieve Claude API key:', error);
+          return { success: false, error: 'Failed to retrieve API key from settings' };
+        }
+      }
+
+      const response = await llmManager.chat(messages, modelId, options);
 
       return {
         success: true,
@@ -74,12 +93,20 @@ const aiHandlers = {
 
       return {
         success: true,
-        models: models.map(m => ({
-          id: m.id,
-          name: m.name,
-          provider: m.provider,
-          isLoaded: m.isLoaded || false
-        }))
+        data: {
+          models: models.map(m => ({
+            id: m.id,
+            name: m.name,
+            description: m.description || '',
+            provider: m.provider,
+            modelType: m.modelType || 'unknown',
+            capabilities: m.capabilities || [],
+            contextLength: m.contextLength || 0,
+            size: m.size || 0,
+            isLoaded: m.isLoaded || false,
+            isDefault: m.isDefault || false
+          }))
+        }
       };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -109,16 +136,22 @@ const aiHandlers = {
 
   /**
    * Set API key for a provider
+   * DEPRECATED: Use 'settings:setApiKey' instead for proper UserSettings integration
+   *
+   * This method now delegates to settings:setApiKey for backward compatibility
    */
   async setApiKey(
     event: IpcMainInvokeEvent,
     { provider, apiKey }: { provider: string; apiKey: string }
   ) {
-    // Store API key via SettingsStore
     try {
-      await SettingsStore.setItem(provider + '_api_key', apiKey);
+      // Delegate to settings:setApiKey for proper UserSettings storage
+      const settingsModule = await import('./user-settings.js');
+      const handlers = settingsModule.default(nodeOneCore);
+      await handlers['settings:setApiKey'](event, { provider, apiKey });
       return { success: true };
     } catch (error: any) {
+      console.error('[AI IPC] setApiKey failed:', error);
       return { success: false, error: error.message };
     }
   },
@@ -186,7 +219,7 @@ const aiHandlers = {
     try {
       const handler = getAIHandler();
       const personId = await handler.ensureAIContactForModel(modelId);
-      return { success: true, personId };
+      return { success: true, data: { personId } };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -236,8 +269,32 @@ const aiHandlers = {
     params?: { apiKey?: string }
   ) {
     try {
-      await llmManager.discoverClaudeModels();
-      return { success: true };
+      let apiKey = params?.apiKey;
+
+      // If no API key provided, try to get from UserSettings
+      if (!apiKey) {
+        try {
+          const settingsModule = await import('./user-settings.js');
+          const handlers = settingsModule.default(nodeOneCore);
+          apiKey = await handlers['settings:getApiKey'](event, { provider: 'anthropic' });
+        } catch (error) {
+          console.log('[AI IPC] No stored API key found for anthropic');
+        }
+      }
+
+      // Pass API key to discover models
+      await llmManager.discoverClaudeModels(apiKey);
+
+      // Get discovered Claude models to return to UI
+      const allModels = llmManager.getModels();
+      const claudeModels = allModels.filter((m: any) => m.provider === 'anthropic');
+
+      return {
+        success: true,
+        data: {
+          models: claudeModels
+        }
+      };
     } catch (error: any) {
       return { success: false, error: error.message };
     }

@@ -397,19 +397,25 @@ class NodeOneCore implements INodeOneCore {
 
       // Store credentials if this was a new instance
       if (!storedInstanceName || !storedEmail) {
+        console.log('[NodeOneCore] Storing instance credentials...')
         await SettingsStore.setItem('instance', finalInstanceName)
         await SettingsStore.setItem('email', finalEmail)
         console.log('[NodeOneCore] Stored instance credentials')
+      } else {
+        console.log('[NodeOneCore] Using existing instance credentials')
       }
 
       // Get owner ID AFTER initialization
+      console.log('[NodeOneCore] Importing instance module...')
       const { getInstanceOwnerIdHash } = await import('@refinio/one.core/lib/instance.js')
+      console.log('[NodeOneCore] Getting owner ID...')
       const ownerIdResult = getInstanceOwnerIdHash()
       if (!ownerIdResult) {
         throw new Error('Failed to get instance owner ID after initialization')
       }
       this.ownerId = ownerIdResult
       this.instanceName = finalInstanceName
+      console.log('[NodeOneCore] Got owner ID')
 
       console.log('[NodeOneCore] ONE.core instance initialized successfully')
       console.log('[NodeOneCore] Owner ID:', this.ownerId)
@@ -1282,7 +1288,7 @@ class NodeOneCore implements INodeOneCore {
       const connections = this.connectionsModel.connectionsInfo()
       console.log('[NodeOneCore] 🔄 Connections changed event fired!')
       console.log('[NodeOneCore] Current connections count:', (connections as any).length)
-      
+
       // Log active CHUM connections
       for (const conn of connections) {
         if (conn.isConnected && conn.protocolName === 'chum') {
@@ -1290,7 +1296,7 @@ class NodeOneCore implements INodeOneCore {
           // CHUM will sync based on existing Access objects
         }
       }
-      
+
       // Log connection details for debugging
       console.log('[NodeOneCore] Connection details:', (connections as any).map((conn: any) => ({
         id: conn.id?.substring(0, 20) + '...',
@@ -1299,15 +1305,12 @@ class NodeOneCore implements INodeOneCore {
         protocolName: conn.protocolName
       })))
     })
-    
-    // Wait for commserver connection to establish
-    console.log('[NodeOneCore] Waiting for commserver connection...')
-    await new Promise(resolve => setTimeout(resolve, 5000))  // Wait longer for connection
-    
-    // Check if we're connected to commserver
-    console.log('[NodeOneCore] Checking commserver connection status...')
+
+    // CommServer will connect asynchronously - don't block initialization
+    // App is usable for local AI chat immediately; pairing becomes available when commserver connects
+    console.log('[NodeOneCore] CommServer connecting asynchronously in background...')
     const connections = this.connectionsModel.connectionsInfo() as any
-    console.log('[NodeOneCore] Active connections after init:', connections.length)
+    console.log('[NodeOneCore] Initial connections count:', connections.length)
     
     // Check if pairing is available
     if (this.connectionsModel.pairing) {

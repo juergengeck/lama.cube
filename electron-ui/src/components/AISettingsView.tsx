@@ -74,6 +74,52 @@ export function AISettingsView() {
       console.error('Failed to set default model:', error)
     }
   }
+
+  const handleStartChat = async (modelId: string, modelName: string) => {
+    try {
+      console.log(`[AISettingsView] Starting chat with model: ${modelId}`)
+
+      // Get all contacts to find the AI contact for this model
+      const contacts = await window.electronAPI?.invoke('contacts:list')
+      if (!contacts?.success) {
+        console.error('[AISettingsView] Failed to get contacts')
+        return
+      }
+
+      // Find the AI contact that matches this model ID
+      const aiContact = contacts.data.contacts.find((c: any) =>
+        c.isAI && c.name === modelName
+      )
+
+      if (!aiContact) {
+        console.error(`[AISettingsView] No AI contact found for model: ${modelId}`)
+        return
+      }
+
+      console.log(`[AISettingsView] Found AI contact:`, aiContact.personId)
+
+      // Create a direct conversation with this AI contact
+      const result = await window.electronAPI?.invoke('chat:createConversation', {
+        type: 'direct',
+        participants: [aiContact.personId],
+        name: modelName,
+        aiModelId: modelId  // CRITICAL: Pass model ID so ChatHandler registers the topic
+      })
+
+      if (result?.success && result?.data) {
+        console.log(`[AISettingsView] Created conversation:`, result.data.id)
+
+        // Trigger a custom event to switch to the chat view
+        window.dispatchEvent(new CustomEvent('open-conversation', {
+          detail: { conversationId: result.data.id }
+        }))
+      } else {
+        console.error('[AISettingsView] Failed to create conversation:', result?.error)
+      }
+    } catch (error) {
+      console.error('[AISettingsView] Error starting chat:', error)
+    }
+  }
   
   const loadClaudeApiKey = async () => {
     try {
@@ -97,8 +143,10 @@ export function AISettingsView() {
 
   const ensureClaudeContacts = async () => {
     try {
-      // Discover Claude models from API
-      const modelsResult = await window.electronAPI?.invoke('ai:discoverClaudeModels')
+      // Discover Claude models from API (pass API key if we have it)
+      const modelsResult = await window.electronAPI?.invoke('ai:discoverClaudeModels', {
+        apiKey: claudeApiKey
+      })
 
       if (modelsResult?.success && modelsResult.data?.models) {
         console.log(`[AISettingsView] Creating AI contacts for ${modelsResult.data.models.length} Claude models...`)
@@ -373,9 +421,15 @@ export function AISettingsView() {
                     )}
                   </div>
                   {model.isLoaded && (
-                    <Badge variant="secondary" className="text-xs">
-                      Ready for use
-                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={() => handleStartChat(model.id, model.name)}
+                      className="text-xs"
+                    >
+                      <MessageSquare className="h-3 w-3 mr-1" />
+                      Chat
+                    </Button>
                   )}
                 </div>
               </div>

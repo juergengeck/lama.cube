@@ -87,9 +87,22 @@ function App() {
     };
 
     checkMCPStatus(); // Initial check
-    const interval = setInterval(checkMCPStatus, 5000); // Poll every 5 seconds
+    const interval = setInterval(checkMCPStatus, 30000); // Poll every 30 seconds (lightweight HTTP check)
     return () => clearInterval(interval);
   }, []);
+
+  // Listen for open-conversation events (e.g., from AI Settings)
+  useEffect(() => {
+    const handleOpenConversation = (event: Event) => {
+      const customEvent = event as CustomEvent<{ conversationId: string }>
+      console.log('[App] Received open-conversation event:', customEvent.detail)
+      setSelectedConversationId(customEvent.detail.conversationId)
+      setActiveTab('chats')
+    }
+
+    window.addEventListener('open-conversation', handleOpenConversation)
+    return () => window.removeEventListener('open-conversation', handleOpenConversation)
+  }, [])
 
   // Global listener for new messages - keeps conversation list updated app-wide
   useEffect(() => {

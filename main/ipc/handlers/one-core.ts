@@ -206,47 +206,21 @@ const oneCoreHandlers = {
   },
 
   /**
-   * Store data securely using ONE.core versioned objects
+   * Store data securely using ONE.core SettingsStore
    */
   async secureStore(event: IpcMainInvokeEvent, params: { key: string; value: any; encrypted?: boolean }) {
     console.log(`[OneCoreHandler] secureStore: ${params.key}`);
 
     try {
-      if (params.key === 'claude_api_key') {
-        // Store Claude API key as LLM object in ONE.core
-        const { storeVersionedObject } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
+      const { SettingsStore } = await import('@refinio/one.core/lib/system/settings-store.js');
 
-        const now = Date.now();
-        const nowString = new Date(now).toISOString();
+      await SettingsStore.setItem(params.key, params.value);
+      console.log(`[OneCoreHandler] Stored ${params.key} in SettingsStore`);
 
-        const llmObj = {
-          $type$: 'LLM' as const,
-          name: 'claude',
-          modelId: 'claude-api',
-          provider: 'anthropic',
-          filename: 'claude-api-config',
-          modelType: 'remote' as const,
-          baseUrl: 'https://api.anthropic.com',
-          authType: 'bearer' as const,
-          encryptedAuthToken: params.value,
-          active: true,
-          deleted: false,
-          created: now,
-          modified: now,
-          createdAt: nowString,
-          lastUsed: nowString
-        };
-
-        const result = await storeVersionedObject(llmObj);
-        console.log(`[OneCoreHandler] Stored Claude API key with hash: ${result.hash}`);
-
-        return {
-          success: true,
-          data: { stored: true, configHash: result.hash }
-        };
-      }
-
-      throw new Error(`Unsupported secure storage key: ${params.key}`);
+      return {
+        success: true,
+        data: { stored: true }
+      };
     } catch (error) {
       console.error('[OneCoreHandler] secureStore error:', error);
       return {
@@ -257,29 +231,23 @@ const oneCoreHandlers = {
   },
 
   /**
-   * Retrieve data from ONE.core versioned objects
+   * Retrieve data from ONE.core SettingsStore
    */
   async secureRetrieve(event: IpcMainInvokeEvent, params: { key: string }) {
     console.log(`[OneCoreHandler] secureRetrieve: ${params.key}`);
 
     try {
-      if (params.key === 'claude_api_key') {
-        // Retrieve Claude API key from ONE.core LLM objects
-        const iterator = nodeOneCore.channelManager.objectIteratorWithType('LLM', {
-          channelId: 'lama'
-        });
+      const { SettingsStore } = await import('@refinio/one.core/lib/system/settings-store.js');
 
-        for await (const llmObj of iterator) {
-          if (llmObj?.data?.name === 'claude' && llmObj.data.active && !llmObj.data.deleted) {
-            const apiKey = llmObj.data.encryptedAuthToken;
-            return { success: true, value: apiKey };
-          }
-        }
+      const value = await SettingsStore.getItem(params.key);
 
-        throw new Error('API key not found');
+      if (value !== null && value !== undefined) {
+        console.log(`[OneCoreHandler] Found ${params.key} in SettingsStore`);
+        return { success: true, value };
       }
 
-      throw new Error(`Unsupported secure storage key: ${params.key}`);
+      console.log(`[OneCoreHandler] ${params.key} not found in SettingsStore`);
+      return { success: false, error: 'Key not found' };
     } catch (error) {
       console.error('[OneCoreHandler] secureRetrieve error:', error);
       return {

@@ -620,6 +620,40 @@ class MCPManager {
     return Array.from(this.tools.values());
   }
 
+  /**
+   * Get compact tool descriptions (name + 1-line summary only)
+   * Drastically reduces prompt size for faster responses
+   */
+  getCompactToolDescriptions(): string {
+    const tools = this.getAvailableTools();
+    if (tools.length === 0) {
+      return '';
+    }
+
+    let description = '\n\n# Available Tools\n\n';
+
+    // Just list tools with 1-line description
+    for (const tool of tools) {
+      const summary = tool.description?.split('\n')[0] || 'No description';
+      description += `• **${tool.fullName}** - ${summary}\n`;
+    }
+
+    // Add the meta-tool for getting full details
+    description += `• **tool:describe** - Get full documentation for a specific tool\n`;
+
+    description += '\n# Tool Usage\n\n';
+    description += 'To use a tool:\n';
+    description += '1. If you need details, call: `{"tool":"tool:describe","parameters":{"toolName":"tool-name"}}`\n';
+    description += '2. Execute tool: `{"tool":"tool-name","parameters":{...}}`\n\n';
+    description += 'Respond with ONLY the JSON (no markdown, no thinking).\n';
+
+    return description;
+  }
+
+  /**
+   * Get full tool descriptions (original verbose format)
+   * Only used for detailed documentation or when specifically requested
+   */
   getToolDescriptions(): any {
     const tools = this.getAvailableTools();
     if (tools.length === 0) {
@@ -656,7 +690,44 @@ class MCPManager {
     return description;
   }
 
+  /**
+   * Get full documentation for a specific tool
+   */
+  getToolDocumentation(toolName: string): string {
+    const tool = this.tools.get(toolName);
+    if (!tool) {
+      return `Tool "${toolName}" not found. Available tools: ${Array.from(this.tools.keys()).join(', ')}`;
+    }
+
+    let doc = `# ${tool.fullName}\n\n`;
+
+    if (tool.description) {
+      doc += `${tool.description}\n\n`;
+    }
+
+    if (tool.inputSchema && tool.inputSchema.properties) {
+      doc += '## Parameters\n\n';
+      for (const [paramName, paramDef] of Object.entries(tool.inputSchema.properties)) {
+        const def = paramDef as any;
+        const required = tool.inputSchema.required?.includes(paramName) ? ' (required)' : ' (optional)';
+        doc += `• **${paramName}**${required}: ${def.description || def.type || 'no description'}\n`;
+      }
+    }
+
+    return doc;
+  }
+
   async executeTool(toolName: any, parameters: any, context?: any): Promise<any> {
+    // Handle meta-tool: tool:describe
+    if (toolName === 'tool:describe') {
+      const requestedTool = parameters?.toolName;
+      if (!requestedTool) {
+        return { content: [{ type: 'text', text: 'Error: toolName parameter required' }] };
+      }
+      const doc = this.getToolDocumentation(requestedTool);
+      return { content: [{ type: 'text', text: doc }] };
+    }
+
     const tool = this.tools.get(toolName);
     if (!tool) {
       // Try to find by short name

@@ -362,6 +362,19 @@
   transform: scale(1.05);
 }
 
+.send-button.stop-button {
+  background: #ff3b30;
+  color: white;
+  box-shadow: 0 2px 6px rgba(255, 59, 48, 0.3);
+  font-size: 18px;
+}
+
+.send-button.stop-button:hover {
+  background: #ff2d20;
+  transform: scale(1.05);
+  box-shadow: 0 3px 10px rgba(255, 59, 48, 0.4);
+}
+
 .send-button:disabled {
   background: #333;
   color: #666;

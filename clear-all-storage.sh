@@ -5,10 +5,10 @@ echo "Clearing all ONE.core storage..."
 
 # CRITICAL: Preserve memories before clearing
 MEMORY_BACKUP="/tmp/lama-memory-backup-$(date +%s)"
-if [ -d "OneDB/memory-storage" ]; then
+if [ -d "memory" ]; then
   echo "⚠️  BACKING UP MEMORIES to $MEMORY_BACKUP"
-  cp -r OneDB/memory-storage "$MEMORY_BACKUP"
-  echo "   Memory backup complete. Restore with: cp -r $MEMORY_BACKUP OneDB/memory-storage"
+  cp -r memory "$MEMORY_BACKUP"
+  echo "   Memory backup complete. Restore with: cp -r $MEMORY_BACKUP memory"
 fi
 
 # Clear ONE.core storage (all instances)
@@ -18,9 +18,8 @@ rm -rf OneDB
 # Restore memories
 if [ -d "$MEMORY_BACKUP" ]; then
   echo "✅ RESTORING MEMORIES"
-  mkdir -p OneDB
-  cp -r "$MEMORY_BACKUP" OneDB/memory-storage
-  echo "   Memories restored to OneDB/memory-storage"
+  cp -r "$MEMORY_BACKUP" memory
+  echo "   Memories restored to memory/"
 fi
 
 # Clear browser storage (Electron stores it in userData)

@@ -85,24 +85,6 @@ npm run dist:all
 pkill -f Electron
 ```
 
-**MCP Memory Storage & Journaling**:
-- **Storage**: Memories are stored in ONE.core as Message objects in the "lama" topic
-- **Location**: `OneDB/` (content-addressed storage, hashed filenames)
-- **Journal Entries**: Every memory automatically creates:
-  - **Keywords** - Extracted key terms from the memory content
-  - **Subject** - Main theme/topic identified by LLM analysis
-  - **Summary** - Brief summary integrated into topic summary
-  - All stored as versioned ONE.core objects linked to the memory
-- **Access**: Via MCP memory tools:
-  - `memory:store` - Store new memory + create journal entry (keywords, subject, summary)
-  - `memory:search` - Search past memories by keyword
-  - `memory:recent` - Get recent memories
-  - `memory:subjects` - Get learned subjects/themes across all memories
-- **Implementation**: `main/services/mcp/memory-tools.js`
-- **Analysis**: Uses `llmManager.chatWithAnalysis()` for keyword/subject extraction
-- **Topic**: All memories posted to the special "lama" topic for AI persistence
-- **Non-blocking**: Journal entry creation runs in background via `setImmediate()`
-
 ## Project Structure
 
 ```
@@ -110,20 +92,16 @@ lama.cube/                          # Electron desktop app
 ├── main/                           # Node.js main process
 │   ├── core/                       # Core ONE.core instance & services
 │   │   ├── node-one-core.ts        # Single Node.js ONE.core instance
-│   │   ├── ai-assistant-model.ts   # AI orchestration (being refactored)
+│   │   ├── ai-assistant-model.ts   # AI orchestration (legacy)
 │   │   ├── topic-group-manager.ts  # P2P and group chat management
 │   │   └── llm-object-manager.ts   # LLM configuration storage
 │   ├── ipc/                        # IPC communication layer
 │   │   ├── controller.ts           # Main IPC router
 │   │   └── handlers/               # IPC handlers for each domain
-│   │       ├── chat.ts             # Chat operations
-│   │       ├── ai.ts               # AI assistant
-│   │       ├── connection.ts       # P2P connections
-│   │       ├── contacts.ts         # Contact management
-│   │       └── ...                 # Other handlers
 │   ├── services/                   # Platform services
 │   │   ├── llm-manager.ts          # LLM provider integration
 │   │   ├── mcp-manager.ts          # Model Context Protocol tools
+│   │   ├── proposal-engine.ts      # Context-aware proposals
 │   │   └── html-export/            # HTML export with microdata
 │   ├── models/                     # Data models
 │   ├── recipes/                    # ONE.core recipe definitions
@@ -133,998 +111,23 @@ lama.cube/                          # Electron desktop app
 │   ├── src/
 │   │   ├── App.tsx                 # Main React app
 │   │   ├── components/             # UI components
-│   │   │   ├── ChatLayout.tsx      # Multi-conversation layout
-│   │   │   ├── ChatView.tsx        # Chat interface
-│   │   │   ├── DataDashboard.tsx   # IoM monitoring
-│   │   │   ├── SettingsView.tsx    # Settings UI
-│   │   │   └── ...
 │   │   ├── hooks/                  # React hooks
 │   │   ├── services/               # Browser services
 │   │   └── bridge/                 # IPC bridge to main process
 │   └── tests/                      # Frontend tests
-│       ├── unit/                   # Unit tests
-│       ├── integration/            # Integration tests
-│       └── contract/               # Contract tests
 │
 ├── dist/                           # Build output (TypeScript → JS)
 ├── specs/                          # Feature specifications
+├── docs/                           # Documentation
 ├── reference/                      # Reference implementations
 ├── lama-electron-shadcn.ts         # Electron main entry point
 ├── electron-preload.ts             # Preload script (security bridge)
-├── tsconfig.json                   # TypeScript config (main process)
-└── electron-builder.yml            # Installer configuration
+└── tsconfig.json                   # TypeScript config
 ```
 
-## Configuration Architecture
+## Architecture Overview
 
-**IMPORTANT**: LAMA uses a 3-layer configuration system. Always identify which layer your configuration belongs to before adding it.
-
-### Layer 1: Bootstrap Config (File-Based)
-
-**When to use**: Required before ONE.core starts, network settings, instance identity
-
-**File**: `lama.config.json` or `~/.lama/config.json`
-**Type**: `LamaConfig` interface
-**Loaded**: Once at startup
-**Precedence**: CLI args > Environment variables > Config file > Defaults
-
-```typescript
-interface LamaConfig {
-  instance: { name, email, secret, directory, wipeStorage };
-  network: {
-    commServer: { url, enabled };
-    direct: { enabled, endpoint };
-    priority: 'direct' | 'commserver' | 'both';
-  };
-  web: { url? };
-  logging: { level };
-}
-```
-
-**Examples**:
-- ✅ Instance name/email
-- ✅ ONE.core storage directory
-- ✅ CommServer URL
-- ✅ Direct P2P endpoint
-- ✅ Log level
-- ❌ User preferences (use Layer 2)
-- ❌ AI model settings (use Layer 2 or 3)
-
-**File**: `main/config/lama-config.ts`
-
-### Layer 2: User Settings (ONE.core Versioned)
-
-**When to use**: User preferences that sync across instances
-
-**Type**: `UserSettings` ONE.core object
-**ID Field**: `userEmail`
-**Sync**: Via CHUM protocol
-**Access**: Through `UserSettingsManager`
-
-```typescript
-interface UserSettings {
-  $type$: 'UserSettings';
-  userEmail: string;  // ID field
-  ai: {
-    defaultModelId?, temperature, maxTokens,
-    defaultProvider, autoSelectBestModel,
-    preferredModelIds, systemPrompt?,
-    streamResponses, autoSummarize, enableMCP
-  };
-  ui: {
-    theme: 'dark' | 'light',
-    notifications: boolean,
-    wordCloud: { /* 8 fields */ }
-  };
-  proposals: {
-    matchWeight, recencyWeight, recencyWindow,
-    minJaccard, maxProposals
-  };
-  updatedAt: number;
-}
-```
-
-**Examples**:
-- ✅ AI temperature/maxTokens
-- ✅ Default AI model
-- ✅ UI theme (dark/light)
-- ✅ Word cloud preferences
-- ✅ Proposal matching weights
-- ❌ Bootstrap parameters (use Layer 1)
-- ❌ Per-model auth tokens (use Layer 3)
-
-**Files**:
-- Manager: `main/core/user-settings-manager.ts`
-- Recipe: `main/recipes/user-settings-recipe.ts`
-- IPC: `main/ipc/handlers/user-settings.ts`
-- API: `main/api/handlers/SettingsHandler.ts`
-- React Hook (Electron): `electron-ui/src/hooks/useSettings.ts`
-
-**Platform Support**:
-- ✅ **Electron**: Via IPC (`window.electronAPI.invoke('settings:get')`)
-- 🚧 **Web Browser**: Via REST API (`GET /settings`) - requires enabling refinio.api server
-- 🚧 **CLI Tools**: Via REST API (curl/HTTP client) - requires enabling refinio.api server
-
-See `docs/config-platform-support.md` for full architecture details.
-
-### Layer 3: Entity Configs (ONE.core Versioned)
-
-**When to use**: Per-entity configuration (servers, topics, models)
-
-**Types**: `MCPServerConfig`, `MCPTopicConfig`, `LLM`
-**ID Fields**: Varies by type
-**Sync**: Via CHUM protocol
-**Access**: Via dedicated managers
-
-**MCPServerConfig** (ID: `userEmail`):
-```typescript
-{
-  $type$: 'MCPServerConfig',
-  userEmail: string,
-  servers: SHA256IdHash<MCPServer>[],
-  updatedAt: number
-}
-```
-
-**MCPTopicConfig** (ID: `topicId`):
-```typescript
-{
-  $type$: 'MCPTopicConfig',
-  topicId: string,
-  inboundEnabled: boolean,
-  outboundEnabled: boolean,
-  allowedTools?: string[]
-}
-```
-
-**LLM** (ID: `name`):
-```typescript
-{
-  $type$: 'LLM',
-  name: string,
-  modelId: string,
-  personId?: SHA256IdHash<Person>,  // AI contact linkage
-  encryptedAuthToken?: string,       // Via Electron safeStorage
-  temperature?, maxTokens?, contextSize?
-}
-```
-
-**Examples**:
-- ✅ Per-model auth tokens
-- ✅ Per-topic MCP settings
-- ✅ Per-server MCP configuration
-- ❌ Global AI preferences (use Layer 2)
-- ❌ Network settings (use Layer 1)
-
-### Decision Tree: Where Does My Config Go?
-
-```
-Is it required before ONE.core starts?
-├─ YES → Layer 1 (LamaConfig - bootstrap)
-└─ NO  → Continue...
-
-Does it belong to a specific entity (server/topic/model)?
-├─ YES → Layer 3 (Entity Configs - MCPServerConfig/MCPTopicConfig/LLM)
-└─ NO  → Continue...
-
-Is it a user preference that should sync?
-├─ YES → Layer 2 (UserSettings - ai/ui/proposals)
-└─ NO  → Reconsider - probably Layer 1
-```
-
-### Quick Reference
-
-| Layer | Storage | Type | Sync | Use Case |
-|-------|---------|------|------|----------|
-| Bootstrap | File | LamaConfig | No | Startup params, network config |
-| User Settings | ONE.core | UserSettings | CHUM | User preferences (AI, UI, proposals) |
-| Entity Configs | ONE.core | Multiple | CHUM | Per-entity configs (servers, topics, models) |
-
-**Documentation**: See `docs/config-quickstart.md` for detailed examples and API usage.
-
-## Architecture: lama.core vs lama.electron
-
-**CRITICAL**: LAMA is split into two packages with clear responsibilities:
-
-### lama.core (Platform-Agnostic Business Logic)
-**Location**: `/Users/gecko/src/lama/lama.core/`
-
-**Contains**:
-- **Handlers** (`handlers/*`) - Pure business logic for all operations (chat, AI, topics, etc.)
-  - Receives dependencies via constructor (NO imports from lama.electron)
-  - Can be used by both Electron (Node.js) and Browser (Web Workers)
-
-- **LLM Services** (`services/*`):
-  - `llm-manager.ts` - LLM provider orchestration
-  - `ollama.ts` - HTTP client for Ollama (works in Node + Browser)
-  - `lmstudio.ts` - HTTP client for LM Studio
-  - `claude.ts` - HTTP client for Anthropic Claude API
-
-- **AI Models** (`models/ai/*`) - Component-based AI assistant architecture:
-  - `AIContactManager.ts` - AI Person/Profile/Someone lifecycle management
-  - `AITopicManager.ts` - Topic-to-model mappings and state management
-  - `AITaskManager.ts` - Dynamic task associations for IoM (Information over Messages)
-  - `AIPromptBuilder.ts` - Prompt construction with conversation context
-  - `AIMessageProcessor.ts` - Message queuing and LLM invocation
-  - `AIAssistantHandler.ts` - Main orchestrator (in handlers/)
-  - `TopicAnalysisModel.ts` - Keyword/subject extraction from conversations
-
-**Dependencies**: ONLY `@refinio/one.core` and `@refinio/one.models`
-
-**NO ambient pattern** - handlers receive all dependencies via constructor parameters
-
-### lama.electron (Platform-Specific Implementation)
-**Location**: `/Users/gecko/src/lama/lama.cube/`
-
-**Contains**:
-- **IPC Handlers** (`main/ipc/handlers/*`) - Thin adapters that:
-  - Create handler instances from lama.core
-  - Inject platform-specific dependencies (nodeOneCore, etc.)
-  - Map Electron IPC calls to handler methods
-
-- **MCP Manager** (`main/services/mcp-manager.ts`) - Network service for MCP tools
-  - Runs in Node.js main process
-  - Browser can connect remotely (not yet implemented)
-
-- **Node ONE.core** (`main/core/node-one-core.ts`) - Full ONE.core instance
-
-- **Node Provisioning** (`main/services/node-provisioning.ts`) - ONE.core initialization
-
-**Key Principle**: lama.electron creates instances of lama.core handlers and passes in dependencies
-
-### Example: How Handlers Work
-
-```typescript
-// lama.core/handlers/ChatHandler.ts
-export class ChatHandler {
-  constructor(
-    private nodeOneCore: any,
-    private stateManager: any
-  ) {}
-
-  async sendMessage(params) {
-    // Pure business logic using injected dependencies
-  }
-}
-
-// lama.electron/main/ipc/handlers/chat.ts
-import { ChatHandler } from '@lama/core/handlers/ChatHandler.js';
-import nodeOneCore from '../../core/node-one-core.js';
-import stateManager from '../../state/manager.js';
-
-const chatHandler = new ChatHandler(nodeOneCore, stateManager);
-
-export default {
-  async sendMessage(event, params) {
-    return await chatHandler.sendMessage(params);
-  }
-};
-```
-
-## AI Assistant Architecture (Refactored)
-
-**IMPORTANT**: The AI assistant has been refactored from a monolithic 1605-line class into focused, platform-agnostic components.
-
-### Component-Based Architecture
-
-**Location**: `lama.core/models/ai/` and `lama.core/handlers/`
-
-```
-AIAssistantHandler (orchestrator)
-├── AIContactManager (300 lines) → AI contact lifecycle
-├── AITopicManager (390 lines) → Topic mappings & state
-├── AITaskManager (310 lines) → IoM task execution
-├── AIPromptBuilder (380 lines) → Prompt construction
-├── AIMessageProcessor (400 lines) → Message processing & LLM
-└── AnalysisService (350 lines) → Abstract analysis (chat/memory/files)
-```
-
-**Key Features**:
-- ✅ All components <400 lines
-- ✅ Zero Electron dependencies in lama.core
-- ✅ Platform-agnostic via LLMPlatform interface
-- ✅ Two-phase initialization resolves circular dependencies
-- ✅ Dependency injection pattern throughout
-- ✅ Analysis abstraction supports chat, memory, files, and custom content
-
-### Platform Abstraction Layer
-
-**LLMPlatform Interface** - `lama.core/services/llm-platform.ts`
-- Defines platform-agnostic event emission
-- `emitProgress()`, `emitError()`, `emitMessageUpdate()`
-- Optional MCP server operations
-
-**Platform Implementations**:
-- **ElectronLLMPlatform** - `lama.electron/adapters/electron-llm-platform.ts` (BrowserWindow events)
-- **BrowserLLMPlatform** - `lama.browser/adapters/browser-llm-platform.ts` (postMessage events)
-
-### Analysis Service
-
-**Location**: `lama.core/services/analysis-service.ts`
-
-Abstract, reusable analysis service that extracts subjects, keywords, and summaries from various content types. Automatically fetches existing subjects from memory via MCP for consistency.
-
-**Supported Content Types**:
-```typescript
-interface AnalysisContent {
-  type: 'chat' | 'memory' | 'file' | 'custom';
-  messages?: Message[];      // For chat analysis
-  subjects?: Subject[];      // For memory analysis
-  text?: string;            // For file/custom analysis
-}
-```
-
-**Memory Context Integration**:
-- Automatically fetches existing subjects from memory via MCP `memory:subjects` tool
-- Includes them in analysis prompt to ensure consistency
-- Prevents duplicate subjects with different names
-- Example: If memory has "climate-change", won't create "global-warming" as separate subject
-
-**Usage**:
-```typescript
-// In AIAssistantHandler.chatWithAnalysis()
-const analysisContent: AnalysisContent = {
-  type: 'chat',
-  messages: [...history, { role: 'assistant', content: response }]
-};
-
-const analysisContext: AnalysisContext = {
-  modelId: 'qwen2.5:7b',
-  temperature: 0,
-  topicId: topicId,
-  disableTools: true
-};
-
-const result = await this.analysisService.analyze(analysisContent, analysisContext);
-// Returns: { subjects, keywords, summary, confidence }
-```
-
-**Key Principles**:
-- **Separation of Concerns**: Analysis belongs in AIAssistantHandler, NOT LLMManager
-- **LLMManager**: Only raw LLM calls (Ollama, Claude, LMStudio)
-- **AIAssistantHandler**: AI-specific operations including analysis
-- **AnalysisService**: Reusable abstraction for all analysis needs
-
-### Integration Pattern
-
-**Electron** - `lama.electron/main/core/ai-assistant-handler-adapter.ts`:
-```typescript
-import { AIAssistantHandler } from '@lama/core/handlers/AIAssistantHandler.js';
-import { ElectronLLMPlatform } from '../../adapters/electron-llm-platform.ts';
-import { mcpManager } from '@mcp/core';
-
-const platform = new ElectronLLMPlatform(mainWindow);
-const handler = new AIAssistantHandler({
-  oneCore: nodeOneCore,
-  channelManager: nodeOneCore.channelManager,
-  topicModel: nodeOneCore.topicModel,
-  leuteModel: nodeOneCore.leuteModel,
-  llmManager: llmManager,
-  mcpManager: mcpManager,  // For memory context in analysis
-  platform: platform
-});
-
-await handler.init();
-```
-
-**Browser** - Similar pattern with BrowserLLMPlatform
-
-### Migrating from Old API
-
-The old `ai-assistant-model.ts` is deprecated. The new `AIAssistantHandler` provides the same public API:
-
-| Old Method | New Method | Notes |
-|------------|------------|-------|
-| `aiAssistantModel.processMessage()` | `aiHandler.processMessage()` | Same signature |
-| `aiAssistantModel.isAITopic()` | `aiHandler.isAITopic()` | Same signature |
-| `aiAssistantModel.registerAITopic()` | `aiHandler.registerAITopic()` | Same signature |
-| `aiAssistantModel.isAIPerson()` | `aiHandler.isAIPerson()` | Same signature |
-| `llmManager.chatWithAnalysis()` | `aiHandler.chatWithAnalysis()` | **MOVED**: Analysis is AI-specific, not LLM-specific |
-
-**No breaking changes** - existing code works without modification.
-
-**Important**: `chatWithAnalysis()` has been moved from LLMManager to AIAssistantHandler:
-- **LLMManager**: Only raw LLM calls (chat, streamChat, etc.)
-- **AIAssistantHandler**: AI-specific operations including analysis
-- Old references to `llmManager.chatWithAnalysis()` will fail - use `aiHandler.chatWithAnalysis()` instead
-
-### Documentation
-
-- **Quickstart**: `specs/021-ai-assistant-core-refactor/quickstart.md`
-- **Data Model**: `specs/021-ai-assistant-core-refactor/data-model.md`
-- **Status**: `specs/021-ai-assistant-core-refactor/IMPLEMENTATION-STATUS.md`
-
-## NodeOneCore: Comprehensive ONE.core Instance
-
-**CRITICAL**: The Node.js process runs a FULL ONE.core instance (`NodeOneCore`) with complete capabilities:
-
-### Available Models & Services
-- `leuteModel` - Full Leute model (people, contacts, profiles, groups)
-- `channelManager` - Complete channel management
-- `connectionsModel` - P2P connections, pairing, CHUM sync
-- `topicModel` - Chat topics and messages
-- `aiAssistantModel` - AIAssistantHandler instance (refactored component-based architecture)
-- `llmManager` - LLM provider integration
-- `llmObjectManager` - LLM configuration storage
-- `topicGroupManager` - Group chat management
-- `contentSharing` - Content sharing capabilities
-- `federationAPI` - Federation features
-- `accessRightsManager` - Access control
-- `quicTransport` - QUIC transport layer
-- `apiServer` - Refinio API server (QuicVC)
-
-### Storage & Persistence
-- Full ONE.core storage via `@refinio/one.core/lib/storage-*`
-- BLOB storage for attachments
-- Versioned object storage
-- Access control and encryption
-- Recipe-based object definitions
-
-### DO NOT Castrate Functionality
-- **DO NOT** stub out or disable methods because types aren't perfect
-- **DO** use proper TypeScript types from `@refinio/one.core/lib/recipes.js`
-- **DO** import union types like `PersonDescriptionTypes`, `CommunicationEndpointTypes`
-- **DO** use type guards with proper typing (not `any`)
-- **DO** trust that NodeOneCore has comprehensive ONE.core capabilities
-
-### TypeScript Type Strategy
-1. Import proper types from `@refinio/one.core/lib/recipes.js`
-2. Use TypeScript's `Extract<>` utility for union type narrowing
-3. Create type guards that preserve type information
-4. Avoid `as any` - use proper type assertions or guards
-
-## ONE.core Fundamentals
-
-### Everything is a Hash
-
-**CRITICAL PRINCIPLE**: In ONE, everything is content-addressed by its SHA-256 hash. This drives all architecture decisions:
-
-- All objects are stored using their hash as the filename
-- References between objects are hashes, not pointers
-- Objects are **immutable** once created
-- Identical objects naturally deduplicate
-
-### Object Categories
-
-1. **Unversioned Objects** - Immutable, no version tracking
-   - `Keys` - Encryption/signing keypairs
-   - `VersionNode*` - Version graph nodes
-
-2. **Versioned Objects** - Have ID properties (`isId: true`), support versioning
-   - `Person` - Identity (ID: email)
-   - `Instance` - App instance (ID: name + owner)
-   - `Group` - Named groups (ID: name)
-   - `Recipe` - Type definitions (ID: name)
-   - `Access`/`IdAccess` - Access control
-   - Custom app objects with ID properties
-
-3. **Virtual Types**
-   - `BLOB` - Binary data
-   - `CLOB` - UTF-8 text data
-
-### Hash Types
-
-**Object Hash** (`SHA256Hash<T>`): Hash of the complete object
-```typescript
-const objectHash = await calculateHashOfObj(person);
-```
-
-**ID Hash** (`SHA256IdHash<T>`): Hash of only ID properties
-```typescript
-const idHash = await calculateIdHashOfObj(person);
-```
-
-**Key Difference**: ID hashes reference ALL versions of an object, object hashes reference ONE specific version.
-
-### Microdata Format
-
-ONE objects are serialized as HTML5 microdata for storage:
-
-```html
-<div itemscope itemtype="//refin.io/Person">
-  <span itemprop="email">user@example.com</span>
-  <span itemprop="name">John Doe</span>
-</div>
-```
-
-This format ensures:
-- Platform-independent serialization
-- Human-readable structure
-- Consistent hashing across implementations
-
-### Recipe System
-
-Recipes define the schema for ONE object types. **CRITICAL**: Array properties must include a `rules` array, even if empty:
-
-```typescript
-// ✅ CORRECT - provides rules array
-{
-    itemprop: 'devices',
-    itemtype: {
-        type: 'array',
-        item: {
-            type: 'object',
-            rules: []  // Required! Prevents parser crash
-        }
-    }
-}
-
-// ❌ INCORRECT - missing rules array crashes parser
-{
-    itemprop: 'devices',
-    itemtype: {
-        type: 'array',
-        item: {
-            type: 'object'
-            // Missing rules causes: "Cannot read property 'forEach' of undefined"
-        }
-    }
-}
-```
-
-### Storage Patterns
-
-**For Versioned Objects** (have ID properties):
-```typescript
-// Creates version nodes AND stores object
-const result = await storeVersionedObject(subject);
-// Returns: { hash, idHash, versionHash }
-```
-
-**For Unversioned Objects**:
-```typescript
-// Stores object only (no versioning)
-const hash = await storeUnversionedObject(keys);
-```
-
-**For Binary Data**:
-```typescript
-// Store BLOB
-const result = await storeArrayBufferAsBlob(arrayBuffer);
-// Returns: { hash: SHA256Hash<BLOB>, status: 'new' | 'exists' }
-
-// Read BLOB
-const data = await readBlobAsArrayBuffer(blobHash);
-```
-
-### Versioning System
-
-Versioned objects use a DAG (Directed Acyclic Graph):
-
-```typescript
-interface VersionNode {
-    depth: number;
-    creationTime: number;
-    data: SHA256Hash;  // Hash of actual object data
-}
-
-// Version node types:
-// - VersionNodeEdge: First version
-// - VersionNodeChange: Linear update (prev: hash)
-// - VersionNodeMerge: Merge versions (nodes: Set<hash>)
-```
-
-**Version Map**: Maps `ID hash → Set<version hashes>`
-
-**Retrieval**:
-- `getObject(objectHash)` - Get specific version
-- `getObjectByIdHash(idHash)` - Get latest version
-- Requires vheads files created by `storeVersionedObject()`
-
-### Reference Types in Recipes
-
-```typescript
-// Reference to specific object version
-{
-    itemprop: 'attachment',
-    itemtype: {
-        type: 'referenceToObj',
-        allowedTypes: new Set(['Message'])
-    }
-}
-
-// Reference to all versions via ID
-{
-    itemprop: 'owner',
-    itemtype: {
-        type: 'referenceToId',
-        allowedTypes: new Set(['Person'])
-    }
-}
-
-// Reference to BLOB
-{
-    itemprop: 'photo',
-    itemtype: { type: 'referenceToBlob' }
-}
-
-// Collection types
-{
-    itemprop: 'keywords',
-    itemtype: {
-        type: 'bag',  // Also: array, set, map
-        item: {
-            type: 'referenceToId',
-            allowedTypes: new Set(['Keyword'])
-        }
-    }
-}
-```
-
-### TypeScript Type System
-
-ONE.core uses declaration merging for extensible types:
-
-```typescript
-// Extend ONE's type system (in @OneCoreTypes.d.ts)
-declare module '@OneObjectInterfaces' {
-    export interface OneVersionedObjectInterfaces {
-        Subject: Subject;
-        Keyword: Keyword;
-    }
-}
-
-// Now Subject and Keyword are recognized ONE types
-```
-
-### Common Pitfalls
-
-1. **Using postToChannel() without storeVersionedObject()**
-   - `postToChannel()` syncs objects across instances
-   - `storeVersionedObject()` creates persistent vheads files
-   - **Both are required** for versioned objects retrieved via ID hash
-
-2. **Incorrect Recipe Definitions**
-   - Missing `rules: []` in array item definitions crashes parser
-   - Using `type: 'string'` instead of `referenceToId` breaks references
-   - Forgetting `isId: true` makes objects unversioned
-
-3. **Hash Type Confusion**
-   - Don't use object hashes where ID hashes are expected
-   - Keywords with Subject ID hashes must match what `storeVersionedObject()` returns
-
-4. **ID Hash Calculation**
-   - Use `calculateIdHashOfObj()` for consistent ID hashes
-   - Only ID properties (marked `isId: true`) are included in ID hash
-
-### Creating Custom Versioned Objects
-
-```typescript
-// 1. Define interface
-interface Subject {
-    $type$: 'Subject';
-    id: string;  // ID property
-    topic: SHA256IdHash<Topic>;
-    keywords: SHA256IdHash<Keyword>[];
-}
-
-// 2. Extend type system
-declare module '@OneObjectInterfaces' {
-    export interface OneVersionedObjectInterfaces {
-        Subject: Subject;
-    }
-}
-
-// 3. Create recipe
-const SubjectRecipe: Recipe = {
-    $type$: 'Recipe',
-    name: 'Subject',
-    rule: [
-        { itemprop: 'id', isId: true },  // Marks as versioned
-        {
-            itemprop: 'topic',
-            itemtype: {
-                type: 'referenceToId',
-                allowedTypes: new Set(['Topic'])
-            }
-        },
-        {
-            itemprop: 'keywords',
-            itemtype: {
-                type: 'bag',
-                item: {
-                    type: 'referenceToId',
-                    allowedTypes: new Set(['Keyword'])
-                }
-            }
-        }
-    ]
-};
-
-// 4. Register recipe (during init)
-await registerRecipes([SubjectRecipe]);
-
-// 5. Create and store objects
-const subject = {
-    $type$: 'Subject',
-    id: 'my-subject',
-    topic: topicIdHash,
-    keywords: [keywordIdHash1, keywordIdHash2]
-};
-
-// CRITICAL: Store before posting to channel
-const result = await storeVersionedObject(subject);
-await channelManager.postToChannel(topicId, subject);
-```
-
-## Recent Optimizations (January 2025)
-
-### Performance Improvements
-- **LLM Pre-warming**: Added `preWarmConnection()` in llm-manager.js to reduce cold start from 12+ seconds to <1 second
-- **Contact Caching**: Added 5-second TTL cache in one-core.js handlers to prevent redundant `getContacts` calls
-- **Log Reduction**: Commented out excessive "OBJECT RECEIVED" logging, batched MCP tool registration logs
-- **Race Condition Fix**: Added proper mutex cleanup in `finally` block for topic creation
-- **AI Topic Registration Fix**: Fixed initialization order in ai-assistant-model.js - AI contacts must be loaded before scanning topics
-
-### AI Response + Analysis Combined
-- **Single LLM Call**: New `chatWithAnalysis()` method in llm-manager.js combines response generation with keyword/subject extraction
-- **Non-blocking**: Uses `setImmediate()` to process analysis in background while streaming response
-- **Structured Output**: LLM returns formatted response with [RESPONSE] and [ANALYSIS] sections
-- **Automatic Processing**: Keywords and subjects are created/updated without blocking user interaction
-
-## Structured LLM Communication (Feature 018 - IN DEVELOPMENT)
-
-**Status**: Planning complete, using Ollama native structured outputs
-
-### Overview
-Structured JSON-based protocol for LLM responses using Ollama's native `format` parameter. Guarantees valid JSON structure (no parsing errors), extracts keywords/subjects/summaries reliably, stores directly as ONE.core objects using existing recipes. Eliminates need for prompt engineering to teach format.
-
-### JSON Schema (Ollama Structured Outputs)
-
-**Response Schema** (enforced by Ollama at generation time):
-```json
-{
-  "response": "Natural language response",
-  "analysis": {
-    "subjects": [
-      {
-        "name": "subject-name",
-        "description": "Brief explanation",
-        "isNew": true,
-        "keywords": [
-          {"term": "keyword", "confidence": 0.8}
-        ]
-      }
-    ],
-    "summaryUpdate": "Brief summary of exchange"
-  }
-}
-```
-
-### Storage
-
-**ONE.core Objects** (using existing recipes):
-- JSON is parsed and stored directly as ONE.core objects
-- Subject: Created/updated from analysis.subjects
-- Keyword: Created from subject keywords
-- Summary: Updated from analysis.summaryUpdate
-- Message: Links to extracted subjects/keywords via ONE.core references
-- No intermediate XML storage - parse JSON and create objects directly
-
-### Implementation Files
-
-**New**:
-- `/main/schemas/llm-response.schema.ts` - JSON schema for Ollama `format` parameter
-- `/specs/018-we-must-create/contracts/json-schema.md` - JSON schema contract
-
-**Modified**:
-- `/main/services/ollama.ts` - Added `format` parameter support in chatWithOllama()
-- `/main/services/llm-manager.ts` - Pass `format` option through, parse JSON response
-- `/main/core/ai-assistant-model.ts` - Parse JSON, create ONE.core objects directly
-- `/main/ipc/handlers/llm.ts` - Return `{text, analysis}` with parsed data
-
-### Key Principles
-
-- **Guaranteed Structure**: Ollama validates JSON schema before returning (no malformed responses)
-- **Fail Fast**: JSON parse errors throw (but shouldn't happen - Ollama guarantees structure)
-- **No Legacy Migration**: Old conversations stay as-is, new use structured outputs
-- **Real-time Processing**: Extraction during chat with `setImmediate()` for non-blocking
-- **Traceability**: Extracted objects link back to source message via ONE.core references
-- **Performance**: <5ms JSON parsing overhead
-
-### Technical Decisions
-
-- **Schema Enforcement**: Ollama's native `format` parameter (no parsing errors possible)
-- **JSON Parsing**: Native JSON.parse() (~1-2ms for 10KB)
-- **System Prompt**: Simplified (~100 tokens vs 400 - no format teaching needed), temperature=0
-- **Storage**: ONE.core native objects using existing recipes (Subject, Keyword, Summary)
-
-### Documentation
-
-- Spec: `/specs/018-we-must-create/spec.md`
-- Plan: `/specs/018-we-must-create/plan.md` (updated for Ollama structured outputs)
-- Research: `/specs/018-we-must-create/research.md`
-- Contracts: `/specs/018-we-must-create/contracts/json-schema.md` (JSON schema for Ollama)
-- Data Model: `/specs/018-we-must-create/data-model.md`
-- Quickstart: `/specs/018-we-must-create/quickstart.md`
-- Ollama Blog: https://ollama.com/blog/structured-outputs
-
-### Topic ID Determinism
-- **Name-based IDs**: Topics use cleaned conversation names as IDs (e.g., "pizza-discussion" not "topic-1758610172370")
-- **Duplicate Prevention**: System checks for existing topics and appends counter if needed
-- **No Auto-creation**: Topic analysis no longer creates topics when checking for messages
-- **Consistent References**: All topic IDs are deterministic and predictable
-
-## HTML Export with Microdata (NEW)
-
-**Feature**: Export conversations as HTML with comprehensive microdata markup using ONE.core's implode() function.
-
-### Core Concept
-- Uses ONE.core's native `implode()` function to embed referenced objects
-- Generates HTML with microdata attributes for hashes and signatures
-- Creates self-contained HTML files with inline styling
-
-### IPC Handler
-- `export:htmlWithMicrodata` - Export conversation as HTML with embedded microdata
-- Location: `/main/ipc/handlers/export.ts`
-- Request: topicId, format, options (includeSignatures, maxMessages, etc.)
-- Response: HTML string and metadata
-
-### Implementation Architecture
-**Services**:
-- `/main/services/html-export/implode-wrapper.ts` - ONE.core implode() integration
-- `/main/services/html-export/formatter.ts` - Human-readable HTML formatting
-
-**Key Functions**:
-- `implode(hash)` - Recursively embed referenced ONE objects as microdata
-- `escapeForHtml()` - Sanitize user content for safe HTML rendering
-- `calculateHashOfObj()` - Get SHA-256 hash for verification
-
-**Microdata Format**:
-```html
-<div itemscope itemtype="//refin.io/Message" data-hash="[hash]" data-signature="[sig]">
-  <span itemprop="content">[message]</span>
-</div>
-```
-
-## Topic Analysis with AI
-
-**Feature**: AI-powered analysis of conversations to extract subjects, keywords, and generate summaries.
-
-### Data Model (one.ai package)
-- **Subject**: Distinct theme identified by keyword combination (e.g., "children+education")
-- **Keyword**: Extracted term/concept from conversations
-- **Summary**: Versioned overview of all subjects in a topic
-
-### IPC Handlers for Topic Analysis
-- `topicAnalysis:analyzeMessages` - Extract subjects and keywords from messages
-- `topicAnalysis:getSubjects` - Retrieve subjects for a topic
-- `topicAnalysis:getSummary` - Get current or historical summary
-- `topicAnalysis:updateSummary` - Manually trigger summary update
-- `topicAnalysis:extractKeywords` - Extract keywords from text
-- `topicAnalysis:mergeSubjects` - Combine related subjects
-
-### Integration Points
-- Uses existing LLMManager for AI operations
-- Stores as ONE.core objects in Node.js
-- UI components in `/electron-ui/src/components/TopicSummary/`
-- All processing happens in Node.js, UI receives via IPC
-
-### Implementation Details
-**Core Files**:
-- `/main/core/one-ai/` - Package root with models, services, and storage
-- `/main/core/one-ai/models/` - Subject.js, Keyword.js, Summary.js
-- `/main/core/one-ai/services/TopicAnalyzer.js` - Main analysis service
-- `/main/core/one-ai/storage/` - Persistence layer for all objects
-- `/main/ipc/handlers/topic-analysis.ts` - IPC handler implementations
-
-**UI Components**:
-- `TopicSummary.tsx` - Main summary display with version history
-- `SubjectList.tsx` - List of identified subjects with merge capability
-- `KeywordCloud.tsx` - Visual keyword display
-- `SummaryHistory.tsx` - Version history browser
-
-**Performance Features**:
-- LRU cache for keyword extraction (100 entry limit)
-- Batch message processing with parallelization
-- Async summary pruning (10 versions, 30-day retention)
-- Cache hit rate tracking and optimization
-
-**Auto-Analysis**:
-- Triggers after every message (immediate analysis)
-- Identifies subjects by keyword combinations
-- Generates AI summary referencing all subjects
-- Updates summary when subjects change significantly
-
-## Context-Aware Knowledge Sharing (Feature 019 - PLANNED)
-
-**Status**: Planning complete, design artifacts ready for implementation
-
-### Overview
-Displays context-aware proposals above the chat entry field to suggest relevant past conversations based on subject/keyword matching. Users see a single proposal at a time, with horizontal swipe navigation through ranked proposals. Configurable matching algorithm with initial implementation using Jaccard similarity.
-
-**INCLUDES MEMORIES**: Proposals match against subjects from ALL topics including the "lama" memory topic. When Claude AI stores memories via `memory:store`, they create journal entries (keywords + subjects) that are factored into proposal matching alongside regular conversation subjects.
-
-### Data Model
-- **Proposal** (computed, not stored): Links past subject to current subject via matched keywords
-  - `pastSubject`: SHA256IdHash<Subject> - Reference to past subject
-  - `currentSubject`: SHA256IdHash<Subject> - Reference to current subject
-  - `matchedKeywords`: string[] - Keywords shared between subjects
-  - `relevanceScore`: number (0.0-1.0) - Computed relevance via algorithm
-  - `sourceTopicId`: string - Origin conversation
-  - `pastSubjectName`: string - Human-readable label
-  - `createdAt`: number - Past subject timestamp for recency
-
-- **ProposalConfig** (ONE.core versioned object, userEmail as ID):
-  - `matchWeight`: number (0.0-1.0) - Weight for keyword overlap
-  - `recencyWeight`: number (0.0-1.0) - Weight for subject age
-  - `recencyWindow`: integer - Time window in milliseconds for recency boost
-  - `minJaccard`: number (0.0-1.0) - Minimum similarity threshold
-  - `maxProposals`: integer (1-50) - Maximum proposals to return
-  - `updated`: integer - Last config update timestamp
-
-- **DismissedProposal** (session-only, in-memory):
-  - `topicId`: string - Current conversation
-  - `pastSubjectIdHash`: SHA256IdHash<Subject> - Dismissed past subject
-  - `dismissedAt`: number - Dismissal timestamp
-
-### Matching Algorithm (Phase 1: Jaccard Similarity)
-```javascript
-// Jaccard similarity: |intersection| / |union|
-const intersection = currentKeywords.filter(k => pastKeywords.has(k));
-const union = [...new Set([...currentKeywords, ...pastKeywords])];
-const jaccard = intersection.size / union.size;
-
-// Recency boost: Linear decay over recency window
-const age = Date.now() - pastSubject.created;
-const recencyBoost = Math.max(0, 1 - (age / config.recencyWindow));
-
-// Weighted combination
-const relevanceScore = jaccard * config.matchWeight + recencyBoost * config.recencyWeight;
-```
-
-### IPC Handlers for Proposals
-- `proposals:getForTopic` - Get ranked proposals for topic based on current subjects
-- `proposals:updateConfig` - Update user's matching algorithm configuration
-- `proposals:getConfig` - Retrieve current configuration (or defaults)
-- `proposals:dismiss` - Mark proposal as dismissed for current session
-- `proposals:share` - Share proposal's past subject context into conversation
-
-### Integration Points
-- **Depends on Feature 018**: Uses Subject and Keyword objects from topic analysis
-- **Memory Integration**: Queries subjects from "lama" topic created by `memory:store` MCP tool
-  - Memory subjects included in `ProposalEngine.fetchAllSubjects()` (line 300)
-  - Enables proposals based on stored memories, not just conversation history
-- **Node.js Services**:
-  - `/main/services/proposal-engine.ts` - Core matching logic (includes memory subjects)
-  - `/main/services/proposal-ranker.ts` - Ranking algorithm
-  - `/main/ipc/handlers/proposals.ts` - IPC handler implementations
-- **React UI Components**:
-  - `/electron-ui/src/components/ProposalCard.tsx` - Single proposal display
-  - `/electron-ui/src/components/ProposalCarousel.tsx` - Swipeable container
-  - `/electron-ui/src/hooks/useProposals.ts` - React hook for proposal state
-- **Gesture Library**: react-swipeable (mouse + touch support for desktop)
-
-### Caching Strategy
-- **In-Memory LRU Cache**: Max 50 entries, 60-second TTL
-- **Cache Key**: `${topicId}:${currentSubjectIds.sort().join(',')}`
-- **Invalidation Triggers**:
-  - New subject added to current topic
-  - Proposal config changed
-  - Topic switched
-  - 60-second TTL expired
-
-### Performance Targets
-- Proposal generation: <100ms (includes subject query + matching + ranking)
-- Swipe gesture response: <50ms
-- Cache lookup: <1ms (O(1) map access)
-
-### Key Principles
-- **Proposals are ephemeral**: Computed on-demand, not stored in ONE.core
-- **Config is versioned**: ProposalConfig stored as versioned object (userEmail as ID)
-- **Session-scoped dismissals**: DismissedProposal cleared on app restart
-- **Real-time updates**: Proposals regenerate when current subjects change
-- **Fail-fast**: No proposals when no subjects exist (no empty state handling)
-
-### Documentation
-- Spec: `/specs/019-above-the-chat/spec.md`
-- Plan: `/specs/019-above-the-chat/plan.md`
-- Research: `/specs/019-above-the-chat/research.md`
-- Data Model: `/specs/019-above-the-chat/data-model.md`
-- Contracts: `/specs/019-above-the-chat/contracts/ipc-proposals.json`
-- Quickstart: `/specs/019-above-the-chat/quickstart.md`
-
-## Single ONE.core Architecture
+### Single ONE.core Architecture
 
 **CRITICAL**: This Electron app runs ONE ONE.core instance in Node.js ONLY:
 
@@ -1142,67 +145,199 @@ const relevanceScore = jaccard * config.matchWeight + recencyBoost * config.rece
    - Models: SingleUserNoAuth, LeuteModel, ChannelManager, AI contacts, etc.
    - Storage: File system based
 
+**Architecture Principles**:
+- **NO FALLBACKS**: Browser ONLY uses IPC - if IPC fails, operations fail
+- **NO BROWSER ONE.CORE**: Browser has NO ONE.core imports, just UI
+- **FIX DON'T MITIGATE**: Fix problems, don't work around them
+
+### lama.core vs lama.cube
+
+**Package Separation**:
+- **lama.core** (`/Users/gecko/src/lama/lama.core/`) - Platform-agnostic business logic
+  - Handlers with dependency injection (NO platform-specific imports)
+  - LLM services (Ollama, Claude, LMStudio HTTP clients)
+  - AI models (AIContactManager, AITopicManager, AIAssistantHandler, etc.)
+  - Dependencies: ONLY `@refinio/one.core` and `@refinio/one.models`
+
+- **lama.cube** (this package) - Electron-specific implementation
+  - IPC handlers that instantiate lama.core handlers
+  - Electron-specific services (MCP manager, node provisioning)
+  - Node ONE.core instance
+  - Injects dependencies into lama.core handlers
+
+**Pattern**:
+```typescript
+// lama.core/handlers/ChatHandler.ts
+export class ChatHandler {
+  constructor(private nodeOneCore: any, private stateManager: any) {}
+  async sendMessage(params) { /* business logic */ }
+}
+
+// lama.cube/main/ipc/handlers/chat.ts
+import { ChatHandler } from '@lama/core/handlers/ChatHandler.js';
+const chatHandler = new ChatHandler(nodeOneCore, stateManager);
+export default {
+  async sendMessage(event, params) {
+    return await chatHandler.sendMessage(params);
+  }
+};
+```
+
+### NodeOneCore: Comprehensive ONE.core Instance
+
+The Node.js process runs a FULL ONE.core instance with complete capabilities:
+
+**Available Models & Services**:
+- `leuteModel` - Full Leute model (people, contacts, profiles, groups)
+- `channelManager` - Complete channel management
+- `connectionsModel` - P2P connections, pairing, CHUM sync
+- `topicModel` - Chat topics and messages
+- `aiAssistantModel` - AI assistant handler
+- `llmManager` - LLM provider integration
+- `topicGroupManager` - Group chat management
+- Full ONE.core storage, BLOB storage, access control, encryption
+
+**TypeScript Strategy**:
+- Import proper types from `@refinio/one.core/lib/recipes.js`
+- Use TypeScript's `Extract<>` utility for union type narrowing
+- Create type guards that preserve type information
+- Avoid `as any` - use proper type assertions
+
+## Configuration Architecture
+
+LAMA uses a **3-layer configuration system**:
+
+### Layer 1: Bootstrap Config (File-Based)
+- **File**: `lama.config.json` or `~/.lama/config.json`
+- **Use**: Required before ONE.core starts (network settings, instance identity)
+- **Examples**: Instance name/email, ONE.core storage directory, CommServer URL, log level
+
+### Layer 2: User Settings (ONE.core Versioned)
+- **Type**: `UserSettings` ONE.core object (ID: `userEmail`)
+- **Use**: User preferences that sync across instances via CHUM
+- **Examples**: AI temperature/maxTokens, default AI model, UI theme, word cloud preferences
+- **Access**: Via `UserSettingsManager`
+
+### Layer 3: Entity Configs (ONE.core Versioned)
+- **Types**: `MCPServerConfig`, `MCPTopicConfig`, `LLM`
+- **Use**: Per-entity configuration (servers, topics, models)
+- **Examples**: Per-model auth tokens, per-topic MCP settings, per-server MCP config
+
+**Decision Tree**:
+```
+Required before ONE.core starts? → Layer 1 (LamaConfig)
+Belongs to specific entity? → Layer 3 (Entity Configs)
+User preference that should sync? → Layer 2 (UserSettings)
+```
+
+**Full Documentation**: See `docs/config-quickstart.md` and `docs/config-platform-support.md`
+
+## Key Concepts
+
+### MCP Memory Storage
+
+- **Storage**: Memories stored as Message objects in the "lama" topic
+- **Journal Entries**: Every memory creates keywords, subject, summary (via LLM analysis)
+- **Access**: Via MCP tools (`memory:store`, `memory:search`, `memory:recent`, `memory:subjects`)
+- **Implementation**: `main/services/mcp/memory-tools.js`
+- **Non-blocking**: Journal creation runs in background via `setImmediate()`
+
+### ONE.core Fundamentals
+
+ONE uses content-addressed storage where everything is a SHA-256 hash. Objects are immutable and support versioning through DAGs.
+
+**Key concepts**:
+- Hash types: Object hash vs ID hash
+- Versioned vs unversioned objects
+- Recipe system for type definitions
+- Storage patterns (`storeVersionedObject`, `storeUnversionedObject`)
+
+**Deep dive**: See `docs/one-core-fundamentals.md` for complete details on:
+- Hash types and object categories
+- Microdata serialization format
+- Recipe system and common pitfalls
+- Creating custom versioned objects
+- TypeScript type system integration
+
+## Feature Status
+
+### Feature 018: Structured LLM Communication
+**Status**: Implementation in progress
+**Purpose**: Structured JSON-based protocol for LLM responses using Ollama's native `format` parameter
+**Key**: Guarantees valid JSON structure, extracts keywords/subjects/summaries reliably, stores as ONE.core objects
+**Docs**: `specs/018-we-must-create/spec.md`, `specs/018-we-must-create/plan.md`
+
+### Feature 019: Context-Aware Knowledge Sharing
+**Status**: Planning complete, implementation in progress
+**Purpose**: Display context-aware proposals above chat to suggest relevant past conversations
+**Key**: Subject/keyword matching with Jaccard similarity, includes memories from "lama" topic
+**Implementation**: `main/services/proposal-engine.ts`, `main/services/proposal-ranker.ts`
+**Docs**: `specs/019-above-the-chat/spec.md`, `specs/019-above-the-chat/quickstart.md`
+
+### Feature 021: AI Assistant Core Refactor
+**Status**: Phase 3 complete, integration active
+**Purpose**: Refactor monolithic AI assistant into focused, platform-agnostic components
+**Components**: AIContactManager, AITopicManager, AITaskManager, AIPromptBuilder, AIMessageProcessor, AIAssistantHandler
+**Key**: All components <400 lines, zero Electron dependencies in lama.core, dependency injection pattern
+**Docs**: `specs/021-ai-assistant-core-refactor/IMPLEMENTATION-STATUS.md`, `specs/021-ai-assistant-core-refactor/quickstart.md`
+
+### HTML Export with Microdata
+**Feature**: Export conversations as HTML with comprehensive microdata markup
+**IPC Handler**: `export:htmlWithMicrodata`
+**Implementation**: Uses ONE.core's native `implode()` function to embed referenced objects
+**Location**: `main/services/html-export/`
+
+### Topic Analysis with AI
+**Feature**: AI-powered analysis to extract subjects, keywords, and summaries
+**Data Model**: Subject, Keyword, Summary (versioned ONE.core objects)
+**IPC Handlers**: `topicAnalysis:analyzeMessages`, `topicAnalysis:getSubjects`, `topicAnalysis:getSummary`
+**Auto-Analysis**: Triggers after every message for immediate analysis
+**Location**: `main/core/one-ai/`
+
 ## Channel Architecture
 
-**IMPORTANT**: The app uses different architectures for P2P and group chats:
+**IMPORTANT**: Different architectures for P2P vs group chats:
 
-### P2P Conversations (Two Participants Only)
+### P2P Conversations (Two Participants)
 
 1. **Single Shared Channel**
    - ONE channel for both participants
    - Channel ID format: `personId1<->personId2` (lexicographically sorted)
-   - Channel owner: `null` or `undefined` (no owner)
-   - Both participants read AND write to the same channel
+   - Channel owner: `null` or `undefined`
+   - Both participants read AND write to same channel
 
-2. **Access Control for P2P**
+2. **Access Control**
    - Direct person-based access to BOTH channel AND Topic object
-   - Both participants are granted individual access
-   - NO Group objects needed or used for P2P
+   - NO Group objects needed for P2P
    - Channel access: `{id: channelHash, person: [person1, person2]}`
    - Topic access: `{object: topicHash, person: [person1, person2]}`
 
-3. **Why P2P is Different**
-   - Simpler: Only two people, no need for complex group management
-   - Compatible: Works with one.leute's P2P expectations
-   - No CHUM issues: No Group objects to be rejected
-
-4. **Critical Implementation Detail**
-   - Must grant access to Topic object itself (not just channel)
-   - one.leute pattern: Always grants access to both ChannelInfo and Topic
-   - Without Topic access, peer cannot see conversation structure
+3. **Critical**: Must grant access to Topic object itself (not just channel)
 
 ### Group Chats (3+ Participants including AI)
 
 1. **One Topic ID per Conversation**
    - Each group chat has ONE topic ID
-   - The topic ID acts as the grouping mechanism for all messages
    - All participants use the SAME topic ID
 
 2. **Multiple Channels per Topic**
-   - Each participant has their OWN channel with the same topic ID
-   - Channel = {id: topic_id, owner: participant_person_id}
-   - Example: For topic "abc123" with 3 participants:
-     - Channel 1: {id: "abc123", owner: "person1"}
-     - Channel 2: {id: "abc123", owner: "person2"}
-     - Channel 3: {id: "abc123", owner: "person3"}
+   - Each participant has their OWN channel with same topic ID
+   - Channel = `{id: topic_id, owner: participant_person_id}`
 
 3. **Writing Messages - Decentralized**
    - Each participant writes ONLY to their OWN channel
-   - You cannot write to another participant's channel (will throw error)
-   - The channel must exist in your local cache to write to it
-   - In code: Messages are posted with YOUR person ID as the channel owner
+   - Cannot write to another participant's channel (will throw error)
 
 4. **Reading Messages - Aggregated**
    - `TopicRoom.retrieveAllMessages()` queries by topic ID only
-   - ChannelManager's `getMatchingChannelInfos()` finds ALL channels with that topic ID
-   - `multiChannelObjectIterator()` aggregates messages from ALL matching channels
-   - Result: Messages from all participants are merged and sorted by timestamp
+   - `getMatchingChannelInfos()` finds ALL channels with that topic ID
+   - `multiChannelObjectIterator()` aggregates messages from ALL channels
+   - Result: Messages merged and sorted by timestamp
 
-5. **Access Control for Groups**
-   - Group-based access: All participants are in a Group object
-   - Each participant's channel grants read access to the group
+5. **Access Control**
+   - Group-based access: All participants in a Group object
    - Groups are LOCAL objects - NEVER synced through CHUM
-   - Only IdAccess objects referencing the group hash are shared
+   - Only IdAccess objects referencing group hash are shared
 
 ### Key Differences Summary
 
@@ -1214,71 +349,9 @@ const relevanceScore = jaccard * config.matchWeight + recencyBoost * config.rece
 | Access Control | Person-based | Group-based (local groups) |
 | Topic ID Format | `id1<->id2` | Any string |
 
-### Authentication Flow
-
-The app follows a simple authentication flow:
-
-1. **UI Login**: User enters credentials in browser UI
-2. **IPC Call**: Browser calls `onecore:initializeNode` via IPC
-3. **Node.js Init**: Node.js initializes ONE.core with SingleUserNoAuth
-4. **Ready**: Node.js ONE.core is ready, UI gets data via IPC
-
-### Architecture Principles
-
-**NO FALLBACKS**:
-- Browser ONLY uses IPC - no fallback to local models
-- If IPC fails, operations fail - no mitigation
-- Fix the problem, don't work around it
-
-**NO BROWSER ONE.CORE**:
-- Browser has NO ONE.core imports
-- Browser has NO AppModel
-- Browser is JUST a UI layer
-- ALL data comes from Node.js via IPC
-
-### Common Issues
-
-**"User not authenticated - node not provisioned"**
-- This occurs when trying to create conversations before login
-- Solution: User must log in first via the browser UI
-- The Node instance is initialized after login
-
-**Browser AppModel references**
-- REMOVE THEM - Browser should NOT have AppModel
-- Use IPC instead: `window.electronAPI.invoke()`
-- All data operations go through Node.js
-
-**Messages not visible to other participants**
-- Check that each participant writes to their OWN channel
-- Verify group access is granted to all channels
-- Ensure TopicRoom.retrieveAllMessages() is used (not manual channel queries)
-- Debug: Log all channels with `getMatchingChannelInfos()` to see channel owners
-
-### Key Files
-
-- `/main/core/node-one-core.ts` - SINGLE Node.js ONE.core instance
-- `/main/ipc/handlers/` - IPC handlers for all operations
-- `/electron-ui/src/services/browser-init.ts` - UI initialization (NO ONE.core)
-- `/electron-ui/src/bridge/lama-bridge.ts` - IPC bridge for UI
-
-### Development Notes
-
-- Main process uses ESM (`import`)
-- Renderer uses ESM (`import`)
-- IPC communication via contextBridge for ALL operations
-- NO direct ONE.core access from browser
-- NO fallbacks - fail fast and fix
-
-For consistency and simplicity:
-- ONE instance (Node.js)
-- ONE source of truth
-- IPC for everything
-- No complex federation/pairing needed
-- Reference implementations are in ./reference
-
 ## Transport Architecture
 
-**IMPORTANT**: Clean separation between transport and protocol layers:
+**Clean separation** between transport and protocol layers:
 
 ```
 Application Layer:  [CHUM Sync Protocol]
@@ -1293,40 +366,59 @@ Transport Layer:  [QUIC]    [WebSocket]
 
 ### Transport Layers
 
-- **QUIC** (`/main/core/quic-transport.ts`): Future direct P2P transport
-  - Direct peer-to-peer connections
-  - No relay server needed
-  - Lower latency, better performance
-  - Placeholder implementation until node:quic is stable
-
-- **WebSocket** (via commserver): Current transport
-  - Uses relay server (commserver)
-  - Works today, proven reliable
-  - Will be phased out once QUIC is ready
+- **QUIC** (`main/core/quic-transport.ts`): Future direct P2P (placeholder until node:quic stable)
+- **WebSocket** (via commserver): Current transport using relay server
 
 ### Protocol Layer
 
-- **CHUM**: Application-level sync protocol
-  - Handles data synchronization between peers
-  - Transport-agnostic - works over ANY transport
-  - Managed by ConnectionsModel
-
-- **ConnectionsModel**: Protocol manager
-  - Implements CHUM protocol logic
-  - Uses pluggable transports (QUIC, WebSocket, etc.)
-  - Transport selection is transparent to CHUM
+- **CHUM**: Application-level sync protocol (transport-agnostic)
+- **ConnectionsModel**: Protocol manager implementing CHUM logic
 
 ### Key Principles
 
-1. **Transports are dumb** - They only move bytes, no application logic
-2. **CHUM is transport-agnostic** - Works over any reliable transport
-3. **Clean separation** - Transport layer doesn't know about channels, sync, or application concepts
-4. **Pluggable architecture** - New transports can be added without changing CHUM
+1. **Transports are dumb** - Only move bytes, no application logic
+2. **CHUM is transport-agnostic** - Works over ANY reliable transport
+3. **Clean separation** - Transport layer doesn't know about channels/sync
+4. **Pluggable architecture** - New transports added without changing CHUM
 
 ### Common Mistakes to Avoid
 
-- **DON'T** implement CHUM logic in transport layer (like quic-vc-transport.js did)
+- **DON'T** implement CHUM logic in transport layer
 - **DON'T** create channels from transport layer
 - **DON'T** mix trust/verification with transport
-- **DO** keep transport as a simple byte pipe
+- **DO** keep transport as simple byte pipe
 - **DO** let ConnectionsModel handle all CHUM protocol logic
+
+## Common Issues & Solutions
+
+### "User not authenticated - node not provisioned"
+- Occurs when creating conversations before login
+- **Solution**: User must log in first via browser UI
+- Node instance initializes after login
+
+### Browser AppModel references
+- **REMOVE THEM** - Browser should NOT have AppModel
+- Use IPC: `window.electronAPI.invoke()`
+- All data operations go through Node.js
+
+### Messages not visible to other participants
+- Check each participant writes to their OWN channel
+- Verify group access granted to all channels
+- Use `TopicRoom.retrieveAllMessages()` (not manual queries)
+- Debug: Log channels with `getMatchingChannelInfos()`
+
+## Key Files
+
+- `/main/core/node-one-core.ts` - Single Node.js ONE.core instance
+- `/main/ipc/handlers/` - IPC handlers for all operations
+- `/electron-ui/src/services/browser-init.ts` - UI initialization (NO ONE.core)
+- `/electron-ui/src/bridge/lama-bridge.ts` - IPC bridge for UI
+
+## Development Principles
+
+- Main process uses ESM (`import`)
+- Renderer uses ESM (`import`)
+- IPC communication via contextBridge for ALL operations
+- NO direct ONE.core access from browser
+- NO fallbacks - fail fast and fix
+- ONE instance (Node.js), ONE source of truth, IPC for everything

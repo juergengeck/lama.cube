@@ -275,7 +275,7 @@ var aiHandlers = {
                         return [4 /*yield*/, handler.ensureAIContactForModel(modelId)];
                     case 1:
                         personId = _c.sent();
-                        return [2 /*return*/, { success: true, personId: personId }];
+                        return [2 /*return*/, { success: true, data: { personId: personId } }];
                     case 2:
                         error_6 = _c.sent();
                         return [2 /*return*/, { success: false, error: error_6.message }];

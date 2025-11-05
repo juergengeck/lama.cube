@@ -56,12 +56,11 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
       window.electronAPI.on('ai:defaultModelChanged', handleDefaultModelChanged)
     }
 
-    // Also refresh contacts periodically
-    const interval = setInterval(loadContacts, 5000)
+    // REMOVED: Periodic polling that was causing thousands of database queries
+    // Now relies on events only: contacts:updated, contact:added, ai:defaultModelChanged
 
     return () => {
       window.removeEventListener('contacts:updated', handleContactsUpdated)
-      clearInterval(interval)
     }
   }, [bridge])
 

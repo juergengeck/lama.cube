@@ -218,6 +218,7 @@ declare module '@OneObjectInterfaces' {
             streamResponses: boolean;
             autoSummarize: boolean;
             enableMCP: boolean;
+            apiKeys?: Record<string, string>;
         };
         ui: {
             theme: 'dark' | 'light';

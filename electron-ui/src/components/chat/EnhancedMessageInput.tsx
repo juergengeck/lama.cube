@@ -490,13 +490,14 @@ export const EnhancedMessageInput: React.FC<EnhancedMessageInputProps> = ({
   
   return (
     <div className={`enhanced-message-input ${theme} ${isDragOver ? 'drag-over' : ''}`}>
-      {/* Hashtag suggestions */}
+      {/* Hashtag suggestions - DISABLED (unused feature, regression)
       <HashtagSuggestionsPanel
         suggestions={hashtagSuggestions}
         onSelectHashtag={selectHashtag}
         visible={showSuggestions}
       />
-      
+      */}
+
       {/* Attachment previews */}
       {attachments.length > 0 && (
         <div style={{
@@ -597,12 +598,13 @@ export const EnhancedMessageInput: React.FC<EnhancedMessageInputProps> = ({
         {/* Send or Stop button */}
         {isStreaming ? (
           <button
-            className="send-button active stop-button"
+            className="send-button stop-button"
             onClick={onStopStreaming}
             title="Stop streaming"
-            style={{ backgroundColor: '#ff4444' }}
           >
-            ⏹
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <rect x="3" y="3" width="10" height="10" rx="1"/>
+            </svg>
           </button>
         ) : (
           <button

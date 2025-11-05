@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { lamaBridge, type Message } from '@/bridge/lama-bridge'
 
 export function useLamaMessages(conversationId: string) {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
   const [lastUpdate, setLastUpdate] = useState(Date.now()) // Track updates
+  const prevConversationIdRef = useRef<string>(conversationId)
 
   // Debug: log when messages state changes
   useEffect(() => {
@@ -34,11 +35,19 @@ export function useLamaMessages(conversationId: string) {
 
   // Load on mount and conversation change
   useEffect(() => {
-    // Clear messages before loading to prevent stale data flash
-    console.log('[useLamaMessages] 🧹 Clearing messages before load for:', conversationId)
-    setMessages([])
+    // Only clear messages when conversation ACTUALLY changes (not on every reload)
+    // This prevents the annoying flash where messages disappear briefly
+    const conversationChanged = prevConversationIdRef.current !== conversationId
+
+    if (conversationChanged) {
+      console.log('[useLamaMessages] 🔄 Conversation changed:', prevConversationIdRef.current, '→', conversationId)
+      setMessages([]) // Clear only when switching conversations
+      prevConversationIdRef.current = conversationId
+    } else {
+      console.log('[useLamaMessages] ♻️  Refreshing messages for:', conversationId)
+    }
+
     loadMessages()
-    // Note: loadMessages in deps is redundant with conversationId but required for lint
   }, [conversationId, loadMessages])
 
   // Listen for new messages - this is THE key part

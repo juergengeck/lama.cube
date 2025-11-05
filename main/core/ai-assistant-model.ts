@@ -294,20 +294,22 @@ What can I help you with today?`
     // Create new HashGroup with updated participants
     const { storeVersionedObject } = await import('@refinio/one.core/lib/storage-versioned-objects.js')
     const { storeUnversionedObject } = await import('@refinio/one.core/lib/storage-unversioned-objects.js')
+
     const newHashGroup = {
       $type$: 'HashGroup' as const,
+      person: true,
       members: newParticipants
     }
-    const hashGroupResult = await storeUnversionedObject(newHashGroup)
+    const hashGroupResult = await storeUnversionedObject(newHashGroup as any)
 
     // Update the group to reference new HashGroup (use .hash from result)
     const updatedGroup = {
       $type$: 'Group' as const,
       $versionHash$: (group as any).$versionHash$,
       name: group.name,
-      hashGroup: hashGroupResult.hash
+      hashGroup: hashGroupResult.hash as any
     }
-    await storeVersionedObject(updatedGroup)
+    await storeVersionedObject(updatedGroup as any)
 
     console.log(`[AIAssistantModel] ✅ Updated topic ${topicId} participant`)
   }

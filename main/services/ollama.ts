@@ -121,7 +121,7 @@ async function chatWithOllama(
       stream: useStreaming,
       options: {
         temperature: options.temperature || 0.7,
-        num_predict: options.max_tokens || -1,  // -1 = unlimited, let model stop naturally via EOS
+        num_predict: options.max_tokens || 2000,  // Default 2000 tokens, reasonable limit
         top_k: 40,
         top_p: 0.95
       }

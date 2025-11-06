@@ -52,6 +52,7 @@ interface CreateConversationParams {
   type?: string;
   participants?: any[];
   name?: string | null;
+  aiModelId?: string; // Optional: LLM model ID if creating conversation with LLM participant
 }
 
 interface GetConversationsParams {
@@ -128,28 +129,19 @@ const chatHandlers = {
   },
 
   async sendMessage(event: IpcMainInvokeEvent, { conversationId, text, attachments = [] }: SendMessageParams): Promise<IpcResponse> {
+    console.log(`[Chat] 📨 sendMessage called: conversationId="${conversationId}", text="${text.substring(0, 50)}..."`);
+
     const response = await chatHandler.sendMessage({
       conversationId,
       content: text,  // Map 'text' to 'content'
       attachments
     });
 
-    // Trigger AI response if this is an AI topic
-    if (response.success && nodeOneCore.aiAssistantModel) {
-      try {
-        const isAITopic = nodeOneCore.aiAssistantModel.isAITopic(conversationId);
-        if (isAITopic) {
-          const senderId = nodeOneCore.ownerId;
-          console.log(`[Chat] Triggering AI response for topic: ${conversationId}`);
-          // Fire and forget - AI response happens in background
-          nodeOneCore.aiAssistantModel.processMessage(conversationId, text, senderId).catch((error: Error) => {
-            console.error('[Chat] AI processMessage error:', error);
-          });
-        }
-      } catch (error: any) {
-        console.error('[Chat] Error checking AI topic:', error);
-      }
-    }
+    console.log(`[Chat] 📤 Message sent successfully: ${response.success}`);
+
+    // NOTE: AI responses are handled automatically by AIMessageListener via channel updates
+    // No manual processMessage() call needed - AIMessageListener listens for new messages
+    // and triggers AI responses when appropriate
 
     return {
       success: response.success,
@@ -169,10 +161,50 @@ const chatHandlers = {
     };
   },
 
-  async createConversation(event: IpcMainInvokeEvent, { type = 'direct', participants = [], name = null }: CreateConversationParams): Promise<IpcResponse> {
+  async createConversation(event: IpcMainInvokeEvent, { type = 'direct', participants = [], name = null, aiModelId }: CreateConversationParams): Promise<IpcResponse> {
+    console.error(`[Chat IPC] createConversation called with ${participants.length} participants:`, participants, 'aiModelId:', aiModelId);
+
+    // If aiModelId is provided, ensure LLM contact exists and add to participants
+    if (aiModelId && nodeOneCore.aiAssistantModel) {
+      try {
+        const aiPersonId = await nodeOneCore.aiAssistantModel.ensureAIContactForModel(aiModelId);
+        // Add LLM participant to the list if not already present
+        if (!participants.includes(String(aiPersonId))) {
+          participants.push(String(aiPersonId));
+        }
+      } catch (error) {
+        console.error('[Chat IPC] Failed to ensure AI contact:', error);
+        return {
+          success: false,
+          error: `Failed to create LLM participant: ${(error as Error).message}`
+        };
+      }
+    }
+
+    // Create conversation via chat.core (generic operation)
     const response = await chatHandler.createConversation({ type, participants, name });
+
+    if (!response.success || !response.data) {
+      return {
+        success: response.success,
+        data: response.data,
+        error: response.error
+      };
+    }
+
+    // Register AI topic with model ID if aiModelId was provided
+    if (aiModelId && response.data.id && nodeOneCore.aiAssistantModel) {
+      try {
+        await nodeOneCore.aiAssistantModel.registerAITopic(response.data.id, aiModelId);
+        console.error(`[Chat IPC] ✅ Registered AI topic: ${response.data.id} with model: ${aiModelId}`);
+      } catch (error) {
+        console.error('[Chat IPC] Failed to register AI topic:', error);
+        // Non-fatal: conversation was created successfully
+      }
+    }
+
     return {
-      success: response.success,
+      success: true,
       data: response.data,
       error: response.error
     };
@@ -180,6 +212,41 @@ const chatHandlers = {
 
   async getConversations(event: IpcMainInvokeEvent, { limit = 20, offset = 0 }: GetConversationsParams = {}): Promise<IpcResponse> {
     const response = await chatHandler.getConversations({ limit, offset });
+
+    // Enrich conversations with LLM participant metadata (coordination layer)
+    if (response.success && response.data && nodeOneCore.aiAssistantModel) {
+      try {
+        response.data = response.data.map((conv: any) => {
+          const enriched = { ...conv };
+
+          // Check if this topic is registered as an AI topic
+          enriched.isAITopic = nodeOneCore.aiAssistantModel.isAITopic(conv.id);
+          if (enriched.isAITopic) {
+            enriched.aiModelId = nodeOneCore.aiAssistantModel.getModelIdForTopic(conv.id);
+          }
+
+          // Enrich participants with LLM info
+          if (conv.participants && Array.isArray(conv.participants)) {
+            enriched.participants = conv.participants.map((p: any) => {
+              const isLLM = nodeOneCore.aiAssistantModel.isAIPerson(p.id);
+              return {
+                ...p,
+                isLLM
+              };
+            });
+
+            // Check if any participant is an LLM
+            enriched.hasLLMParticipant = enriched.participants.some((p: any) => p.isLLM);
+          }
+
+          return enriched;
+        });
+      } catch (error) {
+        console.error('[Chat IPC] Failed to enrich conversations with LLM metadata:', error);
+        // Non-fatal - return conversations without enrichment
+      }
+    }
+
     return {
       success: response.success,
       data: response.data,

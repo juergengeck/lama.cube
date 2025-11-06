@@ -267,6 +267,7 @@ class IPCController {
     this.handle('mcp:getAvailableTools', mcpHandlers.getAvailableTools);
     this.handle('mcp:getTopicConfig', mcpHandlers.getTopicConfig);
     this.handle('mcp:setTopicConfig', mcpHandlers.setTopicConfig);
+    this.handle('mcp:reconnect', mcpHandlers.reconnect);
 
     // Export handlers
     this.handle('export:file', exportHandlers.exportFile);

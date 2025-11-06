@@ -218,7 +218,7 @@ declare module '@OneObjectInterfaces' {
             streamResponses: boolean;
             autoSummarize: boolean;
             enableMCP: boolean;
-            apiKeys?: Record<string, string>;
+            apiKeys?: Map<string, string>;
         };
         ui: {
             theme: 'dark' | 'light';
@@ -253,6 +253,19 @@ declare module '@OneObjectInterfaces' {
         updatedAt: number; // Unix timestamp
     }
 
+    // Memory - Discrete memory/insight stored by AI or user
+    export interface Memory {
+        $type$: 'Memory';
+        content: string; // Memory content
+        memoryType: string; // conversation, fact, reference, note, summary, milestone
+        timestamp: string; // ISO 8601 date string
+        importance?: number; // 0-1 relevance score
+        tags?: string[]; // Optional tags
+        author?: string; // Person reference (owner of this memory)
+        topicRef?: string; // Topic ID back-reference
+        contextRef?: string; // Optional conversation context
+    }
+
     // Import AffirmationCertificate from ONE.models - it's already defined there
 
     // Extend ONE.core's ID object interfaces (for objects that can be retrieved by ID)
@@ -278,5 +291,6 @@ declare module '@OneObjectInterfaces' {
         ProposalConfig: ProposalConfig;
         UserSettings: UserSettings;
         AvatarPreference: AvatarPreference;
+        Memory: Memory;
     }
 }

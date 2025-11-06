@@ -143,19 +143,37 @@ async function main() {
     
     console.error('[MCP-Standalone] ✅ LAMA MCP Server ready');
     console.error('[MCP-Standalone] Listening for MCP requests on stdio...');
-    
+
     // Keep process alive
     process.on('SIGINT', () => {
       console.error('[MCP-Standalone] Shutting down...');
+      logStream.end();
       process.exit(0);
     });
-    
+
     process.on('SIGTERM', () => {
       console.error('[MCP-Standalone] Shutting down...');
+      logStream.end();
       process.exit(0);
     });
+
+    // Handle unhandled rejections
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('[MCP-Standalone] Unhandled rejection:', reason);
+    });
+
+    process.on('uncaughtException', (error) => {
+      console.error('[MCP-Standalone] Uncaught exception:', error);
+    });
+
+    // Keep stdin open
+    process.stdin.resume();
+
+    // Keep the event loop alive - wait indefinitely
+    await new Promise(() => {});
   } catch (error) {
     console.error('[MCP-Standalone] ❌ Failed to start:', error);
+    logStream.end();
     process.exit(1);
   }
 }

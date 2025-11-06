@@ -11,6 +11,13 @@ import connectionHandlers from '../ipc/handlers/connection.js';
 import aiHandlers from '../ipc/handlers/ai.js';
 import { registerContactHandlers } from '../ipc/handlers/contacts.js';
 import nodeOneCore from '../core/node-one-core.js';
+import { ipcMain } from 'electron';
+import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
+import { storeUnversionedObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
+import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { Person } from '@refinio/one.core/lib/recipes.js';
+import { ContactsHandler } from '@chat/core/handlers/ContactsHandler.js';
+import { MemoryTools } from './mcp/memory-tools.js';
 
 export class LamaAPIServer {
   private server: http.Server | null = null;
@@ -94,6 +101,58 @@ export class LamaAPIServer {
             case 'chat:getMessages':
               result = await chatHandler.getMessages(params);
               break;
+            case 'chat:createConversation':
+              {
+                const type = params.type || 'group';
+                let participants = params.participants || [];
+                const name = params.name || null;
+                const aiModelId = params.aiModelId;
+
+                // If aiModelId is provided, ensure LLM contact exists and add to participants
+                if (aiModelId && nodeOneCore.aiAssistantModel) {
+                  try {
+                    const aiPersonId = await nodeOneCore.aiAssistantModel.ensureAIContactForModel(aiModelId);
+                    // Add LLM participant to the list if not already present
+                    if (!participants.includes(String(aiPersonId))) {
+                      participants.push(String(aiPersonId));
+                    }
+                  } catch (error) {
+                    result = {
+                      success: false,
+                      error: `Failed to create LLM participant: ${(error as Error).message}`
+                    };
+                    break;
+                  }
+                }
+
+                // Create conversation via chat.core (generic operation)
+                result = await chatHandler.createConversation({ type, participants, name });
+
+                if (result.success && result.data && aiModelId && nodeOneCore.aiAssistantModel) {
+                  const topicId = result.data.id;
+
+                  try {
+                    // Register topic so AIMessageListener knows to trigger AI responses
+                    nodeOneCore.aiAssistantModel.registerAITopic(topicId, aiModelId);
+                    console.log(`[LamaAPI] Registered AI topic: ${topicId} with model: ${aiModelId}`);
+
+                    // Trigger welcome message generation in background (non-blocking)
+                    setImmediate(async () => {
+                      try {
+                        await nodeOneCore.aiAssistantModel.handleNewTopic(topicId);
+                        console.log(`[LamaAPI] Welcome message generated for topic: ${topicId}`);
+                      } catch (error) {
+                        console.error('[LamaAPI] Failed to generate welcome message:', error);
+                        // Non-fatal - conversation is already created
+                      }
+                    });
+                  } catch (error) {
+                    console.error('[LamaAPI] Failed to register AI topic:', error);
+                    // Non-fatal - conversation is already created
+                  }
+                }
+              }
+              break;
             case 'topics:list':
               // For HTTP/MCP clients: enrich conversation data server-side
               // HTTP clients can't access nodeOneCore.aiAssistantModel directly,
@@ -136,6 +195,12 @@ export class LamaAPIServer {
             case 'contacts:getContacts':
               result = await oneCoreHandlers.getContacts(mockEvent);
               break;
+            case 'contacts:add':
+              // Call ContactsHandler directly in main process
+              const { ContactsHandler } = await import('@chat/core/handlers/ContactsHandler.js');
+              const contactsHandler = new ContactsHandler(nodeOneCore);
+              result = await contactsHandler.addContact(params);
+              break;
 
             // Connection handlers
             case 'connection:list':
@@ -166,6 +231,80 @@ export class LamaAPIServer {
               break;
             case 'ai:getAllContacts':
               result = await aiHandlers.getAllContacts(mockEvent);
+              break;
+            case 'ai:executeTool':
+              result = await aiHandlers.executeTool(mockEvent, params);
+              break;
+
+            // Memory handlers - invoke via ipcMain handlers
+            case 'memory:store':
+              // Create proper Memory Assembly
+              if (!params.content) {
+                throw new Error('Memory content is required');
+              }
+
+              // Lookup contact Person if contactEmail provided, otherwise use owner
+              let authorHash: SHA256IdHash<Person>;
+              if (params.contactEmail) {
+                const contactsHandler = new ContactsHandler(nodeOneCore);
+                const contactsResponse = await contactsHandler.getContacts();
+
+                if (contactsResponse.success && contactsResponse.contacts) {
+                  const matchingContact = contactsResponse.contacts.find(
+                    (c) => c.name === params.contactEmail || c.id === params.contactEmail
+                  );
+
+                  if (matchingContact) {
+                    authorHash = matchingContact.personId as SHA256IdHash<Person>;
+                  } else {
+                    throw new Error(`Contact not found: ${params.contactEmail}`);
+                  }
+                } else {
+                  throw new Error('Failed to get contacts');
+                }
+              } else {
+                // Use owner as author if no contact specified
+                authorHash = nodeOneCore.ownerId as SHA256IdHash<Person>;
+              }
+
+              // Create Memory object (versioned)
+              const memoryData = {
+                $type$: 'Memory' as const,
+                content: params.content,
+                author: authorHash, // Required: part of composite ID
+                memoryType: params.category || 'note',
+                timestamp: new Date().toISOString(),
+                importance: 0.8,
+                tags: params.category ? [params.category] : [],
+                topicRef: 'lama'
+              };
+
+              // Store as versioned object using proper ONE.core function
+              const memoryResult = await storeVersionedObject(memoryData);
+
+              result = {
+                idHash: memoryResult.idHash,
+                hash: memoryResult.hash,
+                category: params.category,
+                author: authorHash
+              };
+              break;
+
+            case 'memory:getStatus':
+            case 'memory:toggle':
+            case 'memory:enable':
+            case 'memory:disable':
+            case 'memory:extract':
+            case 'memory:find':
+            case 'memory:journal:list':
+            case 'memory:journal:get':
+              // Get the registered handler from ipcMain
+              const handler = (ipcMain as any)._events[`handle-${method}`]?.[0];
+              if (handler) {
+                result = await handler(mockEvent, params || {});
+              } else {
+                throw new Error(`Memory handler ${method} not registered`);
+              }
               break;
 
             default:

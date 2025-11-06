@@ -34,6 +34,7 @@ export const ChatView = memo(function ChatView({
   const { subjects, subjectsJustAppeared } = useChatSubjects(conversationId)
   const { keywords } = useChatKeywords(conversationId, messages)
   const chatHeaderRef = useRef<HTMLDivElement>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
 
   // Debug: log messages received from hook
   // console.log('[ChatView] Received from hook - messages:', messages?.length || 0, 'loading:', loading)
@@ -60,6 +61,10 @@ export const ChatView = memo(function ChatView({
   const [showSummary, setShowSummary] = useState(false)
   const [showSubjectDetail, setShowSubjectDetail] = useState(false)
   const [selectedSubject, setSelectedSubject] = useState<any | null>(null)
+  const thinkingStartTimeRef = useRef<number | null>(null)
+  const streamingStartTimeRef = useRef<number | null>(null)
+  const lastLogTimeRef = useRef<number>(0)
+  const [thinkingStatus, setThinkingStatus] = useState<string>('')
 
   // Check if this is an AI conversation
   // Use the authoritative value from backend conversation metadata
@@ -68,7 +73,37 @@ export const ChatView = memo(function ChatView({
 
   // Analysis is handled automatically by chatWithAnalysis() in ai-assistant-model.ts
   // Keywords and subjects are extracted from each AI response in the background
-  // No need for separate analysis trigger from UI
+  // Listen for analysis completion events
+  useEffect(() => {
+    if (!window.electronAPI) return
+
+    const handleSubjectsUpdated = (data: any) => {
+      if (data?.conversationId === conversationId || data?.topicId === conversationId) {
+        console.log(`[Progress] Analysis complete: subjects updated for conversation ${conversationId}`, {
+          subjectCount: subjects.length
+        })
+        setIsAnalyzing(false)
+      }
+    }
+
+    const unsubSubjects = lamaBridge.on('subjects:updated', handleSubjectsUpdated)
+
+    return () => {
+      if (unsubSubjects) unsubSubjects()
+    }
+  }, [conversationId, subjects.length])
+
+  // Set analyzing flag when AI response completes (analysis happens in background)
+  useEffect(() => {
+    if (!isAIProcessing && messages.length > 0 && hasAIParticipant) {
+      const lastMessage = messages[messages.length - 1]
+      if (lastMessage?.isAI) {
+        console.log(`[Progress] Starting background analysis for conversation ${conversationId}`)
+        setIsAnalyzing(true)
+        // Analysis will complete and trigger subjects:updated event
+      }
+    }
+  }, [isAIProcessing, messages.length, conversationId, hasAIParticipant])
 
   // Clear AI processing state when conversation changes
   useEffect(() => {
@@ -86,43 +121,70 @@ export const ChatView = memo(function ChatView({
     
     // Handle thinking indicator (used for all AI messages including welcome)
     const handleThinking = (data: any) => {
-      // console.log(`[ChatView-${conversationId}] 🔔 Received thinking event for: "${data.conversationId}"`)
-      // console.log(`[ChatView-${conversationId}] 🔍 My conversationId: "${conversationId}"`)
-      // console.log(`[ChatView-${conversationId}] 🔍 Match: ${data.conversationId === conversationId}`)
       if (data.conversationId === conversationId) {
-        // console.log(`[ChatView-${conversationId}] ✅ Setting AI processing to TRUE`)
+        const startTime = Date.now()
+        thinkingStartTimeRef.current = startTime
+        streamingStartTimeRef.current = null
+        lastLogTimeRef.current = 0
+        setThinkingStatus(data.status || '')
+        console.log(`[Progress] T+0ms AI thinking started | conversation: ${conversationId}`)
         setIsAIProcessing(true)
         setAiStreamingContent('')
         onProcessingChange?.(true) // Update parent state
-      } else {
-        // console.log(`[ChatView-${conversationId}] ❌ Ignoring event for different conversation`)
       }
     }
-    
+
+    // Handle thinking status updates (new event for intermediate states)
+    const handleThinkingStatus = (data: any) => {
+      if (data.conversationId === conversationId && thinkingStartTimeRef.current) {
+        const elapsed = Date.now() - thinkingStartTimeRef.current
+        setThinkingStatus(data.status || '')
+        console.log(`[Progress] T+${elapsed}ms ${data.status}`)
+      }
+    }
+
     // Handle streaming chunks
     const handleStream = (data: any) => {
       if (data.conversationId === conversationId) {
+        const now = Date.now()
+        const contentLength = (data.partial || '').length
+
+        // Log FIRST CHUNK only once
+        if (!streamingStartTimeRef.current) {
+          streamingStartTimeRef.current = now
+          const thinkingElapsed = thinkingStartTimeRef.current ? now - thinkingStartTimeRef.current : 0
+          console.log(`[Progress] T+${thinkingElapsed}ms FIRST CHUNK | Thinking took ${thinkingElapsed}ms`)
+        }
+
         setIsAIProcessing(false)
         setAiStreamingContent(data.partial || '')
       }
     }
-    
+
     // Handle message complete
     const handleComplete = (data: any) => {
       if (data.conversationId === conversationId) {
+        const totalElapsed = thinkingStartTimeRef.current ? Date.now() - thinkingStartTimeRef.current : 0
+        console.log(`[Progress] T+${totalElapsed}ms COMPLETE | Total response time: ${totalElapsed}ms`)
         setIsAIProcessing(false)
         setAiStreamingContent('')
+        thinkingStartTimeRef.current = null
+        streamingStartTimeRef.current = null
+        lastLogTimeRef.current = 0
+        setThinkingStatus('')
         onProcessingChange?.(false) // Update parent state
       }
     }
     
     // Subscribe to streaming events via lamaBridge
     const unsubThinking = lamaBridge.on('message:thinking', handleThinking)
+    const unsubThinkingStatus = lamaBridge.on('message:thinkingStatus', handleThinkingStatus)
     const unsubStream = lamaBridge.on('message:stream', handleStream)
     const unsubComplete = lamaBridge.on('message:updated', handleComplete)
-    
+
     return () => {
       if (unsubThinking) unsubThinking()
+      if (unsubThinkingStatus) unsubThinkingStatus()
       if (unsubStream) unsubStream()
       if (unsubComplete) unsubComplete()
     }
@@ -278,6 +340,7 @@ export const ChatView = memo(function ChatView({
           showSummary={showSummary}
           onToggleSummary={() => setShowSummary(!showSummary)}
           onAddUsers={onAddUsers}
+          isAnalyzing={isAnalyzing}
           onSubjectClick={(subject) => {
             console.log('[ChatView] Subject clicked:', subject)
             setSelectedSubject(subject)

@@ -20,6 +20,9 @@ import { LLMRecipe } from './LLM.js'
 // Chat Memory Config - memory extraction configuration per topic
 import { ChatMemoryConfigRecipe } from './chat-memory-config.js'
 
+// Memory Recipe - discrete memory/insight owned by a Person
+import { MemoryRecipe } from './memory-recipe.js'
+
 // UserSettings Recipe - consolidated user settings (AI, UI, proposals)
 import { UserSettingsRecipe } from './user-settings-recipe.js'
 
@@ -171,6 +174,7 @@ const LamaRecipes = [
     UserSettingsRecipe,
     AvatarPreferenceRecipe,
     ChatMemoryConfigRecipe,
+    MemoryRecipe,
     ...MCPRecipes,
     // ...FeedForwardRecipes
     // Assembly.core recipes (Demand/Supply/Assembly/Plan/Story)

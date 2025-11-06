@@ -33,11 +33,7 @@ export interface AISettings {
   streamResponses: boolean;        // Enable response streaming
   autoSummarize: boolean;          // Auto-generate summaries
   enableMCP: boolean;              // Enable MCP tool integration
-  apiKeys?: {                      // API keys for LLM providers
-    anthropic?: string;            // Anthropic/Claude API key
-    openai?: string;               // OpenAI API key
-    [provider: string]: string | undefined;  // Extensible for other providers
-  };
+  apiKeys?: Map<string, string>; // API keys as Map (recipe type: 'map')
 }
 
 /**
@@ -89,7 +85,7 @@ export const DEFAULT_USER_SETTINGS: Omit<UserSettings, '$type$' | 'userEmail' | 
     streamResponses: true,
     autoSummarize: false,
     enableMCP: false,
-    apiKeys: {}
+    apiKeys: new Map<string, string>()  // Initialize as empty Map (recipe requires type: 'map')
   },
   ui: {
     theme: 'dark',

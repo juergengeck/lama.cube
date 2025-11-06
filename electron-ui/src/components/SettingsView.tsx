@@ -242,7 +242,8 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
       const result = await window.electronAPI?.invoke('chat:createConversation', {
         type: 'direct',
         participants: [aiPersonId],
-        name: modelName
+        name: modelName,
+        aiModelId: modelId  // CRITICAL: Pass model ID so ChatHandler registers the topic
       })
 
       if (result?.success && result?.data) {
@@ -548,25 +549,26 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
   
   const loadClaudeApiKey = async () => {
     try {
-      // Retrieve API key from ONE.core's secure storage via IPC
-      const result = await window.electronAPI?.invoke('onecore:secureRetrieve', {
-        key: 'claude_api_key'
+      // Retrieve API key from UserSettings (NEW system - syncs via CHUM)
+      const apiKey = await window.electronAPI?.invoke('settings:getApiKey', {
+        provider: 'anthropic'
       })
 
-      if (result?.success && result.value) {
-        setClaudeApiKey(result.value)
+      if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0) {
+        // Key exists and is non-empty - it was validated when saved, so show as valid
+        setClaudeApiKey(apiKey)
         setApiKeyStatus('valid')
-
-        // Trigger model discovery on load if API key exists
-        console.log('[SettingsView] Found existing Claude API key, triggering model discovery...')
-        const discoveryResult = await window.electronAPI?.invoke('ai:discoverClaudeModels')
-
-        if (discoveryResult?.success && discoveryResult.data?.models) {
-          console.log(`[SettingsView] Discovered ${discoveryResult.data.models.length} Claude models on load`)
-        }
+        console.log('[SettingsView] Loaded existing API key from storage (previously validated)')
+      } else {
+        // No key or empty key - show unconfigured
+        setClaudeApiKey('')
+        setApiKeyStatus('unconfigured')
+        console.log('[SettingsView] No API key found in storage')
       }
     } catch (error) {
       console.error('Failed to load Claude API key:', error)
+      setClaudeApiKey('')
+      setApiKeyStatus('unconfigured')
     }
   }
 
@@ -594,14 +596,13 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
 
     setApiKeyStatus('testing')
     try {
-      // Store API key securely in ONE.core's encrypted storage via IPC
-      const result = await window.electronAPI?.invoke('onecore:secureStore', {
-        key: 'claude_api_key',
-        value: claudeApiKey,
-        encrypted: true
+      // Store API key in UserSettings (NEW system - syncs via CHUM)
+      const result = await window.electronAPI?.invoke('settings:setApiKey', {
+        provider: 'anthropic',
+        apiKey: claudeApiKey
       })
 
-      if (result?.success) {
+      if (result) {
         // Test the API key with Claude
         const testResult = await window.electronAPI?.invoke('llm:testApiKey', {
           provider: 'anthropic',
@@ -642,7 +643,7 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
           setApiKeyStatus('invalid')
         }
       } else {
-        throw new Error('Failed to store API key securely')
+        throw new Error('Failed to store API key in UserSettings')
       }
     } catch (error) {
       console.error('Failed to save Claude API key:', error)

@@ -184,8 +184,8 @@ export function MessageView({
       return
     }
 
-    // If user has scrolled up and not streaming, don't auto-scroll
-    if (isUserScrolledUp && !isStreaming) return
+    // If user has scrolled up, NEVER auto-scroll (respect user intent)
+    if (isUserScrolledUp) return
 
     // Use requestAnimationFrame to ensure DOM has finished rendering before scrolling
     requestAnimationFrame(() => {
@@ -380,7 +380,8 @@ export function MessageView({
               trustLevel: 3, // Default colleague level
               attachments: message.attachments,
               topicName: message.topicName, // Pass topic name to enhanced bubble
-              format: message.format || 'markdown' // Use message format if available, otherwise markdown
+              format: message.format || 'markdown', // Use message format if available, otherwise markdown
+              thinking: message.thinking // Pass thinking trace if present
             }
 
             // console.log(`[MessageView] Passing to EnhancedMessageBubble:`, {
@@ -408,37 +409,46 @@ export function MessageView({
             <>
               {aiStreamingContent ? (
                 // Use EnhancedMessageBubble for streaming content to ensure consistent markdown rendering
-                <EnhancedMessageBubble
-                  message={{
-                    id: 'streaming-ai-message',
-                    text: aiStreamingContent,
-                    senderId: 'ai',
-                    senderName: 'AI Assistant',
-                    timestamp: new Date(),
-                    isOwn: false,
-                    subjects: [],
-                    trustLevel: 5,
-                    format: 'markdown' // Ensure markdown format for proper rendering
-                  }}
-                  onHashtagClick={handleHashtagClick}
-                  onAttachmentClick={handleAttachmentClick}
-                  onDownloadAttachment={handleDownloadAttachment}
-                  theme="dark"
-                  attachmentDescriptors={attachmentDescriptors}
-                />
+                <>
+                  <EnhancedMessageBubble
+                    message={{
+                      id: 'streaming-ai-message',
+                      text: aiStreamingContent,
+                      senderId: 'ai',
+                      senderName: 'AI Assistant',
+                      timestamp: new Date(),
+                      isOwn: false,
+                      subjects: [],
+                      trustLevel: 5,
+                      format: 'markdown' // Ensure markdown format for proper rendering
+                    }}
+                    onHashtagClick={handleHashtagClick}
+                    onAttachmentClick={handleAttachmentClick}
+                    onDownloadAttachment={handleDownloadAttachment}
+                    theme="dark"
+                    attachmentDescriptors={attachmentDescriptors}
+                  />
+                  {/* Character count indicator */}
+                  <div className="text-xs text-muted-foreground ml-12 -mt-2 mb-2">
+                    Streaming... {aiStreamingContent.length} characters
+                  </div>
+                </>
               ) : (
                 // Show typing indicator with proper AI message styling
                 <div className="flex gap-2 mb-2 justify-start">
                   <Avatar className="h-8 w-8 shrink-0">
                     <AvatarFallback className="text-xs">AI</AvatarFallback>
                   </Avatar>
-                  <div className="flex flex-col">
+                  <div className="flex flex-col gap-1">
                     <div className="message-bubble message-bubble-ai">
                       <div className="typing-indicator">
                         <span></span>
                         <span></span>
                         <span></span>
                       </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      AI is thinking...
                     </div>
                   </div>
                 </div>

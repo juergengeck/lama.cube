@@ -54,6 +54,7 @@ export class UserSettingsManager {
     async getSettings(): Promise<UserSettings> {
         // Cache hit
         if (this.cachedSettings) {
+            console.log('[UserSettings] Cache hit for email:', this.userEmail);
             return this.cachedSettings;
         }
 
@@ -65,13 +66,22 @@ export class UserSettingsManager {
                 userEmail: this.userEmail
             } as any);
 
+            console.log('[UserSettings] Loading settings for email:', this.userEmail);
+            console.log('[UserSettings] Calculated ID hash:', idHash);
+
             const result = await getObjectByIdHash(idHash);
             const settings = result.obj as UserSettings;
+
+            console.log('[UserSettings] ✅ Loaded existing settings from storage');
+            console.log('[UserSettings] apiKeys:', settings.ai.apiKeys);
 
             // Cache for next access
             this.cachedSettings = settings;
             return settings;
         } catch (error: any) {
+            console.log('[UserSettings] Failed to load settings:', error.message);
+            console.log('[UserSettings] Error code:', error.code);
+
             if (error.message?.includes('not found') || error.code === 'NOT_FOUND') {
                 // First time - create default settings
                 console.log('[UserSettings] No existing settings found, creating defaults');
@@ -115,9 +125,13 @@ export class UserSettingsManager {
     async updateSettings(updates: Partial<Omit<UserSettings, '$type$' | 'userEmail'>>): Promise<UserSettings> {
         const current = await this.getSettings();
 
+        // Explicitly merge to preserve Maps (spread operator destroys them)
         const updated: UserSettings = {
-            ...current,
-            ...updates,
+            $type$: current.$type$,
+            userEmail: current.userEmail,
+            ai: updates.ai !== undefined ? updates.ai : current.ai,
+            ui: updates.ui !== undefined ? updates.ui : current.ui,
+            proposals: updates.proposals !== undefined ? updates.proposals : current.proposals,
             updatedAt: Date.now()
         };
 
@@ -166,7 +180,15 @@ export class UserSettingsManager {
             throw new Error(`AI settings validation failed: ${errors.join(', ')}`);
         }
 
-        const updatedAI: AISettings = { ...current.ai, ...updates };
+        // Merge settings - handle Maps specially (they don't spread correctly)
+        const updatedAI: AISettings = {
+            ...current.ai,
+            ...updates,
+            // If apiKeys is being updated, ensure it's preserved as a Map
+            apiKeys: updates.apiKeys !== undefined
+                ? updates.apiKeys
+                : current.ai.apiKeys
+        };
 
         return await this.updateSettings({
             ai: updatedAI
@@ -312,16 +334,25 @@ export class UserSettingsManager {
      * ```
      */
     async setApiKey(provider: string, apiKey: string): Promise<UserSettings> {
+        console.log('[UserSettings] setApiKey called for provider:', provider);
+        console.log('[UserSettings] API key (first 20 chars):', apiKey?.substring(0, 20));
+
         const current = await this.getSettings();
+        console.log('[UserSettings] Current apiKeys:', current.ai.apiKeys);
 
-        const updatedApiKeys = {
-            ...current.ai.apiKeys,
-            [provider]: apiKey
-        };
+        // Create new Map from existing entries plus new key
+        // Don't spread Maps - create new Map properly
+        const existingMap = current.ai.apiKeys || new Map<string, string>();
+        const updatedApiKeys = new Map<string, string>(existingMap);
+        updatedApiKeys.set(provider, apiKey);
 
-        return await this.updateAI({
+        console.log('[UserSettings] Updated apiKeys entries:', Array.from(updatedApiKeys.entries()));
+
+        const result = await this.updateAI({
             apiKeys: updatedApiKeys
         });
+        console.log('[UserSettings] ✅ API key saved successfully');
+        return result;
     }
 
     /**
@@ -338,7 +369,10 @@ export class UserSettingsManager {
      */
     async getApiKey(provider: string): Promise<string | undefined> {
         const settings = await this.getSettings();
-        return settings.ai.apiKeys?.[provider];
+        const apiKeys = settings.ai.apiKeys;
+        if (!apiKeys) return undefined;
+
+        return apiKeys.get(provider);
     }
 
     /**
@@ -359,8 +393,8 @@ export class UserSettingsManager {
             return current; // No API keys to remove
         }
 
-        const updatedApiKeys = { ...current.ai.apiKeys };
-        delete updatedApiKeys[provider];
+        const updatedApiKeys = new Map<string, string>(current.ai.apiKeys);
+        updatedApiKeys.delete(provider);
 
         return await this.updateAI({
             apiKeys: updatedApiKeys
@@ -380,6 +414,9 @@ export class UserSettingsManager {
      */
     async getAllApiKeys(): Promise<Record<string, string>> {
         const settings = await this.getSettings();
-        return settings.ai.apiKeys || {};
+        const apiKeys = settings.ai.apiKeys;
+        if (!apiKeys) return {};
+
+        return Object.fromEntries(apiKeys);
     }
 }

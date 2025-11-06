@@ -42,11 +42,12 @@ export async function getOrCreateTopicForContact(
     // Check if this is an AI contact
     let isAI = false;
     let contactName = 'Contact';
+    let personId: any = null;
     if (nodeInstance.leuteModel) {
       const others = await nodeInstance.leuteModel.others();
       const contact = others.find((c: any) => c.id === contactId);
       if (contact) {
-        const personId = await contact.mainIdentity();
+        personId = await contact.mainIdentity();
 
         // Check if AI using LLMObjectManager
         if (nodeInstance.aiAssistantModel?.llmObjectManager) {
@@ -69,6 +70,18 @@ export async function getOrCreateTopicForContact(
     if (isAI) {
       console.log('[Topics IPC] AI contact detected - creating conversation via chat handler');
 
+      // Get the AI model ID for this person
+      if (!nodeInstance.aiAssistantModel) {
+        throw new Error('AIAssistantModel not initialized');
+      }
+
+      const aiModelId = nodeInstance.aiAssistantModel.getModelIdForPersonId(personId);
+      if (!aiModelId) {
+        throw new Error(`No AI model ID found for person ${personId?.toString().substring(0, 8)}`);
+      }
+
+      console.log('[Topics IPC] AI model ID:', aiModelId);
+
       // Import chat handler
       const { chatHandlers } = await import('./chat.js');
 
@@ -76,7 +89,8 @@ export async function getOrCreateTopicForContact(
       const result = await chatHandlers.createConversation(event, {
         type: 'group', // AI conversations are always groups (even 1-on-1)
         participants: [contactId], // Pass contact ID
-        name: contactName
+        name: contactName,
+        aiModelId: aiModelId // CRITICAL: Pass the AI model ID
       });
 
       if (!result.success) {

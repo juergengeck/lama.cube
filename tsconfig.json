@@ -41,7 +41,6 @@
     "main/**/*.js",
     "lama-electron-shadcn.ts",
     "electron-preload.ts",
-    "@OneObjectInterfaces.d.ts",
     "@OneCoreTypes.d.ts"
   ],
   "exclude": [

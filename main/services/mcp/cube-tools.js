@@ -298,7 +298,7 @@ export class CubeTools {
    * Create a Supply
    */
   async createSupply(params) {
-    console.log('[CubeTools] Creating Supply:', params.name)
+    console.error('[CubeTools] Creating Supply:', params.name)
 
     const result = await this.cubeManager.createSupply({
       name: params.name,
@@ -318,7 +318,7 @@ export class CubeTools {
    * Create a Demand
    */
   async createDemand(params) {
-    console.log('[CubeTools] Creating Demand:', params.name)
+    console.error('[CubeTools] Creating Demand:', params.name)
 
     const result = await this.cubeManager.createDemand({
       name: params.name,
@@ -338,7 +338,7 @@ export class CubeTools {
    * Create an Assembly
    */
   async createAssembly(params) {
-    console.log('[CubeTools] Creating Assembly:', params.name || 'unnamed')
+    console.error('[CubeTools] Creating Assembly:', params.name || 'unnamed')
 
     const result = await this.cubeManager.createAssembly({
       supply: params.supplyIdHash,
@@ -359,7 +359,7 @@ export class CubeTools {
    * Create a Plan
    */
   async createPlan(params) {
-    console.log('[CubeTools] Creating Plan:', params.name)
+    console.error('[CubeTools] Creating Plan:', params.name)
 
     const result = await this.cubeManager.createPlan({
       name: params.name,
@@ -380,7 +380,7 @@ export class CubeTools {
    * Create a Story
    */
   async createStory(params) {
-    console.log('[CubeTools] Creating Story for Assembly:', params.assemblyIdHash)
+    console.error('[CubeTools] Creating Story for Assembly:', params.assemblyIdHash)
 
     const result = await this.cubeManager.createStory({
       assembly: params.assemblyIdHash,
@@ -400,7 +400,7 @@ export class CubeTools {
    * Query Assemblies
    */
   async queryAssemblies(params) {
-    console.log('[CubeTools] Querying Assemblies')
+    console.error('[CubeTools] Querying Assemblies')
 
     const results = await this.cubeManager.queryAssemblies(params.filter || {})
     const limited = results.slice(0, params.limit || 10)
@@ -430,7 +430,7 @@ export class CubeTools {
    * Query Plans
    */
   async queryPlans(params) {
-    console.log('[CubeTools] Querying Plans')
+    console.error('[CubeTools] Querying Plans')
 
     const results = await this.cubeManager.queryPlans(params.filter || {})
     const limited = results.slice(0, params.limit || 10)
@@ -460,7 +460,7 @@ export class CubeTools {
    * Get specific Assembly
    */
   async getAssembly(params) {
-    console.log('[CubeTools] Getting Assembly:', params.idHash)
+    console.error('[CubeTools] Getting Assembly:', params.idHash)
 
     const assembly = await this.cubeManager.getAssembly(params.idHash)
 
@@ -476,7 +476,7 @@ export class CubeTools {
    * Get specific Plan
    */
   async getPlan(params) {
-    console.log('[CubeTools] Getting Plan:', params.idHash)
+    console.error('[CubeTools] Getting Plan:', params.idHash)
 
     const plan = await this.cubeManager.getPlan(params.idHash)
 

@@ -124,4 +124,19 @@ export class ElectronLLMPlatform implements LLMPlatform {
       });
     }
   }
+
+  /**
+   * Emit thinking status update during AI response generation
+   * Maps to 'message:thinkingStatus' event for UI
+   */
+  emitThinkingStatus(topicId: string, status: string): void {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+      return;
+    }
+
+    this.mainWindow.webContents.send('message:thinkingStatus', {
+      conversationId: topicId,
+      status,
+    });
+  }
 }

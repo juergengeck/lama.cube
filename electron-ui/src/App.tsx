@@ -9,7 +9,7 @@ import { DataDashboard } from '@/components/DataDashboard'
 import { DevicesView } from '@/components/DevicesView'
 import { LoginDeploy } from '@lama/ui'
 import { ModelOnboarding } from '@/components/ModelOnboarding'
-import { MessageSquare, BookOpen, Users, Settings, Loader2, Smartphone, BarChart3, Wifi, WifiOff } from 'lucide-react'
+import { MessageSquare, BookOpen, Users, Settings, Loader2, Smartphone, BarChart3, Wifi, WifiOff, RefreshCw } from 'lucide-react'
 import { useLamaInit } from '@/hooks/useLamaInit'
 import { lamaBridge } from '@/bridge/lama-bridge'
 import { ipcStorage } from '@/services/ipc-storage'
@@ -20,6 +20,8 @@ function App() {
   const [hasTopics, setHasTopics] = useState<boolean | null>(null)
   const [hasDefaultModel, setHasDefaultModel] = useState<boolean | null>(null)
   const [mcpApiStatus, setMcpApiStatus] = useState<{ running: boolean; requestCount: number }>({ running: false, requestCount: 0 })
+  const [mcpReconnecting, setMcpReconnecting] = useState(false)
+  const [memoryScanStatus, setMemoryScanStatus] = useState<{ scanning: boolean; progress?: string }>({ scanning: false })
   const { isInitialized, isAuthenticated, isLoading, login, logout, error, initProgress } = useLamaInit()
   // NO AppModel in browser - use IPC for everything
 
@@ -89,6 +91,50 @@ function App() {
     checkMCPStatus(); // Initial check
     const interval = setInterval(checkMCPStatus, 30000); // Poll every 30 seconds (lightweight HTTP check)
     return () => clearInterval(interval);
+  }, []);
+
+  // Reconnect MCP servers
+  const handleMcpReconnect = async () => {
+    if (!window.electronAPI || mcpReconnecting) return;
+
+    setMcpReconnecting(true);
+    try {
+      const response = await window.electronAPI.invoke('mcp:reconnect');
+      if (response.success) {
+        console.log('[App] MCP reconnected successfully');
+        // Immediately check status after reconnect
+        const statusResponse = await window.electronAPI.invoke('mcp:getStatus');
+        if (statusResponse.success && statusResponse.data) {
+          setMcpApiStatus({
+            running: statusResponse.data.running,
+            requestCount: statusResponse.data.toolCount || 0
+          });
+        }
+      } else {
+        console.error('[App] Failed to reconnect MCP:', response.error);
+      }
+    } catch (error) {
+      console.error('[App] Error reconnecting MCP:', error);
+    } finally {
+      setMcpReconnecting(false);
+    }
+  };
+
+  // Listen for memory scan status updates
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    const handleMemoryScanUpdate = (event: any, data: { scanning: boolean; progress?: string }) => {
+      setMemoryScanStatus(data);
+    };
+
+    // @ts-ignore - electronAPI types don't include on()
+    window.electronAPI.on('memory:scanStatus', handleMemoryScanUpdate);
+
+    return () => {
+      // @ts-ignore
+      window.electronAPI.removeListener?.('memory:scanStatus', handleMemoryScanUpdate);
+    };
   }, []);
 
   // Listen for open-conversation events (e.g., from AI Settings)
@@ -355,16 +401,34 @@ function App() {
                   <Wifi className="h-3.5 w-3.5 text-green-500" />
                   <span>MCP API: Online</span>
                   {mcpApiStatus.requestCount > 0 && (
-                    <span className="text-muted-foreground">({mcpApiStatus.requestCount} requests)</span>
+                    <span className="text-muted-foreground">({mcpApiStatus.requestCount} tools)</span>
                   )}
                 </>
               ) : (
                 <>
                   <WifiOff className="h-3.5 w-3.5 text-muted-foreground" />
                   <span>MCP API: Offline</span>
+                  <button
+                    onClick={handleMcpReconnect}
+                    disabled={mcpReconnecting}
+                    className="ml-1.5 inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-primary/10 hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Reconnect MCP servers"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${mcpReconnecting ? 'animate-spin' : ''}`} />
+                    <span>{mcpReconnecting ? 'Reconnecting...' : 'Reconnect'}</span>
+                  </button>
                 </>
               )}
             </div>
+            {memoryScanStatus.scanning && (
+              <>
+                <span>·</span>
+                <div className="flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
+                  <span>{memoryScanStatus.progress || 'Scanning memories...'}</span>
+                </div>
+              </>
+            )}
           </div>
           <div className="flex items-center space-x-4">
             <span>Identity: {isAuthenticated ? 'Active' : 'None'}</span>

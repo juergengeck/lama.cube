@@ -42,6 +42,9 @@ export interface EnhancedMessageData {
   subjects: string[];
   keywords?: string[];
 
+  // AI reasoning trace (for models like DeepSeek R1)
+  thinking?: string;
+
   // Attachments with Subject info
   attachments?: Array<{
     id: string;
@@ -383,6 +386,7 @@ export const EnhancedMessageBubble: React.FC<EnhancedMessageBubbleProps> = ({
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
   const [showActions, setShowActions] = useState(false);
+  const [showThinking, setShowThinking] = useState(false);
 
   // Memoize markdown rendering to avoid re-parsing on every chunk during streaming
   const renderedMarkdown = useMemo(() => {
@@ -627,6 +631,50 @@ export const EnhancedMessageBubble: React.FC<EnhancedMessageBubbleProps> = ({
                     theme={theme}
                   />
                 ))}
+              </div>
+            )}
+
+            {/* Thinking/reasoning trace (for models like DeepSeek R1) */}
+            {!message.isRetracted && message.thinking && (
+              <div className="message-thinking" style={{
+                marginTop: '8px',
+                padding: '8px',
+                borderRadius: '6px',
+                background: theme === 'dark' ? 'rgba(100, 100, 100, 0.2)' : 'rgba(200, 200, 200, 0.3)',
+                borderLeft: `3px solid ${theme === 'dark' ? '#6366f1' : '#4f46e5'}`
+              }}>
+                <button
+                  onClick={() => setShowThinking(!showThinking)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: theme === 'dark' ? '#a5b4fc' : '#6366f1',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '0',
+                    marginBottom: showThinking ? '8px' : '0'
+                  }}
+                >
+                  <span style={{transform: showThinking ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s'}}>▶</span>
+                  Reasoning trace ({message.thinking.length} chars)
+                </button>
+                {showThinking && (
+                  <div style={{
+                    fontSize: '11px',
+                    fontFamily: 'monospace',
+                    color: theme === 'dark' ? '#d1d5db' : '#374151',
+                    whiteSpace: 'pre-wrap',
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    lineHeight: '1.5'
+                  }}>
+                    {message.thinking}
+                  </div>
+                )}
               </div>
             )}
           </div>

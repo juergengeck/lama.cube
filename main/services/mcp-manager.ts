@@ -506,6 +506,19 @@ class MCPManager {
     }
   }
 
+  /**
+   * Wrap a promise with a timeout
+   * Throws if the promise doesn't resolve within the timeout
+   */
+  private withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+      )
+    ]);
+  }
+
   async init(): Promise<any> {
     if (this.isInitialized) {
       console.log('[MCPManager] Already initialized');
@@ -526,16 +539,21 @@ class MCPManager {
       this.servers = this.getDefaultServerConfigurations();
     }
 
-    // Connect to all enabled servers
-    for (const server of this.servers) {
-      try {
-        if (server.enabled !== false) {
-          await this.connectToServer(server);
-        }
-      } catch (error) {
-        console.error(`[MCPManager] Failed to connect to ${server.name}:`, (error as Error).message);
-      }
-    }
+    // Connect to all enabled servers in parallel with 10s timeout per server
+    const connectionPromises = this.servers
+      .filter(server => server.enabled !== false)
+      .map(server =>
+        this.withTimeout(
+          this.connectToServer(server),
+          10000,
+          `Connection to ${server.name} timed out after 10s`
+        ).catch(error => {
+          console.error(`[MCPManager] Failed to connect to ${server.name}:`, (error as Error).message);
+          return null; // Return null for failed connections
+        })
+      );
+
+    await Promise.allSettled(connectionPromises);
 
     this.isInitialized = true;
     console.log(`[MCPManager] ✅ Initialized with ${this.tools.size} tools from ${this.clients.size} servers`);
@@ -617,7 +635,17 @@ class MCPManager {
   }
 
   getAvailableTools(): any {
-    return Array.from(this.tools.values());
+    // Filter out memory tools - memory should be automatic context, not explicit tools
+    // Memory tools (memory:search, memory:recent, memory:store) cause:
+    // 1. Multiple LLM calls (user message → tool call → follow-up)
+    // 2. Raw tool results shown to user instead of natural responses
+    // 3. Wasted tokens and latency
+    //
+    // Memory should be automatically included in system prompt BEFORE calling LLM
+    return Array.from(this.tools.values()).filter(tool =>
+      !tool.fullName.startsWith('memory:') &&
+      !tool.fullName.startsWith('subject:')
+    );
   }
 
   /**
@@ -848,6 +876,28 @@ class MCPManager {
       availableTools: Array.from(this.tools.keys()),
       toolCount: this.tools.size
     };
+  }
+
+  /**
+   * Get MCP tools in Claude API format
+   * Converts internal tool definitions to Anthropic's tool schema
+   */
+  getClaudeTools(): any[] {
+    const tools: any[] = [];
+
+    for (const [toolKey, tool] of this.tools.entries()) {
+      tools.push({
+        name: toolKey,
+        description: tool.description || 'No description available',
+        input_schema: tool.inputSchema || {
+          type: 'object',
+          properties: {},
+          required: []
+        }
+      });
+    }
+
+    return tools;
   }
 }
 

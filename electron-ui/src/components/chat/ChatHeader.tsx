@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { MessageSquare, ChevronLeft, ChevronRight, MoreHorizontal, Brain, UserPlus } from 'lucide-react'
+import { MessageSquare, ChevronLeft, ChevronRight, MoreHorizontal, Brain, UserPlus, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -28,6 +28,7 @@ interface ChatHeaderProps {
   onAddUsers?: () => void
   conversationId?: string
   className?: string
+  isAnalyzing?: boolean
 }
 
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -40,9 +41,10 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   showSummary = false,
   onAddUsers,
   conversationId,
-  className = ''
+  className = '',
+  isAnalyzing = false
 }) => {
-  // console.log('[ChatHeader] Rendering with:', { conversationName, subjects: subjects?.length || 0, hasAI, messageCount })
+  // console.log('[ChatHeader] Rendering with:', { conversationName, subjects: subjects?.length || 0, hasAI, messageCount, isAnalyzing })
 
   const [showLeftChevron, setShowLeftChevron] = useState(false)
   const [showRightChevron, setShowRightChevron] = useState(false)
@@ -114,6 +116,13 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               <span className="font-medium text-foreground/80">
                 {subjects[0]?.name || subjects[0]?.id || 'Subject'}
               </span>
+              {isAnalyzing && (
+                <>
+                  <span>•</span>
+                  <Loader2 className="h-3 w-3 animate-spin" title="Analyzing conversation..." />
+                  <span className="text-xs">Analyzing...</span>
+                </>
+              )}
             </div>
           )}
 

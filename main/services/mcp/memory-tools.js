@@ -17,7 +17,7 @@ export class MemoryTools {
   getToolDefinitions() {
     return [
       {
-        name: 'memory:store',
+        name: 'memory_store',
         description: 'Store a new memory (insight, learning, or important information) to your long-term memory. Use this to remember things across conversations.',
         inputSchema: {
           type: 'object',
@@ -29,13 +29,17 @@ export class MemoryTools {
             category: {
               type: 'string',
               description: 'Optional category/tag for organizing memories (e.g., "user-preference", "technical-knowledge", "conversation-context")'
+            },
+            contactEmail: {
+              type: 'string',
+              description: 'Optional email of contact to set as assembly owner (creates proper ONE.core ownership)'
             }
           },
           required: ['content']
         }
       },
       {
-        name: 'memory:search',
+        name: 'memory_search',
         description: 'Search your own conversation history (LAMA topic) for relevant past discussions. Use this to recall what you\'ve learned.',
         inputSchema: {
           type: 'object',
@@ -54,7 +58,7 @@ export class MemoryTools {
         }
       },
       {
-        name: 'memory:recent',
+        name: 'memory_recent',
         description: 'Get your most recent memories (messages from LAMA topic). Use this to recall recent learnings.',
         inputSchema: {
           type: 'object',
@@ -68,7 +72,7 @@ export class MemoryTools {
         }
       },
       {
-        name: 'memory:subjects',
+        name: 'memory_subjects',
         description: 'Get subjects and themes you\'ve learned about across all conversations. Shows what topics you have context for.',
         inputSchema: {
           type: 'object',
@@ -81,7 +85,7 @@ export class MemoryTools {
         }
       },
       {
-        name: 'subject:get-messages',
+        name: 'subject_get-messages',
         description: 'Get full message history for a specific subject. Use this when you need complete context about a topic you know exists from the Available Context list.',
         inputSchema: {
           type: 'object',
@@ -100,7 +104,7 @@ export class MemoryTools {
         }
       },
       {
-        name: 'subject:search',
+        name: 'subject_search',
         description: 'Search within a specific subject for relevant messages. More focused than memory:search - use when you need specific information within a known subject.',
         inputSchema: {
           type: 'object',
@@ -126,6 +130,13 @@ export class MemoryTools {
   }
 
   /**
+   * Handle MCP tool call (alias for executeTool)
+   */
+  async handleToolCall(toolName, params) {
+    return await this.executeTool(toolName, params);
+  }
+
+  /**
    * Execute a memory tool
    * @param {string} toolName - Name of the tool to execute
    * @param {object} params - Tool parameters
@@ -137,22 +148,22 @@ export class MemoryTools {
     // Access control is enforced by the topic system itself
 
     switch (toolName) {
-      case 'memory:store':
-        return await this.storeMemory(params.content, params.category)
+      case 'memory_store':
+        return await this.storeMemory(params.content, params.category, params.contactEmail)
 
-      case 'memory:search':
+      case 'memory_search':
         return await this.searchMemory(params.query, params.limit || 10)
 
-      case 'memory:recent':
+      case 'memory_recent':
         return await this.getRecentMemory(params.count || 20)
 
-      case 'memory:subjects':
+      case 'memory_subjects':
         return await this.getSubjects(params.topicId)
 
-      case 'subject:get-messages':
+      case 'subject_get-messages':
         return await this.getSubjectMessages(params.subject, params.limit || 50)
 
-      case 'subject:search':
+      case 'subject_search':
         return await this.searchSubject(params.subject, params.query, params.limit || 20)
 
       default:
@@ -167,40 +178,46 @@ export class MemoryTools {
   }
 
   /**
-   * Store a new memory to the LAMA topic with full journal entry
-   * Creates: Message + Keywords + Subject + Summary
+   * Store a new memory as a proper Memory Assembly with Supply/Demand
+   * Uses MemoryStorageHandler for complete Assembly.core integration
    */
-  async storeMemory(content, category) {
+  async storeMemory(content, category, contactEmail) {
     try {
-      console.log(`[MemoryTools] Storing memory (category: ${category || 'general'})`)
+      console.error(`[MemoryTools] Storing memory (category: ${category || 'general'}, owner: ${contactEmail || 'none'})`)
 
-      // Enter LAMA topic room
-      const topicRoom = await this.nodeOneCore.topicModel.enterTopicRoom('lama')
+      // Use MemoryStorageHandler for complete flow:
+      // 1. Create Memory object
+      // 2. Analyze with LLM
+      // 3. Create Supply/Demand
+      // 4. Create Assembly
+      // 5. Write imploded file
+      // 6. Post to journal
+      const handler = this.nodeOneCore.memoryStorageHandler
+      if (!handler) {
+        throw new Error('MemoryStorageHandler not initialized')
+      }
 
-      // Create message text with category tag
-      const messageText = category
-        ? `[${category}] ${content}`
-        : content
+      const result = await handler.storeMemory({
+        content,
+        memoryType: category || 'note',
+        category,
+        topicRef: 'lama'
+      })
 
-      // Post to channel as system message (stores the memory)
-      // Use undefined for sender (system message) and null for channelOwner (shared topic)
-      await topicRoom.sendMessage(messageText, undefined, null)
-      console.log(`[MemoryTools] Memory message stored`)
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to store memory')
+      }
 
-      // Extract keywords, subject, summary using LLM analysis
-      // Run analysis in background (non-blocking)
-      setImmediate(async () => {
-        try {
-          await this.analyzeAndJournalize('lama', content, category)
-        } catch (error) {
-          console.error('[MemoryTools] Failed to create journal entry:', error)
-        }
+      console.error(`[MemoryTools] Memory Assembly created:`, {
+        memoryHash: result.memoryHash,
+        assemblyHash: result.assemblyHash,
+        filename: result.filename
       })
 
       return {
         content: [{
           type: 'text',
-          text: `Memory stored successfully${category ? ` (category: ${category})` : ''} - journal entry being created`
+          text: `Memory Assembly created successfully\nMemory Hash: ${result.memoryHash}\nAssembly Hash: ${result.assemblyHash}\nFilename: ${result.filename}${category ? `\nCategory: ${category}` : ''}\nKeywords: ${result.keywords?.join(', ') || 'none'}\nSubjects: ${result.subjects?.join(', ') || 'none'}\n\nJournal entry created with keywords and subjects`
         }]
       }
     } catch (error) {
@@ -227,7 +244,7 @@ export class MemoryTools {
       return
     }
 
-    console.log(`[MemoryTools] Creating journal entry for memory in topic: ${topicId}`)
+    console.error(`[MemoryTools] Creating journal entry for memory in topic: ${topicId}`)
 
     // Use LLM to extract keywords, subject, and summary
     const analysisPrompt = [{
@@ -242,7 +259,7 @@ export class MemoryTools {
         disableTools: true
       })
 
-      console.log(`[MemoryTools] Analysis result:`, {
+      console.error(`[MemoryTools] Analysis result:`, {
         hasSubjects: !!result?.analysis?.subjects,
         hasSummary: !!result?.analysis?.summaryUpdate,
         subjectCount: result?.analysis?.subjects?.length || 0
@@ -254,7 +271,7 @@ export class MemoryTools {
           const { name, description, keywords } = subjectData
           const keywordTerms = keywords?.map(k => k.term) || []
 
-          console.log(`[MemoryTools] Creating subject: ${name} with ${keywordTerms.length} keywords`)
+          console.error(`[MemoryTools] Creating subject: ${name} with ${keywordTerms.length} keywords`)
 
           // Create or get subject
           const subject = await topicAnalysisModel.createSubject(
@@ -270,7 +287,7 @@ export class MemoryTools {
             await topicAnalysisModel.addKeywordToSubject(topicId, kw.term, subject.idHash)
           }
 
-          console.log(`[MemoryTools] ✅ Subject created: ${name}`)
+          console.error(`[MemoryTools] ✅ Subject created: ${name}`)
         }
       }
 
@@ -281,10 +298,10 @@ export class MemoryTools {
           result.analysis.summaryUpdate,
           0.8  // confidence score
         )
-        console.log(`[MemoryTools] ✅ Summary updated`)
+        console.error(`[MemoryTools] ✅ Summary updated`)
       }
 
-      console.log(`[MemoryTools] ✅ Journal entry complete for topic: ${topicId}`)
+      console.error(`[MemoryTools] ✅ Journal entry complete for topic: ${topicId}`)
     } catch (error) {
       console.error('[MemoryTools] Analysis failed:', error)
       throw error
@@ -296,7 +313,7 @@ export class MemoryTools {
    */
   async searchMemory(query, limit) {
     try {
-      console.log(`[MemoryTools] Searching memory for: "${query}"`)
+      console.error(`[MemoryTools] Searching memory for: "${query}"`)
 
       // Enter LAMA topic room
       const topicRoom = await this.nodeOneCore.topicModel.enterTopicRoom('lama')
@@ -350,7 +367,7 @@ export class MemoryTools {
    */
   async getRecentMemory(count) {
     try {
-      console.log(`[MemoryTools] Getting ${count} recent memories`)
+      console.error(`[MemoryTools] Getting ${count} recent memories`)
 
       const topicRoom = await this.nodeOneCore.topicModel.enterTopicRoom('lama')
       const allMessages = await topicRoom.retrieveAllMessages()
@@ -415,10 +432,10 @@ export class MemoryTools {
 
       let subjects
       if (topicId) {
-        console.log(`[MemoryTools] Getting subjects for topic: ${topicId}`)
+        console.error(`[MemoryTools] Getting subjects for topic: ${topicId}`)
         subjects = await topicAnalysisModel.getSubjects(topicId)
       } else {
-        console.log(`[MemoryTools] Getting all subjects across conversations`)
+        console.error(`[MemoryTools] Getting all subjects across conversations`)
         // Get all topics and aggregate subjects
         const allChannels = await this.nodeOneCore.channelManager.getMatchingChannelInfos()
         const allSubjects = []
@@ -478,7 +495,7 @@ export class MemoryTools {
    */
   async getSubjectMessages(subjectName, limit = 50) {
     try {
-      console.log(`[MemoryTools] Getting messages for subject: "${subjectName}"`)
+      console.error(`[MemoryTools] Getting messages for subject: "${subjectName}"`)
 
       const topicAnalysisModel = this.nodeOneCore.topicAnalysisModel
 
@@ -581,7 +598,7 @@ export class MemoryTools {
    */
   async searchSubject(subjectName, query, limit = 20) {
     try {
-      console.log(`[MemoryTools] Searching subject "${subjectName}" for: "${query}"`)
+      console.error(`[MemoryTools] Searching subject "${subjectName}" for: "${query}"`)
 
       const topicAnalysisModel = this.nodeOneCore.topicAnalysisModel
 

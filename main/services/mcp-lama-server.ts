@@ -31,6 +31,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { MCPToolInterface } from '../interfaces/tool-interface.js';
+import { MemoryTools } from './mcp/memory-tools.js';
 
 export class LamaMCPServer {
   public nodeOneCore: any;
@@ -39,6 +40,7 @@ export class LamaMCPServer {
   aiAssistantModel: any;
   toolInterface: any;
   private mcpClientPersonId: any = null;
+  private memoryTools: MemoryTools;
 
   constructor(nodeOneCore: any, aiAssistantModel?: any) {
 
@@ -56,6 +58,9 @@ export class LamaMCPServer {
 
     // Initialize tool interface
     this.toolInterface = new MCPToolInterface(this as any, this.nodeOneCore);
+
+    // Initialize memory tools
+    this.memoryTools = new MemoryTools(this.nodeOneCore);
 
     // Don't call setupTools() here - it must be called after server.connect()
   }
@@ -76,8 +81,9 @@ export class LamaMCPServer {
   }
 
   setupTools(): any {
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+      console.error('[LamaMCPServer] 🔍 ListTools request received');
+      const tools = [
         // Chat Tools
         {
           name: 'send_message',
@@ -148,7 +154,25 @@ export class LamaMCPServer {
             required: ['query']
           }
         },
-        
+        {
+          name: 'create_contact',
+          description: 'Create a new contact with name and email',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              name: {
+                type: 'string',
+                description: 'Contact name'
+              },
+              email: {
+                type: 'string',
+                description: 'Contact email address'
+              }
+            },
+            required: ['name', 'email']
+          }
+        },
+
         // Connection Tools
         {
           name: 'list_connections',
@@ -339,12 +363,22 @@ export class LamaMCPServer {
             required: ['topicId']
           }
         }
-      ]
-    }));
+      ];
+
+      // Add memory tools
+      const memoryToolDefinitions = this.memoryTools.getToolDefinitions();
+      tools.push(...memoryToolDefinitions);
+
+      console.error(`[LamaMCPServer] 📋 Returning ${tools.length} tools`);
+      console.error(`[LamaMCPServer] Tool names: ${tools.map(t => t.name).join(', ')}`);
+      return { tools };
+    });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       const { name, arguments: args } = request.params;
-      
+      console.error(`[LamaMCPServer] 🔧 CallTool request: ${name}`);
+      console.error(`[LamaMCPServer] Arguments: ${JSON.stringify(args)}`);
+
       if (!this.nodeOneCore) {
         return {
           content: [
@@ -371,7 +405,9 @@ export class LamaMCPServer {
             return await this.getContacts();
           case 'search_contacts':
             return await this.searchContacts(args.query);
-            
+          case 'create_contact':
+            return await this.createContact(args.name, args.email);
+
           // Connection operations
           case 'list_connections':
             return await this.listConnections();
@@ -403,6 +439,15 @@ export class LamaMCPServer {
             return await this.findChatMemories(args.topicId, args.keywords, args.limit);
           case 'get_chat_memory_status':
             return await this.getChatMemoryStatus(args.topicId);
+
+          // Memory tools
+          case 'memory_store':
+          case 'memory_search':
+          case 'memory_recent':
+          case 'memory_subjects':
+          case 'subject_get-messages':
+          case 'subject_search':
+            return await this.memoryTools.handleToolCall(name, args);
 
           default:
             throw new Error(`Unknown tool: ${name}`);
@@ -564,6 +609,44 @@ export class LamaMCPServer {
             text: `Failed to search contacts: ${(error as Error).message}`
           }
         ]
+      };
+    }
+  }
+
+  async createContact(name: string, email: string): Promise<any> {
+    try {
+      // Call HTTP API - the Electron main process will handle ONE.core object creation
+      const result = await this.nodeOneCore.call('contacts:add', { name, email });
+
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `✅ Contact created successfully:\nName: ${name}\nEmail: ${email}`
+            }
+          ]
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Failed to create contact: ${result.error}`
+            }
+          ],
+          isError: true
+        };
+      }
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Failed to create contact: ${(error as Error).message}`
+          }
+        ],
+        isError: true
       };
     }
   }

@@ -54,6 +54,7 @@ export interface Message {
   attachments?: any[]
   topicId?: string
   topicName?: string
+  thinking?: string // Reasoning trace from models like DeepSeek R1
 }
 
 export interface Peer {
@@ -225,7 +226,8 @@ class LamaBridge implements LamaAPI {
       isAI: msg.isAI || false,
       topicId: conversationId,
       topicName: 'Chat',
-      attachments: msg.attachments
+      attachments: msg.attachments,
+      thinking: msg.thinking // Include thinking trace if present
     }))
   }
   

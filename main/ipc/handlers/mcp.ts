@@ -360,6 +360,33 @@ const mcpHandlers = {
         error: error.message || 'Failed to get MCP status'
       };
     }
+  },
+
+  /**
+   * Reconnect MCP servers
+   */
+  async reconnect(event: IpcMainInvokeEvent): Promise<MCPActionResult> {
+    try {
+      console.log('[MCP] Reconnecting MCP servers...');
+
+      // Shutdown all servers first
+      await mcpManager.shutdown();
+
+      // Re-initialize
+      await mcpManager.init();
+
+      console.log('[MCP] ✅ Reconnected successfully');
+
+      return {
+        success: true
+      };
+    } catch (error: any) {
+      console.error('[MCP] Failed to reconnect:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to reconnect MCP servers'
+      };
+    }
   }
 };
 

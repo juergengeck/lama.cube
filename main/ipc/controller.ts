@@ -8,35 +8,35 @@ import type { IPCHandler, IPCHandlerMap } from '../types/ipc.js';
 import nodeOneCore from '../core/node-one-core.js';
 
 // Import handlers (will be JS files initially, then migrated to TS)
-import authHandlers from './handlers/auth.js';
-import stateHandlers from './handlers/state.js';
-import { chatHandlers } from './handlers/chat.js';
-import connectionHandlers from './handlers/connection.js';
-import cryptoHandlers from './handlers/crypto.js';
-import settingsHandlers from './handlers/settings.js';
-import aiHandlers from './handlers/ai.js';
-import attachmentHandlers from './handlers/attachments.js';
+import authHandlers from './plans/auth.js';
+import stateHandlers from './plans/state.js';
+import { chatHandlers } from './plans/chat.js';
+import connectionHandlers from './plans/connection.js';
+import cryptoHandlers from './plans/crypto.js';
+import settingsHandlers from './plans/settings.js';
+import aiHandlers from './plans/ai.js';
+import attachmentHandlers from './plans/attachments.js';
 // @ts-ignore - JS file with named export
-import { subjectHandlers } from './handlers/subjects.js';
-import oneCoreHandlers from './handlers/one-core.js';
+import { subjectHandlers } from './plans/subjects.js';
+import oneCoreHandlers from './plans/one-core.js';
 // @ts-ignore - JS file with named export
-import { initializeDeviceHandlers } from './handlers/devices.js';
-import { initializeQuicVCDiscoveryHandlers, autoInitializeDiscovery } from './handlers/quicvc-discovery.js';
+import { initializeDeviceHandlers } from './plans/devices.js';
+import { initializeQuicVCDiscoveryHandlers, autoInitializeDiscovery } from './plans/quicvc-discovery.js';
 // @ts-ignore - JS file with named export
-import { registerContactHandlers } from './handlers/contacts.js';
-import * as topicHandlers from './handlers/topics.js';
-import topicAnalysisHandlers from './handlers/topic-analysis.js';
-import * as wordCloudSettingsHandlers from './handlers/word-cloud-settings.js';
-import registerMemoryHandlers from './handlers/memory.js';
-import keywordDetailHandlers from './handlers/keyword-detail.js';
-import auditHandlers from './handlers/audit.js';
-import exportHandlers from './handlers/export.js';
-import feedForwardHandlers from './handlers/feed-forward.js';
-import { registerLlmConfigHandlers } from './handlers/llm-config.js';
+import { registerContactHandlers } from './plans/contacts.js';
+import * as topicHandlers from './plans/topics.js';
+import topicAnalysisHandlers from './plans/topic-analysis.js';
+import * as wordCloudSettingsHandlers from './plans/word-cloud-settings.js';
+import registerMemoryHandlers from './plans/memory.js';
+import keywordDetailHandlers from './plans/keyword-detail.js';
+import auditHandlers from './plans/audit.js';
+import exportHandlers from './plans/export.js';
+import feedForwardHandlers from './plans/feed-forward.js';
+import { registerLlmConfigHandlers } from './plans/llm-config.js';
 // @ts-ignore - TS file with named export
-import { proposalHandlers } from './handlers/proposals.js';
-import mcpHandlers from './handlers/mcp.js';
-import createUserSettingsHandlers from './handlers/user-settings.js';
+import { proposalHandlers } from './plans/proposals.js';
+import mcpHandlers from './plans/mcp.js';
+import createUserSettingsHandlers from './plans/user-settings.js';
 
 // Node error type
 interface NodeError extends Error {
@@ -209,7 +209,7 @@ class IPCController {
 
     // Legacy alias for UI compatibility
     this.handle('llm:getConfig', async (event: IpcMainInvokeEvent, params: any) => {
-      const { handleGetOllamaConfig } = await import('./handlers/llm-config.js');
+      const { handleGetOllamaConfig } = await import('./plans/llm-config.js');
       return handleGetOllamaConfig(event, params || {});
     });
 

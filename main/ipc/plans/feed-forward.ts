@@ -5,13 +5,13 @@
  * Business logic lives in ../../../lama.core/handlers/FeedForwardHandler.ts
  */
 
-import { FeedForwardHandler } from '@chat/core/handlers/FeedForwardHandler.js';
+import { FeedForwardPlan } from '@chat/core/plans/FeedForwardPlan.js';
 import FeedForwardManager from '../../core/feed-forward/manager.js';
 import type { IpcMainInvokeEvent } from 'electron';
 
 // Manager and handler instances
 let manager: FeedForwardManager | null = null;
-let feedForwardHandler: FeedForwardHandler | null = null;
+let feedForwardHandler: FeedForwardPlan | null = null;
 
 /**
  * Initialize feed-forward manager and handler with ONE.core instance
@@ -22,13 +22,13 @@ function initializeFeedForward(nodeOneCore: any): void {
   }
 
   manager = new FeedForwardManager({ nodeOneCore });
-  feedForwardHandler = new FeedForwardHandler(manager);
+  feedForwardHandler = new FeedForwardPlan(manager);
 }
 
 /**
  * Get handler instance (throws if not initialized)
  */
-function getHandler(): FeedForwardHandler {
+function getHandler(): FeedForwardPlan {
   if (!feedForwardHandler) {
     throw new Error('Feed-forward handler not initialized');
   }

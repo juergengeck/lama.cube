@@ -8,7 +8,7 @@
  */
 
 import type { IpcMainInvokeEvent } from 'electron';
-import { ProposalsHandler } from '@lama/core/handlers/ProposalsHandler.js';
+import { ProposalsPlan } from '@lama/core/plans/ProposalsPlan.js';
 import { ProposalEngine } from '../../services/proposal-engine.js';
 import { ProposalRanker } from '../../services/proposal-ranker.js';
 import { ProposalCache } from '../../services/proposal-cache.js';
@@ -23,12 +23,12 @@ const proposalRanker = new ProposalRanker();
 const proposalCache = new ProposalCache(50, 60000); // 50 entries, 60s TTL
 
 // Singleton handler instance
-let proposalsHandler: ProposalsHandler | null = null;
+let proposalsHandler: ProposalsPlan | null = null;
 
 /**
  * Initialize ProposalEngine and handler
  */
-function getProposalsHandler(): ProposalsHandler {
+function getProposalsHandler(): ProposalsPlan {
   // Initialize ProposalEngine if needed
   if (!proposalEngine && nodeOneCoreInstance.topicAnalysisModel && nodeOneCoreInstance.channelManager) {
     proposalEngine = new ProposalEngine(
@@ -42,7 +42,7 @@ function getProposalsHandler(): ProposalsHandler {
 
   // Initialize handler if needed
   if (!proposalsHandler) {
-    proposalsHandler = new ProposalsHandler(
+    proposalsHandler = new ProposalsPlan(
       nodeOneCoreInstance,
       nodeOneCoreInstance.topicAnalysisModel,
       proposalEngine,

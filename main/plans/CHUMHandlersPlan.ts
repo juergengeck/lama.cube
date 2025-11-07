@@ -5,12 +5,12 @@
  * Delegates business logic to connection.core, injects platform dependencies.
  *
  * Principles:
- * - Import handler from connection.core
+ * - Import plan from connection.core
  * - Inject Electron-specific dependencies (BrowserWindow, etc.)
  * - Minimal glue code only
  */
 
-import { CHUMMessageHandler } from '@lama/connection.core/chum/CHUMMessageHandler.js';
+import { CHUMMessagePlan } from '@lama/connection.core';
 import type LeuteModel from '@refinio/one.models/lib/models/Leute/LeuteModel.js';
 import type ChannelManager from '@refinio/one.models/lib/models/ChannelManager.js';
 import type TopicModel from '@refinio/one.models/lib/models/Chat/TopicModel.js';
@@ -29,8 +29,8 @@ export class CHUMHandlersPlan {
   async registerHandlers(context: CHUMHandlerContext): Promise<void> {
     console.log('[CHUMHandlersPlan] Orchestrating CHUM handler registration (Electron)...');
 
-    // Create handler with injected Electron dependencies
-    const handler = new CHUMMessageHandler({
+    // Create plan with injected Electron dependencies
+    const plan = new CHUMMessagePlan({
       notifyUI: (event: string, data: any) => {
         // Inject Electron-specific UI notification
         const { BrowserWindow } = require('electron');
@@ -41,8 +41,8 @@ export class CHUMHandlersPlan {
       }
     });
 
-    // Delegate to platform-agnostic handler
-    await handler.registerHandlers(context);
+    // Delegate to platform-agnostic plan
+    await plan.registerPlans(context);
 
     console.log('[CHUMHandlersPlan] ✅ CHUM handler registration complete (Electron)');
   }

@@ -8,7 +8,7 @@
  */
 
 import type { IpcMainInvokeEvent } from 'electron';
-import { KeywordDetailHandler } from '@lama/core/handlers/KeywordDetailHandler.js';
+import { KeywordDetailPlan } from '@lama/core/plans/KeywordDetailPlan.js';
 import nodeOneCoreInstance from '../../core/node-one-core.js';
 import TopicAnalysisModel from '@lama/core/one-ai/models/TopicAnalysisModel.js';
 import * as keywordAccessStorage from '@lama/core/one-ai/storage/keyword-access-storage.js';
@@ -16,12 +16,12 @@ import * as keywordEnrichment from '@lama/core/one-ai/services/keyword-enrichmen
 
 // Singleton model instance
 let topicAnalysisModel: TopicAnalysisModel | null = null;
-let keywordDetailHandler: KeywordDetailHandler | null = null;
+let keywordDetailHandler: KeywordDetailPlan | null = null;
 
 /**
  * Initialize TopicAnalysisModel singleton and handler
  */
-async function initializeHandler(): Promise<KeywordDetailHandler> {
+async function initializeHandler(): Promise<KeywordDetailPlan> {
   if (keywordDetailHandler && topicAnalysisModel?.state.currentState === 'Initialised') {
     return keywordDetailHandler;
   }
@@ -45,7 +45,7 @@ async function initializeHandler(): Promise<KeywordDetailHandler> {
   }
 
   if (!keywordDetailHandler) {
-    keywordDetailHandler = new KeywordDetailHandler(
+    keywordDetailHandler = new KeywordDetailPlan(
       nodeOneCoreInstance,
       topicAnalysisModel,
       keywordAccessStorage,

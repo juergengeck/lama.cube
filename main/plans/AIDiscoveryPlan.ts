@@ -5,13 +5,14 @@
  * Delegates business logic to lama.core, injects platform dependencies.
  *
  * Principles:
- * - Import handler from lama.core
+ * - Import handler/plan from lama.core
  * - Inject Electron/Node-specific dependencies (process.env, etc.)
  * - Minimal glue code only
  */
 
 import { AIInitializationHandler } from '@lama/core/ai/AIInitializationHandler.js';
-import type { UserSettingsManager } from '../core/user-settings-manager.js';
+import { UserSettingsManager } from '../core/user-settings-manager.js';
+import { initializeAIAssistantHandler } from '../core/ai-assistant-handler-adapter.js';
 
 export interface AIDiscoveryContext {
   nodeOneCore: any;
@@ -38,7 +39,15 @@ export class AIDiscoveryPlan {
     const handler = new AIInitializationHandler({
       storage: context.nodeOneCore,
       llmManager: context.llmManager,
-      getEnvVar: (key: string) => process.env[key]  // Inject Node.js env access
+      getEnvVar: (key: string) => process.env[key],  // Inject Node.js env access
+      createUserSettingsManager: (storage: any, email: string) => {
+        // Factory for UserSettingsManager
+        return new UserSettingsManager(storage, email);
+      },
+      initializeAIAssistant: async (storage: any, llmManager: any) => {
+        // Factory for AI Assistant Handler
+        return await initializeAIAssistantHandler(storage, llmManager);
+      }
     });
 
     // Delegate to platform-agnostic handler

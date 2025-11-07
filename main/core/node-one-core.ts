@@ -25,7 +25,8 @@ import type { NodeOneCore as INodeOneCore } from '../types/one-core.js';
 import { CoreInstanceInitializationPlan } from '../plans/CoreInstanceInitializationPlan.js';
 import { ModelInitializationPlan } from '../plans/ModelInitializationPlan.js';
 import { CHUMHandlersPlan } from '../plans/CHUMHandlersPlan.js';
-import { MemoryInitializationPlan } from '../plans/MemoryInitializationPlan.js';
+// TEMP: MemoryInitializationPlan disabled - MemoryServicesPlan not exported from memory.core
+// import { MemoryInitializationPlan } from '../plans/MemoryInitializationPlan.js';
 import { AIDiscoveryPlan } from '../plans/AIDiscoveryPlan.js';
 import { MessageListenersPlan } from '../plans/MessageListenersPlan.js';
 import { MCPInitializationPlan } from '../plans/MCPInitializationPlan.js';
@@ -85,7 +86,8 @@ class NodeOneCore implements INodeOneCore {
   private coreInitPlan: CoreInstanceInitializationPlan;
   private modelInitPlan: ModelInitializationPlan;
   private chumHandlersPlan: CHUMHandlersPlan;
-  private memoryInitPlan: MemoryInitializationPlan;
+  // TEMP: MemoryInitializationPlan disabled
+  // private memoryInitPlan: MemoryInitializationPlan;
   private aiDiscoveryPlan: AIDiscoveryPlan;
   private messageListenersPlan: MessageListenersPlan;
   private mcpInitPlan: MCPInitializationPlan;
@@ -160,7 +162,8 @@ class NodeOneCore implements INodeOneCore {
     this.coreInitPlan = new CoreInstanceInitializationPlan();
     this.modelInitPlan = new ModelInitializationPlan();
     this.chumHandlersPlan = new CHUMHandlersPlan();
-    this.memoryInitPlan = new MemoryInitializationPlan();
+    // TEMP: MemoryInitializationPlan disabled
+    // this.memoryInitPlan = new MemoryInitializationPlan();
     this.aiDiscoveryPlan = new AIDiscoveryPlan();
     this.messageListenersPlan = new MessageListenersPlan();
     this.mcpInitPlan = new MCPInitializationPlan();
@@ -705,20 +708,21 @@ class NodeOneCore implements INodeOneCore {
       console.log('[NodeOneCore] ✅ Topic Analysis Model initialized')
     }
 
+    // TEMP: Memory initialization disabled - MemoryServicesPlan not exported from memory.core
     // Use MemoryInitializationPlan to initialize memory services
-    const memoryServices = await this.memoryInitPlan.execute({
-      channelManager: this.channelManager,
-      topicModel: this.topicModel,
-      topicAnalysisModel: this.topicAnalysisModel,
-      nodeOneCore: this,
-      llmManager
-    })
+    // const memoryServices = await this.memoryInitPlan.execute({
+    //   channelManager: this.channelManager,
+    //   topicModel: this.topicModel,
+    //   topicAnalysisModel: this.topicAnalysisModel,
+    //   nodeOneCore: this,
+    //   llmManager
+    // })
 
-    // Assign memory services to instance
-    this.memoryStorageHandler = memoryServices.memoryStorageHandler
-    this.fileStorageService = memoryServices.fileStorageService
-    this.subjectHandler = memoryServices.subjectHandler
-    this.chatMemoryHandler = memoryServices.chatMemoryHandler
+    // // Assign memory services to instance
+    // this.memoryStorageHandler = memoryServices.memoryStoragePlan
+    // this.fileStorageService = memoryServices.fileStorageService
+    // this.subjectHandler = memoryServices.subjectPlan
+    // this.chatMemoryHandler = memoryServices.chatMemoryPlan
 
     // Use AIDiscoveryPlan to discover Claude models and initialize AI
     const aiServices = await this.aiDiscoveryPlan.execute({

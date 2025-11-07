@@ -4,7 +4,7 @@
  */
 
 import type { IpcMainInvokeEvent } from 'electron';
-import { ChatHandler } from '@chat/core/handlers/ChatHandler.js';
+import { ChatPlan } from '@chat/core/plans/ChatPlan.js';
 import stateManager from '../../state/manager.js';
 import nodeProvisioning from '../../services/node-provisioning.js';
 import nodeOneCore from '../../core/node-one-core.js';
@@ -20,7 +20,7 @@ let messageVersionManager: MessageVersionManager | null = null;
 let messageAssertionManager: MessageAssertionManager | null = null;
 
 // Initialize ChatHandler with dependencies
-const chatHandler = new ChatHandler(nodeOneCore, stateManager, messageVersionManager, messageAssertionManager);
+const chatHandler = new ChatPlan(nodeOneCore, stateManager, messageVersionManager, messageAssertionManager);
 
 // Initialize message managers when they become available
 function initializeMessageManagers() {

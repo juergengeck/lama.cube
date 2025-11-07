@@ -11,7 +11,7 @@
  */
 
 import type { SHA256IdHash, SHA256Hash } from '@refinio/one.core/lib/util/type-checks.js';
-import type { TopicAnalysisHandler } from '@lama/core/handlers/TopicAnalysisHandler.js';
+import type { TopicAnalysisPlan } from '@lama/core/plans/TopicAnalysisPlan.js';
 import type { Supply, Demand, Assembly } from '@assembly/core';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -73,7 +73,7 @@ function generateMemoryFilename(content: string, timestamp: Date): string {
 export class MemoryStorageHandler {
     constructor(
         private nodeOneCore: any,  // NodeOneCoreInstance with topicModel, storeVersionedObject, etc.
-        private topicAnalysisHandler: TopicAnalysisHandler,
+        private topicAnalysisHandler: TopicAnalysisPlan,
         private memoryDirectory: string
     ) {}
 

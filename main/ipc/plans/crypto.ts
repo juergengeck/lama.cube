@@ -6,18 +6,18 @@
  */
 
 import { IpcMainInvokeEvent } from 'electron';
-import { CryptoHandler } from '@lama/core/handlers/CryptoHandler.js';
+import { CryptoPlan } from '@lama/core/plans/CryptoPlan.js';
 import nodeOneCore from '../../core/node-one-core.js';
 
 // Singleton handler instance
-let cryptoHandler: CryptoHandler | null = null;
+let cryptoHandler: CryptoPlan | null = null;
 
 /**
  * Get handler instance (creates on first use)
  */
-function getHandler(): CryptoHandler {
+function getHandler(): CryptoPlan {
   if (!cryptoHandler) {
-    cryptoHandler = new CryptoHandler(nodeOneCore);
+    cryptoHandler = new CryptoPlan(nodeOneCore);
   }
   return cryptoHandler;
 }

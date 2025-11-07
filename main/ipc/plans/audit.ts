@@ -5,7 +5,7 @@
  * Business logic lives in ../../../lama.core/handlers/AuditHandler.ts
  */
 
-import { AuditHandler } from '@lama/core/handlers/AuditHandler.js';
+import { AuditPlan } from '@lama/core/plans/AuditPlan.js';
 import qrGenerator from '../../core/qr-generation.js';
 import { AttestationManager } from '../../core/attestation-manager.js';
 import { TopicExporter } from '../../core/topic-export.js';
@@ -15,7 +15,7 @@ import type { IpcMainInvokeEvent } from 'electron';
 // Service instances
 let attestationManager: AttestationManager | null = null;
 let topicExporter: TopicExporter | null = null;
-let auditHandler: AuditHandler | null = null;
+let auditHandler: AuditPlan | null = null;
 
 /**
  * Get or create attestation manager
@@ -47,9 +47,9 @@ function getTopicExporter(): TopicExporter | null {
 /**
  * Get handler instance (creates on first use)
  */
-function getHandler(): AuditHandler {
+function getHandler(): AuditPlan {
   if (!auditHandler) {
-    auditHandler = new AuditHandler(
+    auditHandler = new AuditPlan(
       qrGenerator,
       getAttestationManager(),
       getTopicExporter()

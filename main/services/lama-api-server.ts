@@ -5,18 +5,18 @@
  */
 
 import http from 'http';
-import oneCoreHandlers from '../ipc/handlers/one-core.js';
-import { chatHandler } from '../ipc/handlers/chat.js';
-import connectionHandlers from '../ipc/handlers/connection.js';
-import aiHandlers from '../ipc/handlers/ai.js';
-import { registerContactHandlers } from '../ipc/handlers/contacts.js';
+import oneCoreHandlers from '../ipc/plans/one-core.js';
+import { chatHandler } from '../ipc/plans/chat.js';
+import connectionHandlers from '../ipc/plans/connection.js';
+import aiHandlers from '../ipc/plans/ai.js';
+import { registerContactHandlers } from '../ipc/plans/contacts.js';
 import nodeOneCore from '../core/node-one-core.js';
 import { ipcMain } from 'electron';
 import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
 import { storeUnversionedObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
 import type { Person } from '@refinio/one.core/lib/recipes.js';
-import { ContactsHandler } from '@chat/core/handlers/ContactsHandler.js';
+import { ContactsPlan } from '@chat/core/plans/ContactsPlan.js';
 import { MemoryTools } from './mcp/memory-tools.js';
 
 export class LamaAPIServer {
@@ -197,8 +197,8 @@ export class LamaAPIServer {
               break;
             case 'contacts:add':
               // Call ContactsHandler directly in main process
-              const { ContactsHandler } = await import('@chat/core/handlers/ContactsHandler.js');
-              const contactsHandler = new ContactsHandler(nodeOneCore);
+              const { ContactsPlan } = await import('@chat/core/plans/ContactsPlan.js');
+              const contactsHandler = new ContactsPlan(nodeOneCore);
               result = await contactsHandler.addContact(params);
               break;
 
@@ -246,7 +246,7 @@ export class LamaAPIServer {
               // Lookup contact Person if contactEmail provided, otherwise use owner
               let authorHash: SHA256IdHash<Person>;
               if (params.contactEmail) {
-                const contactsHandler = new ContactsHandler(nodeOneCore);
+                const contactsHandler = new ContactsPlan(nodeOneCore);
                 const contactsResponse = await contactsHandler.getContacts();
 
                 if (contactsResponse.success && contactsResponse.contacts) {

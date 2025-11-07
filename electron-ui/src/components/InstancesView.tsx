@@ -100,9 +100,10 @@ export default function InstancesView() {
   const loadInstances = async () => {
     try {
       // Get browser instance info (this renderer)
+      // Browser has NO ONE.core instance - it's just a UI client
       const browserInfo = {
-        id: 'browser-' + (window.lamaBridge?.appModel?.leuteModel?.myMainIdentity?.() || 'instance'),
-        personId: window.lamaBridge?.appModel?.leuteModel?.myMainIdentity?.() || 'browser-instance',
+        id: 'browser-renderer',
+        personId: 'renderer-ui',
         name: 'Browser UI',
         platform: 'browser' as const,
         role: 'client' as const,
@@ -112,7 +113,7 @@ export default function InstancesView() {
         lastSeen: new Date(),
         capabilities: {
           network: false,  // Browser can't do direct networking
-          storage: true,   // Has IndexedDB for sparse storage
+          storage: false,  // NO storage - uses IPC only
           llm: false       // No direct LLM access
         }
       }
@@ -139,74 +140,35 @@ export default function InstancesView() {
         })
       }
 
-      // Get contacts - show Node.js owner even if browser ONE.core isn't initialized
+      // Get contacts from Node.js via IPC (browser has NO ONE.core)
       try {
         const chumContacts: Instance[] = []
-        
-        // Always try to get Node.js instance info first
-        const nodeInfo = await window.electronAPI?.invoke('devices:getInstanceInfo')
-        if (nodeInfo?.success && nodeInfo.ownerId) {
-          chumContacts.push({
-            id: `nodejs-owner-${nodeInfo.ownerId}`,
-            personId: nodeInfo.ownerId,
-            name: `${nodeInfo.instanceName || 'Node.js Hub'} (Owner)`,
-            platform: 'nodejs' as const,
-            role: 'hub' as const,
-            isLocal: true,
-            isConnected: true,
-            trusted: true,
-            lastSeen: new Date(),
-            capabilities: {}
-          })
-          console.log('[InstancesView] Added Node.js owner:', nodeInfo.instanceName)
-        }
-        
-        // If browser ONE.core is initialized, add synced contacts via CHUM
-        if (window.appModel?.leuteModel) {
-          const others = await window.appModel.leuteModel.others()
-          console.log(`[InstancesView] Found ${others.length} contacts in browser LeuteModel (via CHUM)`)
-          
-          // Add other contacts synced via CHUM
-          for (const someone of others) {
-            try {
-              const personId = await someone.mainIdentity()
-              const profile = await someone.mainProfile()
 
-              // Skip if this is the same as Node.js owner (avoid duplicates)
-              if (personId === nodeInfo?.ownerId) {
-                continue
-              }
+        // Get all contacts from Node.js instance via IPC
+        const contactsResult = await window.electronAPI?.invoke('contacts:list')
+        if (contactsResult?.success && contactsResult.contacts) {
+          console.log(`[InstancesView] Found ${contactsResult.contacts.length} contacts from Node.js`)
 
-              // Get name from PersonName description
-              const personName = profile?.personDescriptions?.find((d: any) => d.$type$ === 'PersonName')
-              const contactName = personName?.name || `Contact ${personId.substring(0, 8)}`
-
-              chumContacts.push({
-                id: `contact-${personId}`,
-                personId: personId,
-                name: contactName,
-                platform: 'external' as const,
-                role: 'contact' as const,
-                isLocal: false,
-                isConnected: true,
-                trusted: true,
-                lastSeen: new Date(),
-                capabilities: {}
-              })
-            } catch (error) {
-              console.warn('[InstancesView] Error processing contact:', error)
-            }
+          for (const contact of contactsResult.contacts) {
+            chumContacts.push({
+              id: `contact-${contact.personId}`,
+              personId: contact.personId,
+              name: contact.name || `Contact ${contact.personId.substring(0, 8)}`,
+              platform: 'unknown' as const,
+              role: 'peer' as const,
+              isLocal: false,
+              isConnected: true,
+              trusted: true,
+              lastSeen: new Date(),
+              capabilities: {}
+            })
           }
-          
-          console.log(`[InstancesView] Added ${others.length} CHUM-synced contacts`)
-        } else {
-          console.log('[InstancesView] Browser ONE.core not initialized, showing Node.js owner only')
         }
-        
+
         setContacts(chumContacts)
-        console.log(`[InstancesView] Set ${chumContacts.length} total contacts`)
+        console.log(`[InstancesView] Set ${chumContacts.length} total contacts via IPC`)
       } catch (error) {
-        console.error('[InstancesView] Error getting contacts:', error)
+        console.error('[InstancesView] Error getting contacts via IPC:', error)
       }
 
       // TODO: Get actual my devices from connections model

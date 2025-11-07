@@ -7,7 +7,7 @@
 
 import { ipcMain } from 'electron';
 import {
-  LLMConfigHandler,
+  LLMConfigPlan,
   type TestConnectionRequest,
   type TestConnectionResponse,
   type SetOllamaConfigRequest,
@@ -18,7 +18,7 @@ import {
   type GetAvailableModelsResponse,
   type DeleteOllamaConfigRequest,
   type DeleteOllamaConfigResponse,
-} from '@lama/core/handlers/LLMConfigHandler.js';
+} from '@lama/core/plans/LLMConfigPlan.js';
 import { testOllamaConnection, fetchOllamaModels } from '../../services/ollama-validator.js';
 import {
   encryptToken,
@@ -29,7 +29,7 @@ import {
 import nodeOneCore from '../../core/node-one-core.js';
 
 // Create handler instance with Electron-specific dependencies
-const llmConfigHandler = new LLMConfigHandler(
+const llmConfigHandler = new LLMConfigPlan(
   nodeOneCore,
   nodeOneCore.aiAssistantModel,
   {

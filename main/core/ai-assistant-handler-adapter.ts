@@ -10,7 +10,7 @@
  *   await aiAssistantHandler.init();
  */
 
-import { AIAssistantHandler } from '@lama/core/handlers/AIAssistantHandler.js';
+import { AIAssistantPlan } from '@lama/core/plans/AIAssistantPlan.js';
 import { ElectronLLMPlatform } from '../../adapters/electron-llm-platform.js';
 import { AISettingsManager } from './ai-settings-manager.js';
 import type { NodeOneCore } from '../types/one-core.js';
@@ -21,13 +21,13 @@ import { mcpManager } from '@mcp/core';
 import electron from 'electron';
 const { BrowserWindow } = electron;
 
-let handlerInstance: AIAssistantHandler | null = null;
+let handlerInstance: AIAssistantPlan | null = null;
 
 /**
  * Create AIAssistantHandler instance with Electron dependencies
  * Call this after nodeOneCore is initialized
  */
-export function createAIAssistantHandler(nodeOneCore: NodeOneCore, llmManager: any): AIAssistantHandler {
+export function createAIAssistantHandler(nodeOneCore: NodeOneCore, llmManager: any): AIAssistantPlan {
   if (handlerInstance) {
     console.log('[AIAssistantAdapter] Using existing handler instance');
     return handlerInstance;
@@ -48,7 +48,7 @@ export function createAIAssistantHandler(nodeOneCore: NodeOneCore, llmManager: a
   const settingsPersistence = new AISettingsManager(nodeOneCore);
 
   // Create handler with all dependencies
-  handlerInstance = new AIAssistantHandler({
+  handlerInstance = new AIAssistantPlan({
     oneCore: nodeOneCore,
     channelManager: nodeOneCore.channelManager,
     topicModel: nodeOneCore.topicModel,
@@ -81,7 +81,7 @@ export function createAIAssistantHandler(nodeOneCore: NodeOneCore, llmManager: a
 export async function initializeAIAssistantHandler(
   nodeOneCore: NodeOneCore,
   llmManager: any
-): Promise<AIAssistantHandler> {
+): Promise<AIAssistantPlan> {
   const handler = createAIAssistantHandler(nodeOneCore, llmManager);
 
   console.log('[AIAssistantAdapter] Initializing AIAssistantHandler...');
@@ -95,7 +95,7 @@ export async function initializeAIAssistantHandler(
  * Get the current handler instance
  * Throws if handler hasn't been created yet
  */
-export function getAIAssistantHandler(): AIAssistantHandler {
+export function getAIAssistantHandler(): AIAssistantPlan {
   if (!handlerInstance) {
     throw new Error('[AIAssistantAdapter] AIAssistantHandler not initialized - call initializeAIAssistantHandler() first');
   }

@@ -5,7 +5,7 @@
  * Business logic lives in ../../../lama.core/handlers/WordCloudSettingsHandler.ts
  */
 
-import { WordCloudSettingsHandler } from '@lama/core/handlers/WordCloudSettingsHandler.js';
+import { WordCloudSettingsPlan } from '@lama/core/plans/WordCloudSettingsPlan.js';
 import { wordCloudSettingsManager } from '@lama/core/one-ai/storage/word-cloud-settings-manager.js';
 import type { IpcMainInvokeEvent } from 'electron';
 
@@ -22,14 +22,14 @@ const DEFAULT_SETTINGS = {
 };
 
 // Singleton handler instance
-let wordCloudSettingsHandler: WordCloudSettingsHandler | null = null;
+let wordCloudSettingsHandler: WordCloudSettingsPlan | null = null;
 
 /**
  * Get handler instance (creates on first use)
  */
-function getHandler(nodeOneCore: any): WordCloudSettingsHandler {
+function getHandler(nodeOneCore: any): WordCloudSettingsPlan {
   if (!wordCloudSettingsHandler) {
-    wordCloudSettingsHandler = new WordCloudSettingsHandler(
+    wordCloudSettingsHandler = new WordCloudSettingsPlan(
       nodeOneCore,
       wordCloudSettingsManager,
       DEFAULT_SETTINGS

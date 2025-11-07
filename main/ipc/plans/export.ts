@@ -11,7 +11,7 @@ const { dialog, app, Notification } = electron;
 import fs from 'fs/promises';
 import path from 'path';
 import type { IpcMainInvokeEvent } from 'electron';
-import { ExportHandler } from '@chat/core/handlers/ExportHandler.js';
+import { ExportPlan } from '@chat/core/plans/ExportPlan.js';
 
 interface FileFilter {
   name: string;
@@ -72,19 +72,19 @@ interface ExportResult {
 }
 
 // Singleton handler instance
-let exportHandler: ExportHandler | null = null;
+let exportHandler: ExportPlan | null = null;
 
 /**
  * Get handler instance (creates on first use with services)
  */
-async function getHandler(): Promise<ExportHandler> {
+async function getHandler(): Promise<ExportPlan> {
   if (!exportHandler) {
     // Import services
     const implodeWrapper = await import('../../services/html-export/implode-wrapper.js');
     const formatter = await import('../../services/html-export/formatter.js');
     const htmlTemplate = await import('../../services/html-export/html-template.js');
 
-    exportHandler = new ExportHandler(
+    exportHandler = new ExportPlan(
       implodeWrapper,
       formatter.default,
       htmlTemplate.default

@@ -5,13 +5,13 @@
  * Delegates business logic to memory.core, injects platform dependencies.
  *
  * Principles:
- * - Import handler from memory.core
+ * - Import plan from memory.core
  * - Inject Electron/Node-specific dependencies (path, setImmediate, etc.)
  * - Minimal glue code only
  */
 
 import path from 'path';
-import { MemoryServicesHandler } from '@lama/memory.core/initialization/MemoryServicesHandler.js';
+import { MemoryServicesPlan } from '../../memory.core/dist/initialization/MemoryServicesPlan.js';
 import type TopicAnalysisModel from '@lama/core/one-ai/models/TopicAnalysisModel.js';
 import type ChannelManager from '@refinio/one.models/lib/models/ChannelManager.js';
 import type TopicModel from '@refinio/one.models/lib/models/Chat/TopicModel.js';
@@ -26,10 +26,10 @@ export interface MemoryInitContext {
 }
 
 export interface MemoryServices {
-  memoryStorageHandler: any;
+  memoryStoragePlan: any;
   fileStorageService: any;
-  subjectHandler: any;
-  chatMemoryHandler: any;
+  subjectPlan: any;
+  chatMemoryPlan: any;
 }
 
 /**
@@ -40,8 +40,8 @@ export class MemoryInitializationPlan {
   async execute(context: MemoryInitContext): Promise<MemoryServices> {
     console.log('[MemoryInitializationPlan] Orchestrating memory initialization (Electron)...');
 
-    // Create handler with injected Electron/Node dependencies
-    const handler = new MemoryServicesHandler({
+    // Create plan with injected Electron/Node dependencies
+    const plan = new MemoryServicesPlan({
       getStoragePath: () => {
         // Inject Node.js-specific path resolution
         return context.memoryStoragePath ||
@@ -54,8 +54,8 @@ export class MemoryInitializationPlan {
       }
     });
 
-    // Delegate to platform-agnostic handler
-    const result = await handler.initialize(context);
+    // Delegate to platform-agnostic plan
+    const result = await plan.initialize(context);
 
     console.log('[MemoryInitializationPlan] ✅ Memory initialization complete (Electron)');
 

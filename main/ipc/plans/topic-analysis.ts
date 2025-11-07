@@ -5,13 +5,13 @@
  * Business logic lives in ../../../lama.core/handlers/TopicAnalysisHandler.ts
  */
 
-import { TopicAnalysisHandler } from '@lama/core/handlers/TopicAnalysisHandler.js';
+import { TopicAnalysisPlan } from '@lama/core/plans/TopicAnalysisPlan.js';
 import nodeOneCoreInstance from '../../core/node-one-core.js';
 import llmManager from '../../services/llm-manager-singleton.js';
 import type { IpcMainInvokeEvent } from 'electron';
 
 // Create handler instance
-const topicAnalysisHandler = new TopicAnalysisHandler(
+const topicAnalysisHandler = new TopicAnalysisPlan(
   nodeOneCoreInstance.topicAnalysisModel as any,
   nodeOneCoreInstance.topicModel as any,
   llmManager,

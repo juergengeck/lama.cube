@@ -9,12 +9,12 @@
 import { createAIMessage } from '../utils/message-utils.js'
 import type { ChannelManager } from '@refinio/one.models/lib/models/index.js'
 import type { LLMManager } from '../types/one-core.js'
-import type { AIAssistantHandler } from '@lama/core/handlers/AIAssistantHandler.js'
+import type { AIAssistantPlan } from '@lama/core/plans/AIAssistantPlan.js'
 
 class AIMessageListener {
   channelManager: ChannelManager;
   llmManager: LLMManager;
-  aiAssistantModel: AIAssistantHandler | null;
+  aiAssistantModel: AIAssistantPlan | null;
   unsubscribe: (() => void) | null;
   debounceTimers: Map<string, NodeJS.Timeout>;
   DEBOUNCE_MS: number;
@@ -33,7 +33,7 @@ class AIMessageListener {
   /**
    * Set the AI Assistant Handler reference
    */
-  setAIAssistantModel(aiAssistantModel: AIAssistantHandler): void {
+  setAIAssistantModel(aiAssistantModel: AIAssistantPlan): void {
     this.aiAssistantModel = aiAssistantModel
     console.log('[AIMessageListener] AI Assistant Model reference set')
   }

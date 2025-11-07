@@ -3,12 +3,12 @@
  * Thin adapter that delegates to lama.core SubjectsHandler
  */
 
-import { SubjectsHandler } from '@lama/core/handlers/SubjectsHandler.js';
+import { SubjectsPlan } from '@lama/core/plans/SubjectsPlan.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import type { Subject } from '@lama/core/one-ai/types/Subject.js';
 
 // Initialize handler
-const subjectsHandler = new SubjectsHandler();
+const subjectsHandler = new SubjectsPlan();
 
 interface CreateSubjectParams {
   name: string;

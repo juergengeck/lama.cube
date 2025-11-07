@@ -8,11 +8,11 @@
 import electron from 'electron';
 const { ipcMain, BrowserWindow } = electron;
 import nodeOneCore from '../../core/node-one-core.js';
-import { ContactsHandler } from '@chat/core/handlers/ContactsHandler.js';
+import { ContactsPlan } from '@chat/core/plans/ContactsPlan.js';
 import type { IpcMainInvokeEvent } from 'electron';
 
 // Create handler instance with Electron-specific dependencies
-const contactsHandler = new ContactsHandler(nodeOneCore);
+const contactsHandler = new ContactsPlan(nodeOneCore);
 
 interface PersonInfo {
   name: string;

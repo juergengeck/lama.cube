@@ -1,7 +1,7 @@
 /**
  * Connection IPC Handlers (Thin Adapter)
  *
- * Maps Electron IPC calls to ConnectionHandler methods.
+ * Maps Electron IPC calls to ConnectionPlan methods.
  * Business logic lives in @lama/connection.core
  * Platform-specific operations (fs, storage, events) handled here.
  */
@@ -11,11 +11,11 @@ import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
 import type { IpcMainInvokeEvent } from 'electron';
-import { ConnectionHandler } from '@lama/connection.core';
+import { ConnectionPlan } from '@lama/connection.core';
 import nodeOneCore from '../../core/node-one-core.js';
 
 // Singleton handler instance
-let connectionHandler: ConnectionHandler | null = null;
+let connectionHandler: ConnectionPlan | null = null;
 
 // Get web URL from global config
 function getWebUrl(): string | undefined {
@@ -100,10 +100,10 @@ const storageProvider = {
 /**
  * Get handler instance (creates on first use)
  */
-function getHandler(): ConnectionHandler {
+function getHandler(): ConnectionPlan {
   if (!connectionHandler) {
     const webUrl = getWebUrl();
-    connectionHandler = new ConnectionHandler(nodeOneCore, storageProvider, webUrl);
+    connectionHandler = new ConnectionPlan(nodeOneCore, storageProvider, webUrl);
   }
   return connectionHandler;
 }

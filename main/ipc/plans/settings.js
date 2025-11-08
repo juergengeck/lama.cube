@@ -1,6 +1,5 @@
-"use strict";
 /**
- * Settings IPC Handlers (TypeScript)
+ * Settings IPC Plans (TypeScript)
  * Manages settings synchronization between browser and node instances
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
@@ -41,7 +40,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 var node_one_core_js_1 = require("../../core/node-one-core.js");
-var settingsHandlers = {
+var settingsPlans = {
     /**
      * Get a setting value from the node instance
      */
@@ -232,4 +231,4 @@ var settingsHandlers = {
         });
     }
 };
-exports.default = settingsHandlers;
+export default settingsPlans;

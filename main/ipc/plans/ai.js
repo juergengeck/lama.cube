@@ -1,6 +1,5 @@
-"use strict";
 /**
- * AI IPC Handlers (Thin Adapter)
+ * AI IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to AIAssistantHandler methods.
  * Uses the refactored AIAssistantHandler from nodeOneCore.aiAssistantModel
@@ -61,7 +60,7 @@ function getAIHandler() {
 /**
  * Thin IPC adapter - maps ipcMain.handle() calls to handler methods
  */
-var aiHandlers = {
+var aiPlans = {
     /**
      * Chat with AI (with streaming support)
      */
@@ -347,4 +346,4 @@ var aiHandlers = {
         });
     }
 };
-exports.default = aiHandlers;
+export default aiPlans;

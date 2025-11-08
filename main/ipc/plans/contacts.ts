@@ -11,8 +11,8 @@ import nodeOneCore from '../../core/node-one-core.js';
 import { ContactsPlan } from '@chat/core/plans/ContactsPlan.js';
 import type { IpcMainInvokeEvent } from 'electron';
 
-// Create handler instance with Electron-specific dependencies
-const contactsHandler = new ContactsPlan(nodeOneCore);
+// Create plan instance with Electron-specific dependencies
+const contactsPlan = new ContactsPlan(nodeOneCore);
 
 interface PersonInfo {
   name: string;
@@ -22,35 +22,35 @@ interface PersonInfo {
 /**
  * Register contact management IPC handlers
  */
-export function registerContactHandlers() {
+export function registerContactPlans() {
   // Get all contacts with trust status
   ipcMain.handle('contacts:list-with-trust', async (): Promise<any> => {
-    return await contactsHandler.getContactsWithTrust();
+    return await contactsPlan.getContactsWithTrust();
   });
 
   // Get all contacts
   ipcMain.handle('contacts:list', async (): Promise<any> => {
-    return await contactsHandler.getContacts();
+    return await contactsPlan.getContacts();
   });
 
   // Get pending contacts for review
   ipcMain.handle('contacts:pending:list', async (): Promise<any> => {
-    return await contactsHandler.getPendingContacts();
+    return await contactsPlan.getPendingContacts();
   });
 
   // Get specific pending contact details
   ipcMain.handle('contacts:pending:get', async (event: IpcMainInvokeEvent, pendingId: string): Promise<any> => {
-    return await contactsHandler.getPendingContact(pendingId);
+    return await contactsPlan.getPendingContact(pendingId);
   });
 
   // Accept a contact (update trust level)
   ipcMain.handle('contacts:accept', async (event: IpcMainInvokeEvent, personId: string, options: any = {}): Promise<any> => {
-    return await contactsHandler.acceptContact(personId, options);
+    return await contactsPlan.acceptContact(personId, options);
   });
 
   // Block a contact
   ipcMain.handle('contacts:block', async (event: IpcMainInvokeEvent, personId: string, reason: string): Promise<any> => {
-    return await contactsHandler.blockContact(personId, reason);
+    return await contactsPlan.blockContact(personId, reason);
   });
 
   // Legacy: Accept a pending contact (for backward compatibility)
@@ -61,22 +61,22 @@ export function registerContactHandlers() {
 
   // Reject a pending contact
   ipcMain.handle('contacts:pending:reject', async (event: IpcMainInvokeEvent, pendingId: string, reason: string): Promise<any> => {
-    return await contactsHandler.rejectContact(pendingId, reason);
+    return await contactsPlan.rejectContact(pendingId, reason);
   });
 
   // Add contact
   ipcMain.handle('contacts:add', async (event: IpcMainInvokeEvent, personInfo: PersonInfo): Promise<any> => {
-    return await contactsHandler.addContact(personInfo);
+    return await contactsPlan.addContact(personInfo);
   });
 
   // Remove contact
   ipcMain.handle('contacts:remove', async (event: IpcMainInvokeEvent, contactId: string): Promise<any> => {
-    return await contactsHandler.removeContact(contactId);
+    return await contactsPlan.removeContact(contactId);
   });
 
   // Revoke contact's VC
   ipcMain.handle('contacts:revoke', async (event: IpcMainInvokeEvent, personId: string): Promise<any> => {
-    return await contactsHandler.revokeContactVC(personId);
+    return await contactsPlan.revokeContactVC(personId);
   });
 
   // Listen for pending contact events and forward to renderer (Electron-specific)

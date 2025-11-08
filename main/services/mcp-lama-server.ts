@@ -32,6 +32,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { MCPToolInterface } from '../interfaces/tool-interface.js';
 import { MemoryTools } from './mcp/memory-tools.js';
+import { planRegistry, getPlanMetaToolDefinitions, handleDiscoverPlans, handleCallPlan } from '@mcp/core';
+import { registerLamaCorePlans, getLamaCoreDepend } from '@lama/core/services/plan-registration.js';
 
 export class LamaMCPServer {
   public nodeOneCore: any;
@@ -62,7 +64,34 @@ export class LamaMCPServer {
     // Initialize memory tools
     this.memoryTools = new MemoryTools(this.nodeOneCore);
 
+    // Register plans with plan registry
+    this.registerPlans();
+
     // Don't call setupTools() here - it must be called after server.connect()
+  }
+
+  /**
+   * Register all plan instances with the plan registry
+   * Plans are called directly by MCP tools (no IPC)
+   */
+  private registerPlans(): void {
+    // Register lama.core plans (AI, memory, subjects, proposals, etc.)
+    if (this.nodeOneCore) {
+      const deps = getLamaCoreDepend(this.nodeOneCore);
+      registerLamaCorePlans(deps);
+    }
+
+    // Register platform-specific plans (chat, contacts from chat.core)
+    import('../ipc/plans/chat.js').then(({ chatPlan }) => {
+      if (chatPlan) {
+        planRegistry.registerPlan('chat', 'messaging', chatPlan, 'Chat and messaging operations');
+      }
+    }).catch(err => console.error('[MCP] Failed to register chat plan:', err));
+
+    // TODO: Register contacts plan when it exports an instance
+    // TODO: Register other platform-specific plans as needed
+
+    console.error('[MCP] Plan registration initiated');
   }
 
   /**
@@ -83,8 +112,14 @@ export class LamaMCPServer {
   setupTools(): any {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       console.error('[LamaMCPServer] 🔍 ListTools request received');
+
+      // Get plan meta-tools (discover_plans, call_plan)
+      const planMetaTools = getPlanMetaToolDefinitions();
+
       const tools = [
-        // Chat Tools
+        // Plan Meta-Tools - Discovery and dynamic calling
+        ...planMetaTools,
+        // Chat Tools (backwards compatibility)
         {
           name: 'send_message',
           description: 'Send a message in a chat topic',
@@ -392,7 +427,13 @@ export class LamaMCPServer {
       
       try {
         switch (name) {
-          // Chat operations
+          // Plan Meta-Tools
+          case 'discover_plans':
+            return await handleDiscoverPlans(args);
+          case 'call_plan':
+            return await handleCallPlan(args);
+
+          // Chat operations (backwards compatibility)
           case 'send_message':
             return await this.sendMessage(args.topicId, args.message);
           case 'get_messages':

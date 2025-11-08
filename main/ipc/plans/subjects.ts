@@ -7,8 +7,8 @@ import { SubjectsPlan } from '@lama/core/plans/SubjectsPlan.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import type { Subject } from '@lama/core/one-ai/types/Subject.js';
 
-// Initialize handler
-const subjectsHandler = new SubjectsPlan();
+// Initialize plan
+const subjectsPlan = new SubjectsPlan();
 
 interface CreateSubjectParams {
   name: string;
@@ -59,12 +59,12 @@ interface IpcResponse<T = unknown> {
 /**
  * Subject IPC handlers
  */
-const subjectHandlers = {
+const subjectPlans = {
   /**
    * Create or update a subject
    */
   'subjects:create': async (event: IpcMainInvokeEvent, { name, createdBy, confidence, references }: CreateSubjectParams): Promise<IpcResponse> => {
-    const response = await subjectsHandler.createSubject({ name, createdBy, confidence, references });
+    const response = await subjectsPlan.createSubject({ name, createdBy, confidence, references });
     return { success: response.success, subject: response.subject, error: response.error };
   },
 
@@ -72,7 +72,7 @@ const subjectHandlers = {
    * Attach subject to content
    */
   'subjects:attach': async (event: IpcMainInvokeEvent, { subjectName, contentHash, attachedBy, confidence, context }: AttachSubjectParams): Promise<IpcResponse> => {
-    const response = await subjectsHandler.attachSubject({ subjectName, contentHash, attachedBy, confidence, context });
+    const response = await subjectsPlan.attachSubject({ subjectName, contentHash, attachedBy, confidence, context });
     return { success: response.success, attachment: response.attachment, error: response.error };
   },
 
@@ -80,7 +80,7 @@ const subjectHandlers = {
    * Get subjects for content
    */
   'subjects:getForContent': async (event: IpcMainInvokeEvent, { contentHash }: GetForContentParams): Promise<IpcResponse> => {
-    const response = await subjectsHandler.getForContent({ contentHash });
+    const response = await subjectsPlan.getForContent({ contentHash });
     return { success: response.success, subjects: response.subjects, error: response.error };
   },
 
@@ -88,7 +88,7 @@ const subjectHandlers = {
    * Get all subjects
    */
   'subjects:getAll': async (event: IpcMainInvokeEvent): Promise<IpcResponse> => {
-    const response = await subjectsHandler.getAll({});
+    const response = await subjectsPlan.getAll({});
     return { success: response.success, subjects: response.subjects, error: response.error };
   },
 
@@ -96,7 +96,7 @@ const subjectHandlers = {
    * Search subjects
    */
   'subjects:search': async (event: IpcMainInvokeEvent, { query, limit }: SearchParams): Promise<IpcResponse> => {
-    const response = await subjectsHandler.search({ query, limit });
+    const response = await subjectsPlan.search({ query, limit });
     return { success: response.success, results: response.results, error: response.error };
   },
 
@@ -104,7 +104,7 @@ const subjectHandlers = {
    * Get subject resonance
    */
   'subjects:getResonance': async (event: IpcMainInvokeEvent, { subjectNames, topK }: ResonanceParams): Promise<IpcResponse> => {
-    const response = await subjectsHandler.getResonance({ subjectNames, topK });
+    const response = await subjectsPlan.getResonance({ subjectNames, topK });
     return { success: response.success, resonance: response.resonance, error: response.error };
   },
 
@@ -112,9 +112,9 @@ const subjectHandlers = {
    * Extract subjects from text
    */
   'subjects:extract': async (event: IpcMainInvokeEvent, { text, extractor, minConfidence }: ExtractParams): Promise<IpcResponse> => {
-    const response = await subjectsHandler.extract({ text, extractor, minConfidence });
+    const response = await subjectsPlan.extract({ text, extractor, minConfidence });
     return { success: response.success, subjects: response.subjects, error: response.error };
   }
 }
 
-export { subjectHandlers, subjectsHandler }
+export { subjectPlans, subjectsPlan }

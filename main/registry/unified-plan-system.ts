@@ -1,0 +1,153 @@
+/**
+ * Unified Plan System Initialization
+ *
+ * Initializes the new plan-based architecture for lama.cube.
+ * This module sets up the PlanRegistry, registers plans, and starts transports.
+ *
+ * See: specs/008-unified-plan-system/ for architecture details.
+ */
+
+import { PlanRegistry } from '@refinio/api/plan-system';
+import { IPCTransportPlan } from '@refinio/api/transports/IPCTransportPlan.js';
+import { ExportPlanSimple } from '@chat/core/plans/ExportPlanSimple.js';
+import type { IpcMainInvokeEvent } from 'electron';
+import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { Person } from '@refinio/one.models/lib/recipes/Leute/Person.js';
+
+/**
+ * Dependencies for plan initialization
+ */
+export interface PlanSystemDependencies {
+  /**
+   * ONE.core instance (Node.js)
+   */
+  nodeOneCore: any;
+
+  /**
+   * LeuteModel for user/contact operations
+   */
+  leuteModel?: any;
+
+  /**
+   * Get authenticated user from IPC event
+   * Returns null if not authenticated
+   */
+  getUserFromSession?: (event: IpcMainInvokeEvent) => Promise<{
+    userId: SHA256IdHash<Person>;
+    sessionId: string;
+    capabilities: string[];
+  } | null>;
+}
+
+/**
+ * Unified Plan System context
+ *
+ * Contains the registry and active transports.
+ */
+export interface PlanSystemContext {
+  registry: PlanRegistry;
+  ipcTransport: IPCTransportPlan;
+}
+
+/**
+ * Initialize the Unified Plan System
+ *
+ * This function:
+ * 1. Creates the PlanRegistry
+ * 2. Registers all plans with metadata and schemas
+ * 3. Initializes and starts the IPC transport
+ *
+ * @param deps - Dependencies (ONE.core, models, auth)
+ * @returns Plan system context
+ */
+export async function initializeUnifiedPlanSystem(
+  deps: PlanSystemDependencies
+): Promise<PlanSystemContext> {
+  console.log('[UnifiedPlanSystem] Initializing...');
+
+  // Create plan registry
+  const registry = new PlanRegistry({
+    devMode: process.env.NODE_ENV === 'development',
+    enableMetrics: true,
+    slowOperationThreshold: 100
+  });
+
+  // ========================================================================
+  // Register Plans
+  // ========================================================================
+
+  // Create plan instances
+  const exportPlan = new ExportPlanSimple(deps.nodeOneCore);
+
+  // Register chat:exportHistory
+  registry.register({
+    domain: 'chat',
+    method: 'exportHistory',
+    plan: exportPlan,
+    requestSchema: ExportHistoryRequestSchema,
+    responseSchema: ExportHistoryResponseSchema,
+    version: '1.0.0',
+    requiredCapability: 'chat:read',
+    streaming: false,
+    description: 'Export topic history in various formats (json, markdown, html)'
+  });
+
+  console.log(`[UnifiedPlanSystem] Registered ${registry.size} operations`);
+
+  // Log all registered operations
+  const operations = registry.list();
+  operations.forEach((op) => {
+    console.log(`  - ${op.operation} (v${op.version})`);
+  });
+
+  // ========================================================================
+  // Initialize IPC Transport
+  // ========================================================================
+
+  const ipcTransport = new IPCTransportPlan(registry, {
+    channel: 'plan:invoke',
+    devMode: process.env.NODE_ENV === 'development',
+    getUserFromSession: deps.getUserFromSession
+  });
+
+  await ipcTransport.start();
+
+  console.log('[UnifiedPlanSystem] Initialization complete');
+
+  return {
+    registry,
+    ipcTransport
+  };
+}
+
+/**
+ * Shutdown the Unified Plan System
+ *
+ * Stops all transports and cleans up resources.
+ */
+export async function shutdownUnifiedPlanSystem(
+  context: PlanSystemContext
+): Promise<void> {
+  console.log('[UnifiedPlanSystem] Shutting down...');
+
+  await context.ipcTransport.stop();
+
+  console.log('[UnifiedPlanSystem] Shutdown complete');
+}
+
+/**
+ * Get default auth function for development mode
+ *
+ * Returns a function that provides full access in development.
+ * In production, you should provide a real authentication function.
+ */
+export function getDevAuthFunction(): PlanSystemDependencies['getUserFromSession'] {
+  return async (event: IpcMainInvokeEvent) => {
+    // In development, provide full access
+    return {
+      userId: 'dev-user' as any,
+      sessionId: 'dev-session',
+      capabilities: ['*'] // All capabilities
+    };
+  };
+}

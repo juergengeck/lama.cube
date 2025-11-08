@@ -1,9 +1,8 @@
-"use strict";
 /**
- * Audit IPC Handlers (Thin Adapter)
+ * Audit IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to AuditHandler methods.
- * Business logic lives in ../../../lama.core/handlers/AuditHandler.ts
+ * Business logic lives in ../../../lama.core/plans/AuditHandler.ts
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -42,7 +41,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-var AuditHandler_js_1 = require("@lama/core/handlers/AuditHandler.js");
+var AuditHandler_js_1 = require("@lama/core/plans/AuditHandler.js");
 var qr_generation_js_1 = require("../../core/qr-generation.js");
 var attestation_manager_js_1 = require("../../core/attestation-manager.js");
 var topic_export_js_1 = require("../../core/topic-export.js");
@@ -78,7 +77,7 @@ function getHandler() {
     }
     return auditHandler;
 }
-var auditHandlers = {
+var auditPlans = {
     /**
      * Generate QR code for message/topic attestation
      */
@@ -184,4 +183,4 @@ var auditHandlers = {
         });
     }
 };
-exports.default = auditHandlers;
+export default auditPlans;

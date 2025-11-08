@@ -1,12 +1,11 @@
-"use strict";
 /**
- * ONE.core IPC Handlers (Thin Adapter)
+ * ONE.core IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to service and handler methods.
  * Business logic distributed across:
  * - @chat/core/services/* (ContactService, ProfileService)
  * - @lama/core/services/* (LLMKeyStorageService)
- * - ./main/handlers/* (NodePlatformHandler)
+ * - ./main/plans/* (NodePlatformHandler)
  */
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -56,11 +55,11 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.invalidateContactsCache = invalidateContactsCache;
+export { invalidateContactsCache };
 var ContactService_js_1 = require("@chat/core/services/ContactService.js");
 var ProfileService_js_1 = require("@chat/core/services/ProfileService.js");
 var LLMKeyStorageService_js_1 = require("@lama/core/services/LLMKeyStorageService.js");
-var NodePlatformHandler_js_1 = require("../../handlers/NodePlatformHandler.js");
+var NodePlatformHandler_js_1 = require("../../plans/NodePlatformHandler.js");
 var node_one_core_js_1 = require("../../core/node-one-core.js");
 var manager_js_1 = require("../../state/manager.js");
 var chum_settings_js_1 = require("../../services/chum-settings.js");
@@ -133,7 +132,7 @@ function invalidateContactsCache() {
 /**
  * Thin IPC adapter - maps ipcMain.handle() calls to handler methods
  */
-var oneCoreHandlers = {
+var oneCorePlans = {
     /**
      * Initialize Node.js ONE.core instance
      * Platform-specific: Uses nodeProvisioning from lama.electron
@@ -500,4 +499,4 @@ var oneCoreHandlers = {
         });
     }
 };
-exports.default = oneCoreHandlers;
+export default oneCorePlans;

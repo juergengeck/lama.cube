@@ -9,8 +9,6 @@ global.WebSocket = WebSocket as any;
 
 import path from 'path';
 import { fileURLToPath } from 'url';
-// DEPRECATED: Old monolithic AI assistant model - replaced by component-based architecture
-// import { AIAssistantModel } from './ai-assistant-model.js';
 import { initializeAIAssistantHandler } from './ai-assistant-handler-adapter.js';
 import TopicAnalysisModel from '@lama/core/one-ai/models/TopicAnalysisModel.js';
 // QuicVC API server temporarily disabled during TS migration
@@ -24,7 +22,7 @@ import type { NodeOneCore as INodeOneCore } from '../types/one-core.js';
 // Import extracted Plans
 import { CoreInstanceInitializationPlan } from '../plans/CoreInstanceInitializationPlan.js';
 import { ModelInitializationPlan } from '../plans/ModelInitializationPlan.js';
-import { CHUMHandlersPlan } from '../plans/CHUMHandlersPlan.js';
+// CHUM handlers removed - CHUM is handled automatically by ConnectionsModel in one.core
 // TEMP: MemoryInitializationPlan disabled - MemoryServicesPlan not exported from memory.core
 // import { MemoryInitializationPlan } from '../plans/MemoryInitializationPlan.js';
 import { AIDiscoveryPlan } from '../plans/AIDiscoveryPlan.js';
@@ -85,7 +83,7 @@ class NodeOneCore implements INodeOneCore {
   // Extracted Plans for focused responsibilities
   private coreInitPlan: CoreInstanceInitializationPlan;
   private modelInitPlan: ModelInitializationPlan;
-  private chumHandlersPlan: CHUMHandlersPlan;
+  // CHUM handlers removed - handled automatically by ConnectionsModel
   // TEMP: MemoryInitializationPlan disabled
   // private memoryInitPlan: MemoryInitializationPlan;
   private aiDiscoveryPlan: AIDiscoveryPlan;
@@ -161,7 +159,7 @@ class NodeOneCore implements INodeOneCore {
     // Instantiate Plans
     this.coreInitPlan = new CoreInstanceInitializationPlan();
     this.modelInitPlan = new ModelInitializationPlan();
-    this.chumHandlersPlan = new CHUMHandlersPlan();
+    // CHUM handlers removed - ConnectionsModel handles CHUM automatically
     // TEMP: MemoryInitializationPlan disabled
     // this.memoryInitPlan = new MemoryInitializationPlan();
     this.aiDiscoveryPlan = new AIDiscoveryPlan();
@@ -573,12 +571,7 @@ class NodeOneCore implements INodeOneCore {
     this.topicModel = models.topicModel
     this.llmObjectManager = models.llmObjectManager
 
-    // Register CHUM handlers using CHUMHandlersPlan
-    await this.chumHandlersPlan.registerHandlers({
-      leuteModel: this.leuteModel,
-      channelManager: this.channelManager,
-      topicModel: this.topicModel
-    })
+    // CHUM handler registration removed - ConnectionsModel handles CHUM automatically
 
     // Initialize Content Sharing Manager for Browser<->Node sync
     const { default: ContentSharingManager } = await import('./content-sharing.js')

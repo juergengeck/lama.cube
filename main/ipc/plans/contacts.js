@@ -1,9 +1,8 @@
-"use strict";
 /**
- * Contact Management IPC Handlers (Thin Adapter)
+ * Contact Management IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to ContactsHandler methods.
- * Business logic lives in ../../../lama.core/handlers/ContactsHandler.ts
+ * Business logic lives in ../../../lama.core/plans/ContactsHandler.ts
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -51,17 +50,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     return to.concat(ar || Array.prototype.slice.call(from));
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.registerContactHandlers = registerContactHandlers;
+export { registerContactPlans };
 var electron_1 = require("electron");
 var ipcMain = electron_1.default.ipcMain, BrowserWindow = electron_1.default.BrowserWindow;
 var node_one_core_js_1 = require("../../core/node-one-core.js");
-var ContactsHandler_js_1 = require("@chat/core/handlers/ContactsHandler.js");
+var ContactsHandler_js_1 = require("@chat/core/plans/ContactsHandler.js");
 // Create handler instance with Electron-specific dependencies
 var contactsHandler = new ContactsHandler_js_1.ContactsHandler(node_one_core_js_1.default);
 /**
- * Register contact management IPC handlers
+ * Register contact management IPC plans
  */
-function registerContactHandlers() {
+function registerContactPlans() {
     var _this = this;
     var _a;
     // Get all contacts with trust status

@@ -1,4 +1,3 @@
-"use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -36,15 +35,15 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getOrCreateTopicForContact = getOrCreateTopicForContact;
-exports.recordSubjectFeedback = recordSubjectFeedback;
+export { getOrCreateTopicForContact };
+export { recordSubjectFeedback };
 var node_one_core_js_1 = require("../../core/node-one-core.js");
 /**
  * Get or create a one-to-one topic for a contact
  */
 function getOrCreateTopicForContact(event, contactId) {
     return __awaiter(this, void 0, void 0, function () {
-        var nodeInstance, topicModel, channelManager, myPersonId, isAI, contactName, others, contact, personId, profile, nameDesc, chatHandlers, result, p2pTopicId, targetPersonId, others, contact, error_1;
+        var nodeInstance, topicModel, channelManager, myPersonId, isAI, contactName, others, contact, personId, profile, nameDesc, chatPlans, result, p2pTopicId, targetPersonId, others, contact, error_1;
         var _a, _b;
         return __generator(this, function (_c) {
             switch (_c.label) {
@@ -96,8 +95,8 @@ function getOrCreateTopicForContact(event, contactId) {
                     console.log('[Topics IPC] AI contact detected - creating conversation via chat handler');
                     return [4 /*yield*/, Promise.resolve().then(function () { return require('./chat.js'); })];
                 case 6:
-                    chatHandlers = (_c.sent()).chatHandlers;
-                    return [4 /*yield*/, chatHandlers.createConversation(event, {
+                    chatPlans = (_c.sent()).chatPlans;
+                    return [4 /*yield*/, chatPlans.createConversation(event, {
                             type: 'group', // AI conversations are always groups (even 1-on-1)
                             participants: [contactId], // Pass contact ID
                             name: contactName

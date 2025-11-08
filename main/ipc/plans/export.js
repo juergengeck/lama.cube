@@ -1,9 +1,8 @@
-"use strict";
 /**
- * Export IPC Handlers (Thin Adapter)
+ * Export IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to ExportHandler methods.
- * Business logic lives in ../../../lama.core/handlers/ExportHandler.ts
+ * Business logic lives in ../../../lama.core/plans/ExportHandler.ts
  * Platform-specific operations (dialog, fs, notifications) handled here.
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
@@ -47,7 +46,7 @@ var electron_1 = require("electron");
 var dialog = electron_1.default.dialog, app = electron_1.default.app, Notification = electron_1.default.Notification;
 var promises_1 = require("fs/promises");
 var path_1 = require("path");
-var ExportHandler_js_1 = require("@chat/core/handlers/ExportHandler.js");
+var ExportHandler_js_1 = require("@chat/core/plans/ExportHandler.js");
 // Singleton handler instance
 var exportHandler = null;
 /**
@@ -262,7 +261,7 @@ function exportHtmlWithMicrodata(event_1, _a) {
         });
     });
 }
-exports.default = {
+export const default = {
     exportFile: exportFile,
     exportFileAuto: exportFileAuto,
     exportMessage: exportMessage,

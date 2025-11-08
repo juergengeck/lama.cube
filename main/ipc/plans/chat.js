@@ -1,6 +1,5 @@
-"use strict";
 /**
- * Chat IPC Handlers
+ * Chat IPC Plans
  * Thin adapter that delegates to chat.core ChatHandler
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
@@ -40,8 +39,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.chatHandler = exports.chatHandlers = void 0;
-var ChatHandler_js_1 = require("@chat/core/handlers/ChatHandler.js");
+export const chatPlan = exports.chatPlans = void 0;
+var ChatHandler_js_1 = require("@chat/core/plans/ChatHandler.js");
 var manager_js_1 = require("../../state/manager.js");
 var node_one_core_js_1 = require("../../core/node-one-core.js");
 var message_versioning_js_1 = require("../../core/message-versioning.js");
@@ -53,8 +52,8 @@ var messageVersionManager = null;
 // Message assertion manager instance
 var messageAssertionManager = null;
 // Initialize ChatHandler with dependencies
-var chatHandler = new ChatHandler_js_1.ChatHandler(node_one_core_js_1.default, manager_js_1.default, messageVersionManager, messageAssertionManager);
-exports.chatHandler = chatHandler;
+var chatPlan = new ChatHandler_js_1.ChatHandler(node_one_core_js_1.default, manager_js_1.default, messageVersionManager, messageAssertionManager);
+export { chatPlan };
 // Initialize message managers when they become available
 function initializeMessageManagers() {
     if (!messageVersionManager && node_one_core_js_1.default.channelManager) {
@@ -64,10 +63,10 @@ function initializeMessageManagers() {
         messageAssertionManager = new message_assertion_certificates_js_1.MessageAssertionManager(node_one_core_js_1.default.leuteModel.trust, node_one_core_js_1.default.leuteModel);
     }
     if (messageVersionManager && messageAssertionManager) {
-        chatHandler.setMessageManagers(messageVersionManager, messageAssertionManager);
+        chatPlan.setMessageManagers(messageVersionManager, messageAssertionManager);
     }
 }
-var chatHandlers = {
+var chatPlans = {
     // NOTE: initializeDefaultChats removed - default chats are created automatically
     // by AIAssistantHandler.init() in node-one-core.ts during ONE.core initialization
     uiReady: function (event) {
@@ -84,7 +83,7 @@ var chatHandlers = {
                                 console.log('[ChatHandler] Updated PeerMessageListener with current window');
                             }
                         }
-                        return [4 /*yield*/, chatHandler.uiReady({})];
+                        return [4 /*yield*/, chatPlan.uiReady({})];
                     case 1:
                         response = _a.sent();
                         return [2 /*return*/, { success: response.success, error: response.error }];
@@ -98,7 +97,7 @@ var chatHandlers = {
             var conversationId = _b.conversationId, text = _b.text, _c = _b.attachments, attachments = _c === void 0 ? [] : _c;
             return __generator(this, function (_d) {
                 switch (_d.label) {
-                    case 0: return [4 /*yield*/, chatHandler.sendMessage({
+                    case 0: return [4 /*yield*/, chatPlan.sendMessage({
                             conversationId: conversationId,
                             content: text, // Map 'text' to 'content'
                             attachments: attachments
@@ -120,7 +119,7 @@ var chatHandlers = {
             var conversationId = _b.conversationId, _c = _b.limit, limit = _c === void 0 ? 50 : _c, _d = _b.offset, offset = _d === void 0 ? 0 : _d;
             return __generator(this, function (_e) {
                 switch (_e.label) {
-                    case 0: return [4 /*yield*/, chatHandler.getMessages({ conversationId: conversationId, limit: limit, offset: offset })];
+                    case 0: return [4 /*yield*/, chatPlan.getMessages({ conversationId: conversationId, limit: limit, offset: offset })];
                     case 1:
                         response = _e.sent();
                         return [2 /*return*/, {
@@ -140,7 +139,7 @@ var chatHandlers = {
             var _c = _b.type, type = _c === void 0 ? 'direct' : _c, _d = _b.participants, participants = _d === void 0 ? [] : _d, _e = _b.name, name = _e === void 0 ? null : _e;
             return __generator(this, function (_f) {
                 switch (_f.label) {
-                    case 0: return [4 /*yield*/, chatHandler.createConversation({ type: type, participants: participants, name: name })];
+                    case 0: return [4 /*yield*/, chatPlan.createConversation({ type: type, participants: participants, name: name })];
                     case 1:
                         response = _f.sent();
                         return [2 /*return*/, {
@@ -158,7 +157,7 @@ var chatHandlers = {
             var _b = _a === void 0 ? {} : _a, _c = _b.limit, limit = _c === void 0 ? 20 : _c, _d = _b.offset, offset = _d === void 0 ? 0 : _d;
             return __generator(this, function (_e) {
                 switch (_e.label) {
-                    case 0: return [4 /*yield*/, chatHandler.getConversations({ limit: limit, offset: offset })];
+                    case 0: return [4 /*yield*/, chatPlan.getConversations({ limit: limit, offset: offset })];
                     case 1:
                         response = _e.sent();
                         return [2 /*return*/, {
@@ -176,7 +175,7 @@ var chatHandlers = {
             var conversationId = _b.conversationId;
             return __generator(this, function (_c) {
                 switch (_c.label) {
-                    case 0: return [4 /*yield*/, chatHandler.getConversation({ conversationId: conversationId })];
+                    case 0: return [4 /*yield*/, chatPlan.getConversation({ conversationId: conversationId })];
                     case 1:
                         response = _c.sent();
                         return [2 /*return*/, {
@@ -193,7 +192,7 @@ var chatHandlers = {
             var response;
             return __generator(this, function (_a) {
                 switch (_a.label) {
-                    case 0: return [4 /*yield*/, chatHandler.getCurrentUser({})];
+                    case 0: return [4 /*yield*/, chatPlan.getCurrentUser({})];
                     case 1:
                         response = _a.sent();
                         return [2 /*return*/, {
@@ -211,7 +210,7 @@ var chatHandlers = {
             var conversationId = _b.conversationId, participantIds = _b.participantIds;
             return __generator(this, function (_c) {
                 switch (_c.label) {
-                    case 0: return [4 /*yield*/, chatHandler.addParticipants({ conversationId: conversationId, participantIds: participantIds })];
+                    case 0: return [4 /*yield*/, chatPlan.addParticipants({ conversationId: conversationId, participantIds: participantIds })];
                     case 1:
                         response = _c.sent();
                         return [2 /*return*/, {
@@ -232,7 +231,7 @@ var chatHandlers = {
                     case 0:
                         // Initialize message managers if needed
                         initializeMessageManagers();
-                        return [4 /*yield*/, chatHandler.clearConversation({ conversationId: conversationId })];
+                        return [4 /*yield*/, chatPlan.clearConversation({ conversationId: conversationId })];
                     case 1:
                         response = _c.sent();
                         return [2 /*return*/, {
@@ -252,7 +251,7 @@ var chatHandlers = {
                     case 0:
                         // Initialize message managers if needed
                         initializeMessageManagers();
-                        return [4 /*yield*/, chatHandler.editMessage({ messageId: messageId, conversationId: conversationId, newText: newText, editReason: editReason })];
+                        return [4 /*yield*/, chatPlan.editMessage({ messageId: messageId, conversationId: conversationId, newText: newText, editReason: editReason })];
                     case 1:
                         response = _c.sent();
                         return [2 /*return*/, {
@@ -273,7 +272,7 @@ var chatHandlers = {
                     case 0:
                         // Initialize message managers if needed
                         initializeMessageManagers();
-                        return [4 /*yield*/, chatHandler.deleteMessage({ messageId: messageId, conversationId: conversationId, reason: reason })];
+                        return [4 /*yield*/, chatPlan.deleteMessage({ messageId: messageId, conversationId: conversationId, reason: reason })];
                     case 1:
                         response = _c.sent();
                         return [2 /*return*/, {
@@ -293,7 +292,7 @@ var chatHandlers = {
                     case 0:
                         // Initialize message managers if needed
                         initializeMessageManagers();
-                        return [4 /*yield*/, chatHandler.getMessageHistory({ messageId: messageId })];
+                        return [4 /*yield*/, chatPlan.getMessageHistory({ messageId: messageId })];
                     case 1:
                         response = _c.sent();
                         return [2 /*return*/, {
@@ -314,7 +313,7 @@ var chatHandlers = {
                     case 0:
                         // Initialize message managers if needed
                         initializeMessageManagers();
-                        return [4 /*yield*/, chatHandler.exportMessageCredential({ messageId: messageId })];
+                        return [4 /*yield*/, chatPlan.exportMessageCredential({ messageId: messageId })];
                     case 1:
                         response = _c.sent();
                         return [2 /*return*/, {
@@ -335,7 +334,7 @@ var chatHandlers = {
                     case 0:
                         // Initialize message managers if needed
                         initializeMessageManagers();
-                        return [4 /*yield*/, chatHandler.verifyMessageAssertion({ certificateHash: certificateHash, messageHash: messageHash })];
+                        return [4 /*yield*/, chatPlan.verifyMessageAssertion({ certificateHash: certificateHash, messageHash: messageHash })];
                     case 1:
                         response = _c.sent();
                         return [2 /*return*/, {
@@ -348,4 +347,4 @@ var chatHandlers = {
         });
     }
 };
-exports.chatHandlers = chatHandlers;
+export { chatPlans };

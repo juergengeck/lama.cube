@@ -1,9 +1,8 @@
-"use strict";
 /**
- * Connection IPC Handlers (Thin Adapter)
+ * Connection IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to ConnectionHandler methods.
- * Business logic lives in @chat/core/handlers/ConnectionHandler.ts
+ * Business logic lives in @chat/core/plans/ConnectionHandler.ts
  * Platform-specific operations (fs, storage, events) handled here.
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
@@ -47,7 +46,7 @@ var promises_1 = require("fs/promises");
 var path_1 = require("path");
 var os_1 = require("os");
 var child_process_1 = require("child_process");
-var ConnectionHandler_js_1 = require("@chat/core/handlers/ConnectionHandler.js");
+var ConnectionHandler_js_1 = require("@chat/core/plans/ConnectionHandler.js");
 var node_one_core_js_1 = require("../../core/node-one-core.js");
 // Singleton handler instance
 var connectionHandler = null;
@@ -313,7 +312,7 @@ function subscribeToEvents(callback) {
     }
     console.log('[Connection] Subscribed to ONE.core events');
 }
-exports.default = {
+export const default = {
     getInstances: getInstances,
     createPairingInvitation: createPairingInvitation,
     acceptPairingInvitation: acceptPairingInvitation,

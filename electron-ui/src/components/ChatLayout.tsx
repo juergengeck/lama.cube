@@ -155,8 +155,9 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
           // If conversation doesn't exist yet, reload conversations to add it
           if (!exists) {
             console.log('[ChatLayout] 🆕 New conversation detected, reloading list:', data.conversationId)
-            // Add small delay to ensure topic is fully persisted before reloading
-            setTimeout(() => reloadConversations(), 300)
+            // Reload immediately - the backend should have already persisted the topic
+            // If there's a race condition, it's a backend bug that needs fixing, not mitigation
+            reloadConversations()
             return prev
           }
 

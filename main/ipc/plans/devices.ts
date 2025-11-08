@@ -43,7 +43,7 @@ interface IpcResponse<T = any> {
 /**
  * Initialize device IPC handlers
  */
-function initializeDeviceHandlers() {
+function initializeDevicePlans() {
   /**
    * Create an invitation for pairing
    * Delegates to IOMHandler for proper IoM/IoP support
@@ -332,4 +332,4 @@ function initializeDeviceHandlers() {
   ipcMain.handle('instance:info', getInstanceInfo)
 }
 
-export { initializeDeviceHandlers }
+export { initializeDevicePlans }

@@ -15,6 +15,7 @@ class PeerMessageListener {
 
   ownerId: any;
   lastMessageCounts: any;
+  pendingNotifications: any;
   constructor(channelManager: any, topicModel: any) {
 
     this.channelManager = channelManager
@@ -25,6 +26,7 @@ class PeerMessageListener {
     this.mainWindow = null
     this.ownerId = null
     this.lastMessageCounts = new Map() // Track message counts per channel
+    this.pendingNotifications = [] // Queue for notifications when webContents not ready
 }
   
   /**
@@ -33,6 +35,28 @@ class PeerMessageListener {
   setMainWindow(mainWindow: any): any {
     this.mainWindow = mainWindow
     console.log('[PeerMessageListener] Main window reference set')
+
+    // Set up listener for when webContents becomes ready
+    if (mainWindow.webContents) {
+      mainWindow.webContents.on('did-finish-load', () => {
+        this.flushPendingNotifications()
+      })
+    }
+  }
+
+  /**
+   * Flush any pending notifications that were queued while webContents was loading
+   */
+  flushPendingNotifications(): any {
+    if (this.pendingNotifications.length === 0) return
+
+    console.log(`[PeerMessageListener] Flushing ${this.pendingNotifications.length} pending notifications`)
+    const pending = [...this.pendingNotifications]
+    this.pendingNotifications = []
+
+    for (const { channelId, messages } of pending) {
+      this.notifyUI(channelId, messages)
+    }
   }
   
   /**
@@ -175,10 +199,10 @@ class PeerMessageListener {
 
     console.log(`[PeerMessageListener] 📤 Sending new message notification to UI for ${normalizedChannelId}`)
 
-    // Ensure webContents is ready
+    // Ensure webContents is ready - if not, queue the notification
     if (!this.mainWindow.webContents || this.mainWindow.webContents.isLoading()) {
       console.log('[PeerMessageListener] WebContents not ready, queuing notification')
-      setTimeout(() => this.notifyUI(channelId, newMessages), 100)
+      this.pendingNotifications.push({ channelId, messages: newMessages })
       return
     }
 

@@ -139,4 +139,23 @@ export class ElectronLLMPlatform implements LLMPlatform {
       status,
     });
   }
+
+  /**
+   * Emit thinking stream update (for reasoning models like DeepSeek R1, gpt-oss)
+   * Streams the internal reasoning/thinking process to the UI in real-time
+   * Maps to 'message:thinkingStream' event for UI
+   */
+  emitThinkingUpdate(topicId: string, messageId: string, thinkingContent: string): void {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+      console.warn('[ElectronLLMPlatform] Cannot emit thinking - window destroyed');
+      return;
+    }
+
+    console.log(`[ElectronLLMPlatform] 🧠 Emitting thinking stream IPC: ${thinkingContent.length} chars to topic ${topicId}`);
+    this.mainWindow.webContents.send('message:thinkingStream', {
+      conversationId: topicId,
+      messageId,
+      thinking: thinkingContent,
+    });
+  }
 }

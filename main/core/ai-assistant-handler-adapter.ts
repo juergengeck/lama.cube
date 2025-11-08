@@ -1,13 +1,13 @@
 /**
  * AI Assistant Handler Adapter
  *
- * Creates and initializes the refactored AIAssistantHandler from lama.core
- * with Electron-specific dependencies. This replaces the monolithic
- * ai-assistant-model.ts with the new component-based architecture.
+ * Creates and initializes AIAssistantPlan from lama.core with Electron-specific
+ * dependencies. This is the platform adapter that bridges platform-agnostic
+ * business logic (lama.core) with Electron platform services.
  *
  * Usage:
- *   import { aiAssistantHandler } from './ai-assistant-handler-adapter.js';
- *   await aiAssistantHandler.init();
+ *   import { initializeAIAssistantHandler } from './ai-assistant-handler-adapter.js';
+ *   const handler = await initializeAIAssistantHandler(nodeOneCore, llmManager);
  */
 
 import { AIAssistantPlan } from '@lama/core/plans/AIAssistantPlan.js';

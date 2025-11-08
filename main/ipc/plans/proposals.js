@@ -1,9 +1,8 @@
-"use strict";
 /**
- * Proposals IPC Handlers (Thin Adapter)
+ * Proposals IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to ProposalsHandler methods.
- * Business logic lives in ../../../lama.core/handlers/ProposalsHandler.ts
+ * Business logic lives in ../../../lama.core/plans/ProposalsHandler.ts
  *
  * Implements Phase 2 (IPC Layer) for spec 019-above-the-chat
  */
@@ -44,8 +43,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.proposalHandlers = void 0;
-var ProposalsHandler_js_1 = require("@lama/core/handlers/ProposalsHandler.js");
+export const proposalPlans = void 0;
+var ProposalsHandler_js_1 = require("@lama/core/plans/ProposalsHandler.js");
 var proposal_engine_js_1 = require("../../services/proposal-engine.js");
 var proposal_ranker_js_1 = require("../../services/proposal-ranker.js");
 var proposal_cache_js_1 = require("../../services/proposal-cache.js");
@@ -163,9 +162,9 @@ function share(event_1, _a) {
     });
 }
 /**
- * Export proposal handlers
+ * Export proposal plans
  */
-exports.proposalHandlers = {
+export const proposalPlans = {
     'proposals:getForTopic': getForTopic,
     'proposals:updateConfig': updateConfig,
     'proposals:getConfig': getConfig,

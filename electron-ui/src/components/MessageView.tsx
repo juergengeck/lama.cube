@@ -31,6 +31,7 @@ interface MessageViewProps {
   participants?: string[] // List of participant IDs to determine if multiple people
   isAIProcessing?: boolean // Show typing indicator when AI is processing
   aiStreamingContent?: string // Show partial AI response while streaming
+  aiThinkingContent?: string // Show thinking/reasoning trace (for reasoning models)
   topicId?: string // Topic ID for context panel
   subjectsJustAppeared?: boolean // Flag indicating subjects just appeared
   chatHeaderRef?: React.RefObject<HTMLDivElement> // Ref to ChatHeader to measure height change
@@ -47,6 +48,7 @@ export function MessageView({
   participants = [],
   isAIProcessing = false,
   aiStreamingContent = '',
+  aiThinkingContent = '',
   topicId,
   subjectsJustAppeared = false,
   chatHeaderRef
@@ -420,7 +422,8 @@ export function MessageView({
                       isOwn: false,
                       subjects: [],
                       trustLevel: 5,
-                      format: 'markdown' // Ensure markdown format for proper rendering
+                      format: 'markdown', // Ensure markdown format for proper rendering
+                      thinking: aiThinkingContent // Pass thinking content for reasoning models
                     }}
                     onHashtagClick={handleHashtagClick}
                     onAttachmentClick={handleAttachmentClick}
@@ -431,6 +434,7 @@ export function MessageView({
                   {/* Character count indicator */}
                   <div className="text-xs text-muted-foreground ml-12 -mt-2 mb-2">
                     Streaming... {aiStreamingContent.length} characters
+                    {aiThinkingContent && ` | Thinking: ${aiThinkingContent.length} chars`}
                   </div>
                 </>
               ) : (

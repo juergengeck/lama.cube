@@ -233,7 +233,7 @@ export function ModelOnboarding({ onComplete }: { onComplete: () => void }) {
 
       if (success) {
         console.log(`[ModelOnboarding] ✅ Successfully set ${modelId} as default model`)
-        console.log(`[ModelOnboarding] ✅ AI contact created, chats will be created when accessed`)
+        console.log(`[ModelOnboarding] ✅ Default chats (Hi & LAMA) created by AIAssistantPlan.setDefaultModel()`)
         modelSetSuccessfully = true
       } else {
         console.warn(`[ModelOnboarding] ⚠️ Failed to set ${modelId} as default model`)

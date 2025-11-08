@@ -6,10 +6,10 @@
 
 import http from 'http';
 import oneCoreHandlers from '../ipc/plans/one-core.js';
-import { chatHandler } from '../ipc/plans/chat.js';
+import { chatPlan } from '../ipc/plans/chat.js';
 import connectionHandlers from '../ipc/plans/connection.js';
 import aiHandlers from '../ipc/plans/ai.js';
-import { registerContactHandlers } from '../ipc/plans/contacts.js';
+import { registerContactPlans } from '../ipc/plans/contacts.js';
 import nodeOneCore from '../core/node-one-core.js';
 import { ipcMain } from 'electron';
 import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
@@ -18,6 +18,7 @@ import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
 import type { Person } from '@refinio/one.core/lib/recipes.js';
 import { ContactsPlan } from '@chat/core/plans/ContactsPlan.js';
 import { MemoryTools } from './mcp/memory-tools.js';
+import { handleDiscoverPlans, handleCallPlan } from '@mcp/core';
 
 export class LamaAPIServer {
   private server: http.Server | null = null;
@@ -87,11 +88,19 @@ export class LamaAPIServer {
           const mockEvent = {} as any; // TODO: Refactor remaining handlers to not need this
 
           switch (method) {
+            // MCP Meta-Tools - Plan discovery and dynamic calls
+            case 'mcp:discover_plans':
+              result = await handleDiscoverPlans(params || {});
+              break;
+            case 'mcp:call_plan':
+              result = await handleCallPlan(params);
+              break;
+
             // Chat handlers - call business logic directly
             case 'chat:sendMessage':
               // Accept both 'text' and 'content' params for flexibility
               // Use provided senderId or fall back to owner
-              result = await chatHandler.sendMessage({
+              result = await chatPlan.sendMessage({
                 conversationId: params.conversationId,
                 content: params.content || params.text,
                 attachments: params.attachments || [],
@@ -99,7 +108,7 @@ export class LamaAPIServer {
               });
               break;
             case 'chat:getMessages':
-              result = await chatHandler.getMessages(params);
+              result = await chatPlan.getMessages(params);
               break;
             case 'chat:createConversation':
               {
@@ -126,7 +135,7 @@ export class LamaAPIServer {
                 }
 
                 // Create conversation via chat.core (generic operation)
-                result = await chatHandler.createConversation({ type, participants, name });
+                result = await chatPlan.createConversation({ type, participants, name });
 
                 if (result.success && result.data && aiModelId && nodeOneCore.aiAssistantModel) {
                   const topicId = result.data.id;
@@ -157,7 +166,7 @@ export class LamaAPIServer {
               // For HTTP/MCP clients: enrich conversation data server-side
               // HTTP clients can't access nodeOneCore.aiAssistantModel directly,
               // so we enrich here using the real NodeOneCore instance
-              result = await chatHandler.getConversations({});
+              result = await chatPlan.getConversations({});
 
               if (result.success && result.data && nodeOneCore.aiAssistantModel) {
                 result.data = result.data.map((conv: any) => {

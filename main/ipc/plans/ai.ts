@@ -24,9 +24,9 @@ function getAIHandler() {
 }
 
 /**
- * Thin IPC adapter - maps ipcMain.handle() calls to handler methods
+ * Thin IPC adapter - maps ipcMain.handle() calls to plan methods
  */
-const aiHandlers = {
+const aiPlans = {
   /**
    * Chat with AI (with streaming support)
    */
@@ -409,7 +409,8 @@ const aiHandlers = {
       console.error('[AI IPC] stopStreaming error:', error);
       return { success: false, error: error.message };
     }
-  }
+  },
+
 };
 
-export default aiHandlers;
+export default aiPlans;

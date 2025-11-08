@@ -22,7 +22,12 @@
     "strict": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noEmitOnError": false
+    "noEmitOnError": false,
+    "baseUrl": ".",
+    "paths": {
+      "@refinio/api/*": ["../packages/refinio.api/dist/*"],
+      "@refinio/*": ["../packages/*"]
+    }
   },
   "include": [
     "@OneCoreTypes.d.ts",

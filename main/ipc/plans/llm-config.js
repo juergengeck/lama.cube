@@ -1,9 +1,8 @@
-"use strict";
 /**
- * LLM Config IPC Handlers (Thin Adapter)
+ * LLM Config IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to LLMConfigHandler methods.
- * Business logic lives in ../../../lama.core/handlers/LLMConfigHandler.ts
+ * Business logic lives in ../../../lama.core/plans/LLMConfigHandler.ts
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -42,14 +41,14 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.handleTestOllamaConnection = handleTestOllamaConnection;
-exports.handleSetOllamaConfig = handleSetOllamaConfig;
-exports.handleGetOllamaConfig = handleGetOllamaConfig;
-exports.handleGetAvailableModels = handleGetAvailableModels;
-exports.handleDeleteOllamaConfig = handleDeleteOllamaConfig;
-exports.registerLlmConfigHandlers = registerLlmConfigHandlers;
+export { handleTestOllamaConnection };
+export { handleSetOllamaConfig };
+export { handleGetOllamaConfig };
+export { handleGetAvailableModels };
+export { handleDeleteOllamaConfig };
+export { registerLlmConfigPlans };
 var electron_1 = require("electron");
-var LLMConfigHandler_js_1 = require("@lama/core/handlers/LLMConfigHandler.js");
+var LLMConfigHandler_js_1 = require("@lama/core/plans/LLMConfigHandler.js");
 var ollama_validator_js_1 = require("../../services/ollama-validator.js");
 var ollama_config_manager_js_1 = require("../../services/ollama-config-manager.js");
 var node_one_core_js_1 = require("../../core/node-one-core.js");
@@ -134,14 +133,14 @@ function handleDeleteOllamaConfig(event, request) {
     });
 }
 /**
- * Register all IPC handlers
+ * Register all IPC plans
  */
-function registerLlmConfigHandlers() {
-    console.log('[IPC] Registering LLM config handlers...');
+function registerLlmConfigPlans() {
+    console.log('[IPC] Registering LLM config plans...');
     electron_1.ipcMain.handle('llm:testOllamaConnection', handleTestOllamaConnection);
     electron_1.ipcMain.handle('llm:setOllamaConfig', handleSetOllamaConfig);
     electron_1.ipcMain.handle('llm:getOllamaConfig', handleGetOllamaConfig);
     electron_1.ipcMain.handle('llm:getAvailableModels', handleGetAvailableModels);
     electron_1.ipcMain.handle('llm:deleteOllamaConfig', handleDeleteOllamaConfig);
-    console.log('[IPC] ✅ LLM config handlers registered');
+    console.log('[IPC] ✅ LLM config plans registered');
 }

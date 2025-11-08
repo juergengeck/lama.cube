@@ -20,7 +20,7 @@ let messageVersionManager: MessageVersionManager | null = null;
 let messageAssertionManager: MessageAssertionManager | null = null;
 
 // Initialize ChatHandler with dependencies
-const chatHandler = new ChatPlan(nodeOneCore, stateManager, messageVersionManager, messageAssertionManager);
+const chatPlan = new ChatPlan(nodeOneCore, stateManager, messageVersionManager, messageAssertionManager);
 
 // Initialize message managers when they become available
 function initializeMessageManagers() {
@@ -31,7 +31,7 @@ function initializeMessageManagers() {
     messageAssertionManager = new MessageAssertionManager(nodeOneCore.leuteModel.trust, nodeOneCore.leuteModel);
   }
   if (messageVersionManager && messageAssertionManager) {
-    chatHandler.setMessageManagers(messageVersionManager, messageAssertionManager);
+    chatPlan.setMessageManagers(messageVersionManager, messageAssertionManager);
   }
 }
 
@@ -110,7 +110,7 @@ interface IpcResponse<T = any> {
   [key: string]: any;
 }
 
-const chatHandlers = {
+const chatPlans = {
   // NOTE: initializeDefaultChats removed - default chats are created automatically
   // by AIAssistantHandler.init() in node-one-core.ts during ONE.core initialization
 
@@ -124,14 +124,14 @@ const chatHandlers = {
       }
     }
 
-    const response = await chatHandler.uiReady({});
+    const response = await chatPlan.uiReady({});
     return { success: response.success, error: response.error };
   },
 
   async sendMessage(event: IpcMainInvokeEvent, { conversationId, text, attachments = [] }: SendMessageParams): Promise<IpcResponse> {
     console.log(`[Chat] 📨 sendMessage called: conversationId="${conversationId}", text="${text.substring(0, 50)}..."`);
 
-    const response = await chatHandler.sendMessage({
+    const response = await chatPlan.sendMessage({
       conversationId,
       content: text,  // Map 'text' to 'content'
       attachments
@@ -151,7 +151,7 @@ const chatHandlers = {
   },
 
   async getMessages(event: IpcMainInvokeEvent, { conversationId, limit = 50, offset = 0 }: GetMessagesParams): Promise<IpcResponse> {
-    const response = await chatHandler.getMessages({ conversationId, limit, offset });
+    const response = await chatPlan.getMessages({ conversationId, limit, offset });
     return {
       success: response.success,
       messages: response.messages,
@@ -182,7 +182,7 @@ const chatHandlers = {
     }
 
     // Create conversation via chat.core (generic operation)
-    const response = await chatHandler.createConversation({ type, participants, name });
+    const response = await chatPlan.createConversation({ type, participants, name });
 
     if (!response.success || !response.data) {
       return {
@@ -211,7 +211,7 @@ const chatHandlers = {
   },
 
   async getConversations(event: IpcMainInvokeEvent, { limit = 20, offset = 0 }: GetConversationsParams = {}): Promise<IpcResponse> {
-    const response = await chatHandler.getConversations({ limit, offset });
+    const response = await chatPlan.getConversations({ limit, offset });
 
     // Enrich conversations with LLM participant metadata (coordination layer)
     if (response.success && response.data && nodeOneCore.aiAssistantModel) {
@@ -255,7 +255,7 @@ const chatHandlers = {
   },
 
   async getConversation(event: IpcMainInvokeEvent, { conversationId }: GetConversationParams): Promise<any> {
-    const response = await chatHandler.getConversation({ conversationId });
+    const response = await chatPlan.getConversation({ conversationId });
     return {
       success: response.success,
       data: response.data,
@@ -264,7 +264,7 @@ const chatHandlers = {
   },
 
   async getCurrentUser(event: IpcMainInvokeEvent): Promise<IpcResponse> {
-    const response = await chatHandler.getCurrentUser({});
+    const response = await chatPlan.getCurrentUser({});
     return {
       success: response.success,
       user: response.user,
@@ -273,7 +273,7 @@ const chatHandlers = {
   },
 
   async addParticipants(event: IpcMainInvokeEvent, { conversationId, participantIds }: AddParticipantsParams): Promise<IpcResponse> {
-    const response = await chatHandler.addParticipants({ conversationId, participantIds });
+    const response = await chatPlan.addParticipants({ conversationId, participantIds });
     return {
       success: response.success,
       data: response.data,
@@ -285,7 +285,7 @@ const chatHandlers = {
     // Initialize message managers if needed
     initializeMessageManagers();
 
-    const response = await chatHandler.clearConversation({ conversationId });
+    const response = await chatPlan.clearConversation({ conversationId });
     return {
       success: response.success,
       error: response.error
@@ -296,7 +296,7 @@ const chatHandlers = {
     // Initialize message managers if needed
     initializeMessageManagers();
 
-    const response = await chatHandler.editMessage({ messageId, conversationId, newText, editReason });
+    const response = await chatPlan.editMessage({ messageId, conversationId, newText, editReason });
     return {
       success: response.success,
       data: response.data,
@@ -308,7 +308,7 @@ const chatHandlers = {
     // Initialize message managers if needed
     initializeMessageManagers();
 
-    const response = await chatHandler.deleteMessage({ messageId, conversationId, reason });
+    const response = await chatPlan.deleteMessage({ messageId, conversationId, reason });
     return {
       success: response.success,
       error: response.error
@@ -319,7 +319,7 @@ const chatHandlers = {
     // Initialize message managers if needed
     initializeMessageManagers();
 
-    const response = await chatHandler.getMessageHistory({ messageId });
+    const response = await chatPlan.getMessageHistory({ messageId });
     return {
       success: response.success,
       history: response.history,
@@ -331,7 +331,7 @@ const chatHandlers = {
     // Initialize message managers if needed
     initializeMessageManagers();
 
-    const response = await chatHandler.exportMessageCredential({ messageId });
+    const response = await chatPlan.exportMessageCredential({ messageId });
     return {
       success: response.success,
       credential: response.credential,
@@ -343,7 +343,7 @@ const chatHandlers = {
     // Initialize message managers if needed
     initializeMessageManagers();
 
-    const response = await chatHandler.verifyMessageAssertion({ certificateHash, messageHash });
+    const response = await chatPlan.verifyMessageAssertion({ certificateHash, messageHash });
     return {
       success: response.success,
       valid: response.valid,
@@ -352,4 +352,4 @@ const chatHandlers = {
   }
 };
 
-export { chatHandlers, chatHandler };
+export { chatPlans, chatPlan };

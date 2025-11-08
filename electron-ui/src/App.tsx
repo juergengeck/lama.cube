@@ -226,12 +226,22 @@ function App() {
     return <LoginDeploy onLogin={login} />
   }
 
+  // Debug: Log all relevant state
+  console.log('[App] Render state:', {
+    isAuthenticated,
+    hasTopics,
+    hasDefaultModel,
+    isLoading,
+    isInitialized
+  })
+
   // Check if we need to show model onboarding
   // Show onboarding only if no default model has been configured
   const shouldShowOnboarding = hasDefaultModel === false
+  console.log('[App] shouldShowOnboarding =', shouldShowOnboarding, '(hasDefaultModel:', hasDefaultModel, ')')
 
   if (shouldShowOnboarding) {
-    console.log('[App] Showing ModelOnboarding component')
+    console.log('[App] ✅ Showing ModelOnboarding component because hasDefaultModel === false')
     return <ModelOnboarding onComplete={async () => {
       // Model has been selected and saved to settings
       console.log('[App] ModelOnboarding completed, setting hasDefaultModel to true')
@@ -241,7 +251,7 @@ function App() {
 
   // Show loading while checking for default model
   if (hasDefaultModel === null) {
-    console.log('[App] Still checking for default model, showing loading...')
+    console.log('[App] ⏳ Still checking for default model (hasDefaultModel === null), showing loading...')
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center">
@@ -252,6 +262,8 @@ function App() {
       </div>
     )
   }
+
+  console.log('[App] 📱 Showing main app (hasDefaultModel:', hasDefaultModel, ')')
 
   const tabs = [
     { id: 'chats', label: 'Chats', icon: MessageSquare },

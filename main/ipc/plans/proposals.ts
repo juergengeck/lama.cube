@@ -138,9 +138,9 @@ async function share(
 }
 
 /**
- * Export proposal handlers
+ * Export proposal plans
  */
-export const proposalHandlers = {
+export const proposalPlans = {
   'proposals:getForTopic': getForTopic,
   'proposals:updateConfig': updateConfig,
   'proposals:getConfig': getConfig,

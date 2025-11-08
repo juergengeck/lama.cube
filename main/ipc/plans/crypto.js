@@ -1,9 +1,8 @@
-"use strict";
 /**
- * Crypto IPC Handlers (Thin Adapter)
+ * Crypto IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to CryptoHandler methods.
- * Business logic lives in ../../../lama.core/handlers/CryptoHandler.ts
+ * Business logic lives in ../../../lama.core/plans/CryptoHandler.ts
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -42,7 +41,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-var CryptoHandler_js_1 = require("@lama/core/handlers/CryptoHandler.js");
+var CryptoHandler_js_1 = require("@lama/core/plans/CryptoHandler.js");
 var node_one_core_js_1 = require("../../core/node-one-core.js");
 // Singleton handler instance
 var cryptoHandler = null;
@@ -94,7 +93,7 @@ function exportCryptoObject(event, request) {
         });
     });
 }
-exports.default = {
+export const default = {
     getKeys: getKeys,
     getCertificates: getCertificates,
     exportCryptoObject: exportCryptoObject

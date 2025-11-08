@@ -111,7 +111,21 @@ class NodeProvisioning {
       } catch (error) {
         console.error('[NodeProvisioning] Failed to create profile with endpoint:', error)
       }
-      
+
+      // Initialize Unified Plan System (if not already initialized)
+      try {
+        const { initializeUnifiedPlanSystem, getPlanRegistry } = await import('../unified-plan-system-init.js')
+        if (!getPlanRegistry()) {
+          await initializeUnifiedPlanSystem(nodeOneCore)
+          console.log('[NodeProvisioning] Unified Plan System initialized')
+        } else {
+          console.log('[NodeProvisioning] Unified Plan System already initialized')
+        }
+      } catch (error) {
+        console.error('[NodeProvisioning] Failed to initialize Unified Plan System:', error)
+        // Non-critical - allow app to continue
+      }
+
       // Create pairing invitation using the Node's own pairing manager
       let pairingInvite = null
       try {
@@ -300,24 +314,10 @@ class NodeProvisioning {
         })
       }
       
-      // Create default AI chats after initialization
-      console.log('[NodeProvisioning] Setting up default AI chats...')
-      try {
-        const { default: llmManager } = await import('../services/llm-manager-singleton.js')
-        const models = llmManager.getModels()
-
-        if (models && models.length > 0) {
-          // DO NOT auto-select a model - let the user choose
-          // const defaultModel = models[0].id
-          // await nodeOneCore.aiAssistantModel.setDefaultModel(defaultModel)
-          console.log('[NodeProvisioning] Found', models.length, 'models - user will select preferred model')
-          console.log('[NodeProvisioning] ✅ Skipping auto-selection - user chooses')
-        } else {
-          console.log('[NodeProvisioning] No models available, skipping default chats')
-        }
-      } catch (error) {
-        console.error('[NodeProvisioning] Failed to create default chats:', error)
-      }
+      // Default AI chats are created by AIAssistantPlan.setDefaultModel()
+      // Triggered either when user selects a model in ModelOnboarding OR when restoring saved default model
+      // See: lama.core/plans/AIAssistantPlan.ts → setDefaultModel() → createDefaultChats()
+      console.log('[NodeProvisioning] Default chat creation handled by AIAssistantPlan via setDefaultModel()')
 
       return {
         success: true,
@@ -407,6 +407,15 @@ class NodeProvisioning {
 
     console.log('[NodeProvisioning] Node.js ONE.core initialized with ID:', result.ownerId)
 
+    // Set up message sync - initializes AI assistant model and message listeners
+    try {
+      await nodeOneCore.setupMessageSync()
+      console.log('[NodeProvisioning] Message sync initialized - AI assistant ready')
+    } catch (error) {
+      console.error('[NodeProvisioning] Failed to setup message sync:', error)
+      throw error // This is critical - fail provisioning if AI setup fails
+    }
+
     // Initialize memory tools with NodeOneCore reference
     try {
       const { default: mcpManager } = await import('./mcp-manager.js')
@@ -435,6 +444,16 @@ class NodeProvisioning {
 
     // Skip heavy configuration during init - use minimal setup
     // Full capabilities can be enabled on-demand
+
+    // Initialize Unified Plan System
+    try {
+      const { initializeUnifiedPlanSystem } = await import('../unified-plan-system-init.js')
+      await initializeUnifiedPlanSystem(nodeOneCore)
+      console.log('[NodeProvisioning] Unified Plan System initialized')
+    } catch (error) {
+      console.error('[NodeProvisioning] Failed to initialize Unified Plan System:', error)
+      // Non-critical - allow app to continue
+    }
   }
 
 

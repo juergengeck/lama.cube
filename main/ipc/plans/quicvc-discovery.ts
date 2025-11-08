@@ -81,7 +81,7 @@ async function initializeDiscoveryService(): Promise<void> {
 /**
  * Initialize QuicVC discovery IPC handlers
  */
-export function initializeQuicVCDiscoveryHandlers(): void {
+export function initializeQuicVCDiscoveryPlans(): void {
   /**
    * Start QuicVC discovery
    */

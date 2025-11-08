@@ -109,14 +109,14 @@ const topicAnalysisHandlers = {
     }
   ) {
     // Helper function to get messages for auto-generate
-    const chatHandlerGetMessages = async (params: { conversationId: string; limit?: number }) => {
-      const { chatHandlers } = await import('./chat.js');
-      return await chatHandlers.getMessages(event, params);
+    const chatPlanGetMessages = async (params: { conversationId: string; limit?: number }) => {
+      const { chatPlans } = await import('./chat.js');
+      return await chatPlans.getMessages(event, params);
     };
 
     return await topicAnalysisHandler.updateSummary(
       { topicId, content, changeReason, autoGenerate },
-      chatHandlerGetMessages
+      chatPlanGetMessages
     );
   },
 
@@ -184,14 +184,14 @@ const topicAnalysisHandlers = {
     }
   ) {
     // Helper function to get messages
-    const chatHandlerGetMessages = async (params: { conversationId: string }) => {
-      const { chatHandlers } = await import('./chat.js');
-      return await chatHandlers.getMessages(event, params);
+    const chatPlanGetMessages = async (params: { conversationId: string }) => {
+      const { chatPlans } = await import('./chat.js');
+      return await chatPlans.getMessages(event, params);
     };
 
     return await topicAnalysisHandler.extractConversationKeywords(
       { topicId, messages, maxKeywords },
-      chatHandlerGetMessages
+      chatPlanGetMessages
     );
   },
 

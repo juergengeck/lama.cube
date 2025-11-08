@@ -1,6 +1,5 @@
-"use strict";
 /**
- * QuicVC Discovery IPC Handlers
+ * QuicVC Discovery IPC Plans
  *
  * Provides IPC interface for QuicVC device discovery in the UI
  */
@@ -41,8 +40,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.initializeQuicVCDiscoveryHandlers = initializeQuicVCDiscoveryHandlers;
-exports.autoInitializeDiscovery = autoInitializeDiscovery;
+export { initializeQuicVCDiscoveryPlans };
+export { autoInitializeDiscovery };
 var electron_1 = require("electron");
 var ipcMain = electron_1.default.ipcMain;
 var connection_core_1 = require("@lama/connection.core");
@@ -106,9 +105,9 @@ function initializeDiscoveryService() {
     });
 }
 /**
- * Initialize QuicVC discovery IPC handlers
+ * Initialize QuicVC discovery IPC plans
  */
-function initializeQuicVCDiscoveryHandlers() {
+function initializeQuicVCDiscoveryPlans() {
     var _this = this;
     /**
      * Start QuicVC discovery
@@ -255,7 +254,7 @@ function initializeQuicVCDiscoveryHandlers() {
             }
         });
     }); });
-    console.log('[QuicVCDiscovery] IPC handlers registered');
+    console.log('[QuicVCDiscovery] IPC plans registered');
 }
 /**
  * Auto-initialize discovery when Node.js ONE.core is ready

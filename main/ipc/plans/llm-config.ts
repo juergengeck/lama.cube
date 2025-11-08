@@ -102,7 +102,7 @@ export async function handleDeleteOllamaConfig(
 /**
  * Register all IPC handlers
  */
-export function registerLlmConfigHandlers() {
+export function registerLlmConfigPlans() {
   console.log('[IPC] Registering LLM config handlers...');
 
   ipcMain.handle('llm:testOllamaConnection', handleTestOllamaConnection);

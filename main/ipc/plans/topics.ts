@@ -83,10 +83,10 @@ export async function getOrCreateTopicForContact(
       console.log('[Topics IPC] AI model ID:', aiModelId);
 
       // Import chat handler
-      const { chatHandlers } = await import('./chat.js');
+      const { chatPlans } = await import('./chat.js');
 
       // Create conversation with AI participant
-      const result = await chatHandlers.createConversation(event, {
+      const result = await chatPlans.createConversation(event, {
         type: 'group', // AI conversations are always groups (even 1-on-1)
         participants: [contactId], // Pass contact ID
         name: contactName,

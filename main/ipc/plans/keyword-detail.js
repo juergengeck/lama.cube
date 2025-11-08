@@ -1,9 +1,8 @@
-"use strict";
 /**
- * Keyword Detail IPC Handlers (Thin Adapter)
+ * Keyword Detail IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to KeywordDetailHandler methods.
- * Business logic lives in ../../../lama.core/handlers/KeywordDetailHandler.ts
+ * Business logic lives in ../../../lama.core/plans/KeywordDetailHandler.ts
  *
  * Implements Phase 2 (IPC Layer) for spec 015-keyword-detail-preview
  */
@@ -44,9 +43,9 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getKeywordDetails = getKeywordDetails;
-exports.updateKeywordAccessState = updateKeywordAccessState;
-var KeywordDetailHandler_js_1 = require("@lama/core/handlers/KeywordDetailHandler.js");
+export { getKeywordDetails };
+export { updateKeywordAccessState };
+var KeywordDetailHandler_js_1 = require("@lama/core/plans/KeywordDetailHandler.js");
 var node_one_core_js_1 = require("../../core/node-one-core.js");
 var TopicAnalysisModel_js_1 = require("@lama/core/one-ai/models/TopicAnalysisModel.js");
 var keywordAccessStorage = require("@lama/core/one-ai/storage/keyword-access-storage.js");
@@ -160,8 +159,8 @@ function updateKeywordAccessState(event_1, _a) {
         });
     });
 }
-// Export all handlers
-exports.default = {
+// Export all plans
+export const default = {
     getKeywordDetails: getKeywordDetails,
     updateKeywordAccessState: updateKeywordAccessState
 };

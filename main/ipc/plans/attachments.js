@@ -1,6 +1,5 @@
-"use strict";
 /**
- * Attachment IPC Handlers
+ * Attachment IPC Plans
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -40,7 +39,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 var attachment_service_js_1 = require("../../services/attachment-service.js");
-var attachmentHandlers = {
+var attachmentPlans = {
     /**
      * Store an attachment
      */
@@ -236,4 +235,4 @@ var attachmentHandlers = {
         });
     }
 };
-exports.default = attachmentHandlers;
+export default attachmentPlans;

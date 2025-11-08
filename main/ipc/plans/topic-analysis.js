@@ -1,9 +1,8 @@
-"use strict";
 /**
- * Topic Analysis IPC Handlers (Thin Adapter)
+ * Topic Analysis IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to TopicAnalysisHandler methods.
- * Business logic lives in ../../../lama.core/handlers/TopicAnalysisHandler.ts
+ * Business logic lives in ../../../lama.core/plans/TopicAnalysisHandler.ts
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -42,8 +41,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.extractConversationKeywords = exports.extractRealtimeKeywords = exports.mergeSubjects = exports.extractKeywords = exports.updateSummary = exports.getConversationRestartContext = exports.getSummary = exports.getSubjects = exports.analyzeMessages = void 0;
-var TopicAnalysisHandler_js_1 = require("@lama/core/handlers/TopicAnalysisHandler.js");
+export const extractConversationKeywords = exports.extractRealtimeKeywords = exports.mergeSubjects = exports.extractKeywords = exports.updateSummary = exports.getConversationRestartContext = exports.getSummary = exports.getSubjects = exports.analyzeMessages = void 0;
+var TopicAnalysisHandler_js_1 = require("@lama/core/plans/TopicAnalysisHandler.js");
 var node_one_core_js_1 = require("../../core/node-one-core.js");
 var llm_manager_singleton_js_1 = require("../../services/llm-manager-singleton.js");
 // Create handler instance
@@ -55,7 +54,7 @@ if (node_one_core_js_1.default.initialized && node_one_core_js_1.default.topicAn
 /**
  * Thin IPC adapter - maps ipcMain.handle() calls to handler methods
  */
-var topicAnalysisHandlers = {
+var topicAnalysisPlans = {
     /**
      * Analyze messages to extract subjects and keywords
      */
@@ -137,13 +136,13 @@ var topicAnalysisHandlers = {
                 switch (_d.label) {
                     case 0:
                         chatHandlerGetMessages = function (params) { return __awaiter(_this, void 0, void 0, function () {
-                            var chatHandlers;
+                            var chatPlans;
                             return __generator(this, function (_a) {
                                 switch (_a.label) {
                                     case 0: return [4 /*yield*/, Promise.resolve().then(function () { return require('./chat.js'); })];
                                     case 1:
-                                        chatHandlers = (_a.sent()).chatHandlers;
-                                        return [4 /*yield*/, chatHandlers.getMessages(event, params)];
+                                        chatPlans = (_a.sent()).chatPlans;
+                                        return [4 /*yield*/, chatPlans.getMessages(event, params)];
                                     case 2: return [2 /*return*/, _a.sent()];
                                 }
                             });
@@ -219,13 +218,13 @@ var topicAnalysisHandlers = {
                 switch (_e.label) {
                     case 0:
                         chatHandlerGetMessages = function (params) { return __awaiter(_this, void 0, void 0, function () {
-                            var chatHandlers;
+                            var chatPlans;
                             return __generator(this, function (_a) {
                                 switch (_a.label) {
                                     case 0: return [4 /*yield*/, Promise.resolve().then(function () { return require('./chat.js'); })];
                                     case 1:
-                                        chatHandlers = (_a.sent()).chatHandlers;
-                                        return [4 /*yield*/, chatHandlers.getMessages(event, params)];
+                                        chatPlans = (_a.sent()).chatPlans;
+                                        return [4 /*yield*/, chatPlans.getMessages(event, params)];
                                     case 2: return [2 /*return*/, _a.sent()];
                                 }
                             });
@@ -253,6 +252,6 @@ var topicAnalysisHandlers = {
         });
     }
 };
-// Export handlers
-exports.analyzeMessages = topicAnalysisHandlers.analyzeMessages, exports.getSubjects = topicAnalysisHandlers.getSubjects, exports.getSummary = topicAnalysisHandlers.getSummary, exports.getConversationRestartContext = topicAnalysisHandlers.getConversationRestartContext, exports.updateSummary = topicAnalysisHandlers.updateSummary, exports.extractKeywords = topicAnalysisHandlers.extractKeywords, exports.mergeSubjects = topicAnalysisHandlers.mergeSubjects, exports.extractRealtimeKeywords = topicAnalysisHandlers.extractRealtimeKeywords, exports.extractConversationKeywords = topicAnalysisHandlers.extractConversationKeywords;
-exports.default = topicAnalysisHandlers;
+// Export plans
+export const analyzeMessages = topicAnalysisPlans.analyzeMessages, exports.getSubjects = topicAnalysisPlans.getSubjects, exports.getSummary = topicAnalysisPlans.getSummary, exports.getConversationRestartContext = topicAnalysisPlans.getConversationRestartContext, exports.updateSummary = topicAnalysisPlans.updateSummary, exports.extractKeywords = topicAnalysisPlans.extractKeywords, exports.mergeSubjects = topicAnalysisPlans.mergeSubjects, exports.extractRealtimeKeywords = topicAnalysisPlans.extractRealtimeKeywords, exports.extractConversationKeywords = topicAnalysisPlans.extractConversationKeywords;
+export default topicAnalysisPlans;

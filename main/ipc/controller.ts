@@ -1,42 +1,38 @@
 /**
  * Main IPC Controller (TypeScript Version)
- * Routes IPC messages to appropriate handlers
+ * Routes IPC messages to appropriate plans
  */
 
 import { ipcMain, BrowserWindow, IpcMainInvokeEvent, app } from 'electron';
 import type { IPCHandler, IPCHandlerMap } from '../types/ipc.js';
 import nodeOneCore from '../core/node-one-core.js';
 
-// Import handlers (will be JS files initially, then migrated to TS)
-import authHandlers from './plans/auth.js';
-import stateHandlers from './plans/state.js';
-import { chatHandlers } from './plans/chat.js';
-import connectionHandlers from './plans/connection.js';
-import cryptoHandlers from './plans/crypto.js';
-import settingsHandlers from './plans/settings.js';
-import aiHandlers from './plans/ai.js';
-import attachmentHandlers from './plans/attachments.js';
-// @ts-ignore - JS file with named export
-import { subjectHandlers } from './plans/subjects.js';
-import oneCoreHandlers from './plans/one-core.js';
-// @ts-ignore - JS file with named export
-import { initializeDeviceHandlers } from './plans/devices.js';
-import { initializeQuicVCDiscoveryHandlers, autoInitializeDiscovery } from './plans/quicvc-discovery.js';
-// @ts-ignore - JS file with named export
-import { registerContactHandlers } from './plans/contacts.js';
-import * as topicHandlers from './plans/topics.js';
-import topicAnalysisHandlers from './plans/topic-analysis.js';
-import * as wordCloudSettingsHandlers from './plans/word-cloud-settings.js';
-import registerMemoryHandlers from './plans/memory.js';
-import keywordDetailHandlers from './plans/keyword-detail.js';
-import auditHandlers from './plans/audit.js';
-import exportHandlers from './plans/export.js';
-import feedForwardHandlers from './plans/feed-forward.js';
-import { registerLlmConfigHandlers } from './plans/llm-config.js';
-// @ts-ignore - TS file with named export
-import { proposalHandlers } from './plans/proposals.js';
-import mcpHandlers from './plans/mcp.js';
-import createUserSettingsHandlers from './plans/user-settings.js';
+// Import plans (will be JS files initially, then migrated to TS)
+import authPlans from './plans/auth.js';
+import statePlans from './plans/state.js';
+import { chatPlans } from './plans/chat.js';
+import connectionPlans from './plans/connection.js';
+import cryptoPlans from './plans/crypto.js';
+import settingsPlans from './plans/settings.js';
+import aiPlans from './plans/ai.js';
+import attachmentPlans from './plans/attachments.js';
+import { subjectPlans } from './plans/subjects.js';
+import oneCorePlans from './plans/one-core.js';
+import { initializeDevicePlans } from './plans/devices.js';
+import { initializeQuicVCDiscoveryPlans, autoInitializeDiscovery } from './plans/quicvc-discovery.js';
+import { registerContactPlans } from './plans/contacts.js';
+import * as topicPlans from './plans/topics.js';
+import topicAnalysisPlans from './plans/topic-analysis.js';
+import * as wordCloudSettingsPlans from './plans/word-cloud-settings.js';
+import registerMemoryPlans from './plans/memory.js';
+import keywordDetailPlans from './plans/keyword-detail.js';
+import auditPlans from './plans/audit.js';
+import exportPlans from './plans/export.js';
+import feedForwardPlans from './plans/feed-forward.js';
+import { registerLlmConfigPlans } from './plans/llm-config.js';
+import { proposalPlans } from './plans/proposals.js';
+import mcpPlans from './plans/mcp.js';
+import createUserSettingsPlans from './plans/user-settings.js';
 
 // Node error type
 interface NodeError extends Error {
@@ -45,11 +41,11 @@ interface NodeError extends Error {
 
 class IPCController {
   devices: any;
-  public handlers: Map<string, IPCHandler>;
+  public plans: Map<string, IPCHandler>;
   public mainWindow: BrowserWindow | null;
 
   constructor() {
-    this.handlers = new Map();
+    this.plans = new Map();
     this.mainWindow = null;
   }
 
@@ -94,54 +90,54 @@ class IPCController {
   initialize(mainWindow: BrowserWindow): void {
     this.mainWindow = mainWindow;
 
-    // Register all handlers
-    this.registerHandlers();
+    // Register all plans
+    this.registerPlans();
 
     // Auto-initialize QuicVC discovery (waits for nodeOneCore)
     void autoInitializeDiscovery();
 
-    this.safeLog('[IPCController] Initialized with handlers');
+    this.safeLog('[IPCController] Initialized with plans');
   }
 
-  private registerHandlers(): void {
+  private registerPlans(): void {
     // Debug handler for browser logs
     this.handle('debug:log', async (event: IpcMainInvokeEvent, message: string) => {
       console.log('[BROWSER DEBUG]', message);
       return { success: true };
     });
 
-    // Authentication handlers
-    this.handle('auth:login', authHandlers.login);
-    this.handle('auth:register', authHandlers.register);
-    this.handle('auth:logout', authHandlers.logout);
-    this.handle('auth:check', authHandlers.checkAuth);
+    // Authentication plans
+    this.handle('auth:login', authPlans.login);
+    this.handle('auth:register', authPlans.register);
+    this.handle('auth:logout', authPlans.logout);
+    this.handle('auth:check', authPlans.checkAuth);
 
-    // State handlers
-    this.handle('state:get', stateHandlers.getState);
-    this.handle('state:set', stateHandlers.setState);
-    this.handle('state:subscribe', stateHandlers.subscribe);
+    // State plans
+    this.handle('state:get', statePlans.getState);
+    this.handle('state:set', statePlans.setState);
+    this.handle('state:subscribe', statePlans.subscribe);
 
-    // Chat handlers
-    this.handle('chat:sendMessage', chatHandlers.sendMessage);
-    this.handle('chat:getMessages', chatHandlers.getMessages);
-    this.handle('chat:createConversation', chatHandlers.createConversation);
-    this.handle('chat:getConversations', chatHandlers.getConversations);
-    this.handle('chat:getCurrentUser', chatHandlers.getCurrentUser);
-    this.handle('chat:addParticipants', chatHandlers.addParticipants);
-    this.handle('chat:clearConversation', chatHandlers.clearConversation);
-    this.handle('chat:uiReady', chatHandlers.uiReady);
-    this.handle('chat:editMessage', chatHandlers.editMessage);
-    this.handle('chat:deleteMessage', chatHandlers.deleteMessage);
-    this.handle('chat:getMessageHistory', chatHandlers.getMessageHistory);
-    this.handle('chat:exportMessageCredential', chatHandlers.exportMessageCredential);
-    this.handle('chat:verifyMessageAssertion', chatHandlers.verifyMessageAssertion);
+    // Chat plans
+    this.handle('chat:sendMessage', chatPlans.sendMessage);
+    this.handle('chat:getMessages', chatPlans.getMessages);
+    this.handle('chat:createConversation', chatPlans.createConversation);
+    this.handle('chat:getConversations', chatPlans.getConversations);
+    this.handle('chat:getCurrentUser', chatPlans.getCurrentUser);
+    this.handle('chat:addParticipants', chatPlans.addParticipants);
+    this.handle('chat:clearConversation', chatPlans.clearConversation);
+    this.handle('chat:uiReady', chatPlans.uiReady);
+    this.handle('chat:editMessage', chatPlans.editMessage);
+    this.handle('chat:deleteMessage', chatPlans.deleteMessage);
+    this.handle('chat:getMessageHistory', chatPlans.getMessageHistory);
+    this.handle('chat:exportMessageCredential', chatPlans.exportMessageCredential);
+    this.handle('chat:verifyMessageAssertion', chatPlans.verifyMessageAssertion);
 
-    // Audit handlers
-    this.handle('audit:generateQR', auditHandlers.generateQR);
-    this.handle('audit:createAttestation', auditHandlers.createAttestation);
-    this.handle('audit:getAttestations', auditHandlers.getAttestations);
-    this.handle('audit:exportTopic', auditHandlers.exportTopic);
-    this.handle('audit:verifyAttestation', auditHandlers.verifyAttestation);
+    // Audit plans
+    this.handle('audit:generateQR', auditPlans.generateQR);
+    this.handle('audit:createAttestation', auditPlans.createAttestation);
+    this.handle('audit:getAttestations', auditPlans.getAttestations);
+    this.handle('audit:exportTopic', auditPlans.exportTopic);
+    this.handle('audit:verifyAttestation', auditPlans.verifyAttestation);
 
     // Test handler to manually trigger message updates
     this.handle('test:triggerMessageUpdate', async (event: IpcMainInvokeEvent, { conversationId }: any) => {
@@ -163,49 +159,49 @@ class IPCController {
       return { success: true, data: testData };
     });
 
-    // Connection handlers (pairing, instances, connections)
-    this.handle('connection:getInstances', connectionHandlers.getInstances);
-    this.handle('connection:getConnectionStatus', connectionHandlers.getConnectionStatus);
-    this.handle('connection:createPairingInvitation', connectionHandlers.createPairingInvitation);
-    this.handle('connection:acceptPairingInvitation', connectionHandlers.acceptPairingInvitation);
-    this.handle('connection:getDataStats', connectionHandlers.getDataStats);
+    // Connection plans (pairing, instances, connections)
+    this.handle('connection:getInstances', connectionPlans.getInstances);
+    this.handle('connection:getConnectionStatus', connectionPlans.getConnectionStatus);
+    this.handle('connection:createPairingInvitation', connectionPlans.createPairingInvitation);
+    this.handle('connection:acceptPairingInvitation', connectionPlans.acceptPairingInvitation);
+    this.handle('connection:getDataStats', connectionPlans.getDataStats);
 
-    // Crypto handlers
-    this.handle('crypto:getKeys', cryptoHandlers.getKeys);
-    this.handle('crypto:getCertificates', cryptoHandlers.getCertificates);
-    this.handle('crypto:export', cryptoHandlers.exportCryptoObject);
+    // Crypto plans
+    this.handle('crypto:getKeys', cryptoPlans.getKeys);
+    this.handle('crypto:getCertificates', cryptoPlans.getCertificates);
+    this.handle('crypto:export', cryptoPlans.exportCryptoObject);
 
-    // Settings handlers (old - to be deprecated)
-    this.handle('settings:get', settingsHandlers.getSetting);
-    this.handle('settings:set', settingsHandlers.setSetting);
-    this.handle('settings:getAll', settingsHandlers.getSettings);
-    this.handle('settings:syncIoM', settingsHandlers.syncIoMSettings);
-    this.handle('settings:subscribe', settingsHandlers.subscribeToSettings);
-    this.handle('settings:getConfig', settingsHandlers.getInstanceConfig);
+    // Settings plans (old - to be deprecated)
+    this.handle('settings:get', settingsPlans.getSetting);
+    this.handle('settings:set', settingsPlans.setSetting);
+    this.handle('settings:getAll', settingsPlans.getSettings);
+    this.handle('settings:syncIoM', settingsPlans.syncIoMSettings);
+    this.handle('settings:subscribe', settingsPlans.subscribeToSettings);
+    this.handle('settings:getConfig', settingsPlans.getInstanceConfig);
 
-    // User Settings handlers (new unified settings)
-    const userSettingsHandlers = createUserSettingsHandlers(nodeOneCore);
-    Object.entries(userSettingsHandlers).forEach(([channel, handler]) => {
+    // User Settings plans (new unified settings)
+    const userSettingsPlans = createUserSettingsPlans(nodeOneCore);
+    Object.entries(userSettingsPlans).forEach(([channel, handler]) => {
       this.handle(channel, handler);
     });
 
-    // AI/LLM handlers
-    this.handle('ai:chat', aiHandlers.chat);
-    this.handle('ai:getModels', aiHandlers.getModels);
-    this.handle('ai:setDefaultModel', aiHandlers.setDefaultModel);
-    this.handle('ai:setApiKey', aiHandlers.setApiKey);
-    this.handle('ai:getTools', aiHandlers.getTools);
-    this.handle('ai:executeTool', aiHandlers.executeTool);
-    this.handle('ai:initialize', aiHandlers.initializeLLM);
-    this.handle('ai:initializeLLM', aiHandlers.initializeLLM); // Alias for UI compatibility
-    this.handle('ai:getOrCreateContact', aiHandlers.getOrCreateContact);
-    this.handle('ai:discoverClaudeModels', aiHandlers.discoverClaudeModels);
-    this.handle('ai:debugTools', aiHandlers.debugTools);
-    this.handle('llm:testApiKey', aiHandlers.testApiKey);
-    this.handle('ai:getDefaultModel', aiHandlers['ai:getDefaultModel']);
+    // AI/LLM plans
+    this.handle('ai:chat', aiPlans.chat);
+    this.handle('ai:getModels', aiPlans.getModels);
+    this.handle('ai:setDefaultModel', aiPlans.setDefaultModel);
+    this.handle('ai:setApiKey', aiPlans.setApiKey);
+    this.handle('ai:getTools', aiPlans.getTools);
+    this.handle('ai:executeTool', aiPlans.executeTool);
+    this.handle('ai:initialize', aiPlans.initializeLLM);
+    this.handle('ai:initializeLLM', aiPlans.initializeLLM); // Alias for UI compatibility
+    this.handle('ai:getOrCreateContact', aiPlans.getOrCreateContact);
+    this.handle('ai:discoverClaudeModels', aiPlans.discoverClaudeModels);
+    this.handle('ai:debugTools', aiPlans.debugTools);
+    this.handle('llm:testApiKey', aiPlans.testApiKey);
+    this.handle('ai:getDefaultModel', aiPlans['ai:getDefaultModel']);
 
-    // LLM Configuration handlers (network Ollama support)
-    registerLlmConfigHandlers();
+    // LLM Configuration plans (network Ollama support)
+    registerLlmConfigPlans();
 
     // Legacy alias for UI compatibility
     this.handle('llm:getConfig', async (event: IpcMainInvokeEvent, params: any) => {
@@ -213,105 +209,105 @@ class IPCController {
       return handleGetOllamaConfig(event, params || {});
     });
 
-    // Attachment handlers
-    this.handle('attachment:store', attachmentHandlers.storeAttachment);
-    this.handle('attachment:get', attachmentHandlers.getAttachment);
-    this.handle('attachment:getMetadata', attachmentHandlers.getAttachmentMetadata);
-    this.handle('attachment:storeMultiple', attachmentHandlers.storeAttachments);
+    // Attachment plans
+    this.handle('attachment:store', attachmentPlans.storeAttachment);
+    this.handle('attachment:get', attachmentPlans.getAttachment);
+    this.handle('attachment:getMetadata', attachmentPlans.getAttachmentMetadata);
+    this.handle('attachment:storeMultiple', attachmentPlans.storeAttachments);
 
-    // Subject handlers
-    this.handle('subjects:create', subjectHandlers['subjects:create']);
-    this.handle('subjects:attach', subjectHandlers['subjects:attach']);
-    this.handle('subjects:getForContent', subjectHandlers['subjects:getForContent']);
-    this.handle('subjects:getAll', subjectHandlers['subjects:getAll']);
-    this.handle('subjects:search', subjectHandlers['subjects:search']);
-    this.handle('subjects:getResonance', subjectHandlers['subjects:getResonance']);
-    this.handle('subjects:extract', subjectHandlers['subjects:extract']);
+    // Subject plans
+    this.handle('subjects:create', subjectPlans['subjects:create']);
+    this.handle('subjects:attach', subjectPlans['subjects:attach']);
+    this.handle('subjects:getForContent', subjectPlans['subjects:getForContent']);
+    this.handle('subjects:getAll', subjectPlans['subjects:getAll']);
+    this.handle('subjects:search', subjectPlans['subjects:search']);
+    this.handle('subjects:getResonance', subjectPlans['subjects:getResonance']);
+    this.handle('subjects:extract', subjectPlans['subjects:extract']);
 
-    // Topic Analysis handlers
-    this.handle('topicAnalysis:analyzeMessages', topicAnalysisHandlers.analyzeMessages);
-    this.handle('topicAnalysis:getSubjects', topicAnalysisHandlers.getSubjects);
-    this.handle('topicAnalysis:getSummary', topicAnalysisHandlers.getSummary);
-    this.handle('topicAnalysis:updateSummary', topicAnalysisHandlers.updateSummary);
-    this.handle('topicAnalysis:extractKeywords', topicAnalysisHandlers.extractKeywords);
-    this.handle('topicAnalysis:mergeSubjects', topicAnalysisHandlers.mergeSubjects);
-    this.handle('topicAnalysis:extractRealtimeKeywords', topicAnalysisHandlers.extractRealtimeKeywords);
-    this.handle('topicAnalysis:extractConversationKeywords', topicAnalysisHandlers.extractConversationKeywords);
-    this.handle('topicAnalysis:getKeywords', topicAnalysisHandlers.getKeywords);
+    // Topic Analysis plans
+    this.handle('topicAnalysis:analyzeMessages', topicAnalysisPlans.analyzeMessages);
+    this.handle('topicAnalysis:getSubjects', topicAnalysisPlans.getSubjects);
+    this.handle('topicAnalysis:getSummary', topicAnalysisPlans.getSummary);
+    this.handle('topicAnalysis:updateSummary', topicAnalysisPlans.updateSummary);
+    this.handle('topicAnalysis:extractKeywords', topicAnalysisPlans.extractKeywords);
+    this.handle('topicAnalysis:mergeSubjects', topicAnalysisPlans.mergeSubjects);
+    this.handle('topicAnalysis:extractRealtimeKeywords', topicAnalysisPlans.extractRealtimeKeywords);
+    this.handle('topicAnalysis:extractConversationKeywords', topicAnalysisPlans.extractConversationKeywords);
+    this.handle('topicAnalysis:getKeywords', topicAnalysisPlans.getKeywords);
 
-    // Chat Memory handlers
-    registerMemoryHandlers(ipcMain, nodeOneCore);
+    // Chat Memory plans
+    registerMemoryPlans(ipcMain, nodeOneCore);
 
-    // Word Cloud Settings handlers
-    this.handle('wordCloudSettings:getSettings', wordCloudSettingsHandlers.getWordCloudSettings);
-    this.handle('wordCloudSettings:updateSettings', wordCloudSettingsHandlers.updateWordCloudSettings);
-    this.handle('wordCloudSettings:resetSettings', wordCloudSettingsHandlers.resetWordCloudSettings);
+    // Word Cloud Settings plans
+    this.handle('wordCloudSettings:getSettings', wordCloudSettingsPlans.getWordCloudSettings);
+    this.handle('wordCloudSettings:updateSettings', wordCloudSettingsPlans.updateWordCloudSettings);
+    this.handle('wordCloudSettings:resetSettings', wordCloudSettingsPlans.resetWordCloudSettings);
 
-    // Keyword Detail handlers
-    this.handle('keywordDetail:getKeywordDetails', keywordDetailHandlers.getKeywordDetails);
-    this.handle('keywordDetail:updateKeywordAccessState', keywordDetailHandlers.updateKeywordAccessState);
+    // Keyword Detail plans
+    this.handle('keywordDetail:getKeywordDetails', keywordDetailPlans.getKeywordDetails);
+    this.handle('keywordDetail:updateKeywordAccessState', keywordDetailPlans.updateKeywordAccessState);
 
-    // Proposal handlers
-    this.handle('proposals:getForTopic', proposalHandlers['proposals:getForTopic']);
-    this.handle('proposals:updateConfig', proposalHandlers['proposals:updateConfig']);
-    this.handle('proposals:getConfig', proposalHandlers['proposals:getConfig']);
-    this.handle('proposals:dismiss', proposalHandlers['proposals:dismiss']);
-    this.handle('proposals:share', proposalHandlers['proposals:share']);
+    // Proposal plans
+    this.handle('proposals:getForTopic', proposalPlans['proposals:getForTopic']);
+    this.handle('proposals:updateConfig', proposalPlans['proposals:updateConfig']);
+    this.handle('proposals:getConfig', proposalPlans['proposals:getConfig']);
+    this.handle('proposals:dismiss', proposalPlans['proposals:dismiss']);
+    this.handle('proposals:share', proposalPlans['proposals:share']);
 
-    // MCP handlers
-    this.handle('mcp:listServers', mcpHandlers.listServers);
-    this.handle('mcp:addServer', mcpHandlers.addServer);
-    this.handle('mcp:updateServer', mcpHandlers.updateServer);
-    this.handle('mcp:removeServer', mcpHandlers.removeServer);
-    this.handle('mcp:getStatus', mcpHandlers.getStatus);
-    this.handle('mcp:getAvailableTools', mcpHandlers.getAvailableTools);
-    this.handle('mcp:getTopicConfig', mcpHandlers.getTopicConfig);
-    this.handle('mcp:setTopicConfig', mcpHandlers.setTopicConfig);
-    this.handle('mcp:reconnect', mcpHandlers.reconnect);
+    // MCP plans
+    this.handle('mcp:listServers', mcpPlans.listServers);
+    this.handle('mcp:addServer', mcpPlans.addServer);
+    this.handle('mcp:updateServer', mcpPlans.updateServer);
+    this.handle('mcp:removeServer', mcpPlans.removeServer);
+    this.handle('mcp:getStatus', mcpPlans.getStatus);
+    this.handle('mcp:getAvailableTools', mcpPlans.getAvailableTools);
+    this.handle('mcp:getTopicConfig', mcpPlans.getTopicConfig);
+    this.handle('mcp:setTopicConfig', mcpPlans.setTopicConfig);
+    this.handle('mcp:reconnect', mcpPlans.reconnect);
 
-    // Export handlers
-    this.handle('export:file', exportHandlers.exportFile);
-    this.handle('export:fileAuto', exportHandlers.exportFileAuto);
-    this.handle('export:message', exportHandlers.exportMessage);
-    this.handle('export:htmlWithMicrodata', exportHandlers.exportHtmlWithMicrodata);
+    // Export plans
+    this.handle('export:file', exportPlans.exportFile);
+    this.handle('export:fileAuto', exportPlans.exportFileAuto);
+    this.handle('export:message', exportPlans.exportMessage);
+    this.handle('export:htmlWithMicrodata', exportPlans.exportHtmlWithMicrodata);
 
-    // Feed-Forward handlers
-    this.handle('feedForward:createSupply', feedForwardHandlers['feedForward:createSupply']);
-    this.handle('feedForward:createDemand', feedForwardHandlers['feedForward:createDemand']);
-    this.handle('feedForward:matchSupplyDemand', feedForwardHandlers['feedForward:matchSupplyDemand']);
-    this.handle('feedForward:updateTrust', feedForwardHandlers['feedForward:updateTrust']);
-    this.handle('feedForward:getCorpusStream', feedForwardHandlers['feedForward:getCorpusStream']);
-    this.handle('feedForward:enableSharing', feedForwardHandlers['feedForward:enableSharing']);
-    this.handle('feedForward:getTrustScore', feedForwardHandlers['feedForward:getTrustScore']);
+    // Feed-Forward plans
+    this.handle('feedForward:createSupply', feedForwardPlans['feedForward:createSupply']);
+    this.handle('feedForward:createDemand', feedForwardPlans['feedForward:createDemand']);
+    this.handle('feedForward:matchSupplyDemand', feedForwardPlans['feedForward:matchSupplyDemand']);
+    this.handle('feedForward:updateTrust', feedForwardPlans['feedForward:updateTrust']);
+    this.handle('feedForward:getCorpusStream', feedForwardPlans['feedForward:getCorpusStream']);
+    this.handle('feedForward:enableSharing', feedForwardPlans['feedForward:enableSharing']);
+    this.handle('feedForward:getTrustScore', feedForwardPlans['feedForward:getTrustScore']);
 
-    // ONE.core handlers
-    this.handle('onecore:initializeNode', oneCoreHandlers.initializeNode);
-    this.handle('onecore:restartNode', oneCoreHandlers.restartNode);
-    this.handle('onecore:createLocalInvite', oneCoreHandlers.createLocalInvite);
-    this.handle('onecore:createBrowserPairingInvite', oneCoreHandlers.createBrowserPairingInvite);
-    this.handle('onecore:getBrowserPairingInvite', oneCoreHandlers.getBrowserPairingInvite);
-    this.handle('onecore:createNetworkInvite', oneCoreHandlers.createNetworkInvite);
-    this.handle('onecore:listInvites', oneCoreHandlers.listInvites);
-    this.handle('onecore:revokeInvite', oneCoreHandlers.revokeInvite);
-    this.handle('onecore:getNodeStatus', oneCoreHandlers.getNodeStatus);
-    this.handle('onecore:setNodeState', oneCoreHandlers.setNodeState);
-    this.handle('onecore:getNodeState', oneCoreHandlers.getNodeState);
-    this.handle('onecore:getNodeConfig', oneCoreHandlers.getNodeConfig);
-    this.handle('onecore:testSettingsReplication', oneCoreHandlers.testSettingsReplication);
-    this.handle('onecore:syncConnectionSettings', oneCoreHandlers.syncConnectionSettings);
-    this.handle('onecore:getCredentialsStatus', oneCoreHandlers.getCredentialsStatus);
-    this.handle('onecore:getContacts', oneCoreHandlers.getContacts);
-    this.handle('onecore:getPeerList', oneCoreHandlers.getPeerList);
-    this.handle('onecore:getOrCreateTopicForContact', topicHandlers.getOrCreateTopicForContact);
-    this.handle('onecore:secureStore', oneCoreHandlers.secureStore);
-    this.handle('onecore:secureRetrieve', oneCoreHandlers.secureRetrieve);
-    this.handle('onecore:clearStorage', oneCoreHandlers.clearStorage);
-    this.handle('onecore:hasPersonName', oneCoreHandlers.hasPersonName);
-    this.handle('onecore:setPersonName', oneCoreHandlers.setPersonName);
-    this.handle('onecore:updateMood', oneCoreHandlers.updateMood);
+    // ONE.core plans
+    this.handle('onecore:initializeNode', oneCorePlans.initializeNode);
+    this.handle('onecore:restartNode', oneCorePlans.restartNode);
+    this.handle('onecore:createLocalInvite', oneCorePlans.createLocalInvite);
+    this.handle('onecore:createBrowserPairingInvite', oneCorePlans.createBrowserPairingInvite);
+    this.handle('onecore:getBrowserPairingInvite', oneCorePlans.getBrowserPairingInvite);
+    this.handle('onecore:createNetworkInvite', oneCorePlans.createNetworkInvite);
+    this.handle('onecore:listInvites', oneCorePlans.listInvites);
+    this.handle('onecore:revokeInvite', oneCorePlans.revokeInvite);
+    this.handle('onecore:getNodeStatus', oneCorePlans.getNodeStatus);
+    this.handle('onecore:setNodeState', oneCorePlans.setNodeState);
+    this.handle('onecore:getNodeState', oneCorePlans.getNodeState);
+    this.handle('onecore:getNodeConfig', oneCorePlans.getNodeConfig);
+    this.handle('onecore:testSettingsReplication', oneCorePlans.testSettingsReplication);
+    this.handle('onecore:syncConnectionSettings', oneCorePlans.syncConnectionSettings);
+    this.handle('onecore:getCredentialsStatus', oneCorePlans.getCredentialsStatus);
+    this.handle('onecore:getContacts', oneCorePlans.getContacts);
+    this.handle('onecore:getPeerList', oneCorePlans.getPeerList);
+    this.handle('onecore:getOrCreateTopicForContact', topicPlans.getOrCreateTopicForContact);
+    this.handle('onecore:secureStore', oneCorePlans.secureStore);
+    this.handle('onecore:secureRetrieve', oneCorePlans.secureRetrieve);
+    this.handle('onecore:clearStorage', oneCorePlans.clearStorage);
+    this.handle('onecore:hasPersonName', oneCorePlans.hasPersonName);
+    this.handle('onecore:setPersonName', oneCorePlans.setPersonName);
+    this.handle('onecore:updateMood', oneCorePlans.updateMood);
 
     // Topic feedback handler
-    this.handle('topics:recordFeedback', topicHandlers.recordSubjectFeedback);
+    this.handle('topics:recordFeedback', topicPlans.recordSubjectFeedback);
 
     // Debug handler for owner ID comparison
     this.handle('debug', (event: IpcMainInvokeEvent, data: any) => {
@@ -323,24 +319,24 @@ class IPCController {
       }
     });
 
-    // Device handlers
-    initializeDeviceHandlers();
+    // Device plans
+    initializeDevicePlans();
 
-    // QuicVC Discovery handlers
-    initializeQuicVCDiscoveryHandlers();
+    // QuicVC Discovery plans
+    initializeQuicVCDiscoveryPlans();
 
-    // Contact handlers
-    registerContactHandlers();
+    // Contact plans
+    registerContactPlans();
 
     // Note: app:clearData is handled in lama-electron-shadcn.js
 
-    // Action handlers (user-initiated actions)
+    // Action plans (user-initiated actions)
     this.handle('action:init', this.handleAction('init'));
     this.handle('action:login', this.handleAction('login'));
     this.handle('action:logout', this.handleAction('logout'));
     this.handle('action:sendMessage', this.handleAction('sendMessage'));
 
-    // Query handlers (request state)
+    // Query plans (request state)
     this.handle('query:getState', this.handleQuery('getState'));
     this.handle('query:getConversation', this.handleQuery('getConversation'));
     this.handle('query:getMessages', this.handleQuery('getMessages'));
@@ -348,7 +344,7 @@ class IPCController {
 
   private handle(channel: string, handler: IPCHandler): void {
     // Remove any existing handler
-    if (this.handlers.has(channel)) {
+    if (this.plans.has(channel)) {
       ipcMain.removeHandler(channel);
     }
 
@@ -392,7 +388,7 @@ class IPCController {
       }
     });
 
-    (this.handlers as any)?.set(channel, handler);
+    (this.plans as any)?.set(channel, handler);
   }
 
   // Generic action handler wrapper
@@ -406,11 +402,11 @@ class IPCController {
           // Platform is already initialized in main process
           return { initialized: true, platform: 'electron' };
         case 'login':
-          return await authHandlers.login(event, payload);
+          return await authPlans.login(event, payload);
         case 'logout':
-          return await authHandlers.logout(event);
+          return await authPlans.logout(event);
         case 'sendMessage':
-          return await chatHandlers.sendMessage(event, payload);
+          return await chatPlans.sendMessage(event, payload);
         default:
           throw new Error(`Unknown action: ${actionType}`);
       }
@@ -424,11 +420,11 @@ class IPCController {
 
       switch (queryType) {
         case 'getState':
-          return await stateHandlers.getState(event, params);
+          return await statePlans.getState(event, params);
         case 'getConversation':
-          return await chatHandlers.getConversation(event, params);
+          return await chatPlans.getConversation(event, params);
         case 'getMessages':
-          return await chatHandlers.getMessages(event, params);
+          return await chatPlans.getMessages(event, params);
         default:
           throw new Error(`Unknown query: ${queryType}`);
       }
@@ -515,11 +511,11 @@ class IPCController {
   }
 
   shutdown(): void {
-    // Remove all handlers
-    this.handlers.forEach((handler: any, channel: any) => {
+    // Remove all plans
+    this.plans.forEach((handler: any, channel: any) => {
       ipcMain.removeHandler(channel);
     });
-    this.handlers.clear();
+    this.plans.clear();
 
     this.safeLog('[IPCController] Shutdown complete');
   }

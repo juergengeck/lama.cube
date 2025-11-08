@@ -153,28 +153,46 @@ function createWindow(): void {
   // AUTO-LOGIN FOR TESTING FEDERATION
   if (process.env.AUTO_LOGIN === 'true') {
     mainWindow?.webContents.once('did-finish-load', async () => {
-      console.log('[AutoLogin] Page loaded, waiting before auto-login...')
-      await new Promise(resolve => setTimeout(resolve, 3000))
-      
-      mainWindow?.webContents.executeJavaScript(`
-        (async () => {
-          console.log('[AutoLogin] Attempting automatic login...')
-          const usernameInput = document.querySelector('input[name="username"]')
-          const passwordInput = document.querySelector('input[type="password"]')
-          const loginButton = document.querySelector('button[type="submit"]')
-          
-          if (usernameInput && passwordInput && loginButton) {
-            usernameInput.value = 'testuser'
-            passwordInput.value = 'testpass123'
-            usernameInput.dispatchEvent(new Event('input', { bubbles: true }))
-            passwordInput.dispatchEvent(new Event('input', { bubbles: true }))
-            await new Promise(resolve => setTimeout(resolve, 100))
-            loginButton.click()
-            return 'Login triggered'
-          }
-          return 'Login form not found'
-        })()
-      `).then(result => console.log('[AutoLogin]', result))
+      console.log('[AutoLogin] Page loaded, waiting for DOM elements...')
+
+      // Poll for login form elements instead of arbitrary delay
+      const waitForLoginForm = async () => {
+        const result = await mainWindow?.webContents.executeJavaScript(`
+          (function() {
+            const usernameInput = document.querySelector('input[name="username"]')
+            const passwordInput = document.querySelector('input[type="password"]')
+            const loginButton = document.querySelector('button[type="submit"]')
+            return usernameInput && passwordInput && loginButton
+          })()
+        `);
+
+        if (result) {
+          console.log('[AutoLogin] Login form found, attempting automatic login...')
+          mainWindow?.webContents.executeJavaScript(`
+            (async () => {
+              console.log('[AutoLogin] Filling login form...')
+              const usernameInput = document.querySelector('input[name="username"]')
+              const passwordInput = document.querySelector('input[type="password"]')
+              const loginButton = document.querySelector('button[type="submit"]')
+
+              usernameInput.value = 'testuser'
+              passwordInput.value = 'testpass123'
+              usernameInput.dispatchEvent(new Event('input', { bubbles: true }))
+              passwordInput.dispatchEvent(new Event('input', { bubbles: true }))
+
+              // Wait for next tick to ensure React state updates
+              await new Promise(resolve => requestAnimationFrame(resolve))
+              loginButton.click()
+              return 'Login triggered'
+            })()
+          `).then(result => console.log('[AutoLogin]', result))
+        } else {
+          console.log('[AutoLogin] Login form not ready, retrying...')
+          setTimeout(waitForLoginForm, 100)
+        }
+      };
+
+      waitForLoginForm()
     })
   }
   
@@ -261,8 +279,23 @@ function startViteServer(): Promise<void> {
         const output = data.toString();
         console.log(output);
         if (output.includes('Local:')) {
-          console.log('Vite server ready');
-          setTimeout(resolve, 1000); // Give it a moment to stabilize
+          console.log('Vite server ready, verifying with HTTP health check...');
+          // Verify server is actually responding instead of arbitrary delay
+          const checkServer = async () => {
+            try {
+              const response = await fetch('http://localhost:5173');
+              if (response.ok) {
+                console.log('Vite server verified and responding');
+                resolve();
+              } else {
+                throw new Error(`Server returned ${response.status}`);
+              }
+            } catch (error) {
+              console.log('Server not ready yet, retrying...');
+              setTimeout(checkServer, 100);
+            }
+          };
+          checkServer();
         }
       });
 
@@ -390,7 +423,7 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
     // Step 1: Set clearing flag immediately to prevent any saves
     global.isClearing = true;
 
-    // Step 2: Capture paths BEFORE shutdown (shutdown may delete them)
+    // Step 2: Capture paths BEFORE shutdown
     const oneDbPath = global.lamaConfig?.instance.directory || path.join(process.cwd(), 'OneDB');
     const userDataPath = app.getPath('userData');
 
@@ -401,10 +434,28 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
     console.log('[ClearData] process.cwd():', process.cwd());
     console.log('[ClearData] Resolved OneDB path to DELETE:', oneDbPath);
     console.log('[ClearData] User data path:', userDataPath);
-    console.log('[ClearData] OneDB exists BEFORE shutdown:', fs.existsSync(oneDbPath));
+    console.log('[ClearData] OneDB exists BEFORE deletion:', fs.existsSync(oneDbPath));
     console.log('[ClearData] ========================================');
 
-    // Step 3: Shutdown services properly
+    // Step 3: Delete OneDB BEFORE shutdown (prevents shutdown from persisting cached data)
+    console.log('[ClearData] Deleting OneDB BEFORE shutdown to prevent data persistence...');
+    if (fs.existsSync(oneDbPath)) {
+      const oneDbContents = fs.readdirSync(oneDbPath);
+      console.log(`[ClearData] OneDB contains ${oneDbContents.length} items`);
+
+      // Delete the entire directory
+      fs.rmSync(oneDbPath, { recursive: true, force: true });
+
+      // Verify it's gone
+      if (fs.existsSync(oneDbPath)) {
+        throw new Error('Failed to delete OneDB directory');
+      }
+      console.log('[ClearData] ✅ OneDB directory successfully deleted BEFORE shutdown');
+    } else {
+      console.log('[ClearData] OneDB directory does not exist');
+    }
+
+    // Step 4: Shutdown services (after data is already deleted)
     console.log('[ClearData] Shutting down services...');
 
     // Shutdown main app first
@@ -419,10 +470,10 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
     try {
       const { default: nodeOneCore } = await import('./main/core/node-one-core.js');
       if (nodeOneCore) {
-        // Call shutdown first if it exists
+        // Call shutdown (won't persist anything since OneDB is already deleted)
         if (nodeOneCore.shutdown) {
           await nodeOneCore.shutdown();
-          console.log('[ClearData] Node.js ONE.core shut down');
+          console.log('[ClearData] Node.js ONE.core shut down (no persistence - OneDB already deleted)');
         }
 
         // Then reset to clean state
@@ -439,15 +490,12 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
         console.log('[ClearData] Node provisioning reset');
       }
 
-      // CRITICAL: Wait for OS to release file handles
-      // Without this delay, rmSync fails because files are still locked
-      console.log('[ClearData] Waiting 3 seconds for file handles to be released...');
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      console.log('[ClearData] Shutdown complete (OneDB already deleted, no persistence possible)');
     } catch (e) {
       console.error('[ClearData] Error shutting down Node.js instance:', e);
     }
 
-    // Step 4: Clear browser storage
+    // Step 5: Clear browser storage
     console.log('[ClearData] Clearing browser storage...');
 
     try {
@@ -464,33 +512,24 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
       console.error('[ClearData] Error clearing browser storage:', error);
     }
 
-    // Step 5: Delete data folders (using paths captured BEFORE shutdown)
-    console.log('[ClearData] Deleting data folders...');
+    // Step 6: Verify OneDB is still deleted (should not exist after shutdown)
+    console.log('[ClearData] Verifying OneDB is still deleted...');
     console.log('[ClearData] OneDB path:', oneDbPath);
     console.log('[ClearData] OneDB exists AFTER shutdown:', fs.existsSync(oneDbPath));
 
-    // Delete OneDB - CRITICAL for removing all chat history
     if (fs.existsSync(oneDbPath)) {
-      const oneDbContents = fs.readdirSync(oneDbPath);
-      console.log(`[ClearData] OneDB contains ${oneDbContents.length} items`);
-
-      // Delete the entire directory
+      console.warn('[ClearData] WARNING: OneDB was recreated after deletion - this should not happen!');
+      // Delete it again if it was somehow recreated
       fs.rmSync(oneDbPath, { recursive: true, force: true });
-
-      // Verify it's gone
-      if (fs.existsSync(oneDbPath)) {
-        throw new Error('Failed to delete OneDB directory');
-      }
-      console.log('[ClearData] ✅ OneDB directory successfully deleted');
+      console.log('[ClearData] OneDB deleted again (should not have been necessary)');
     } else {
-      console.log('[ClearData] OneDB directory does not exist');
+      console.log('[ClearData] ✅ OneDB still deleted (as expected)');
     }
 
     // IMPORTANT: userData directory cannot be deleted while app is running
-    // We'll create a cleanup script that runs BEFORE the app restarts
     console.log('[ClearData] Will delete userData on restart: ' + userDataPath);
 
-    // Step 5: Clear application state
+    // Step 7: Clear application state
     console.log('[ClearData] Resetting application state...');
 
     try {
@@ -503,7 +542,7 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
       console.error('[ClearData] Error clearing state manager:', error);
     }
 
-    // Step 6: Module cache clearing skipped for ESM
+    // Step 8: Module cache clearing skipped for ESM
     // ESM modules are cached differently and will be reloaded on app restart
     console.log('[ClearData] Module cache will be cleared on app restart');
 
@@ -514,7 +553,7 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
       mainWindow?.webContents.send('app:dataCleared');
     }
 
-    // Step 7: Delete userData directory immediately while app is still running
+    // Step 9: Delete userData directory immediately while app is still running
     console.log('[ClearData] Deleting userData directory: ' + userDataPath);
 
     // Try to delete userData immediately (may fail for some files in use)
@@ -544,7 +583,7 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
       console.error('[ClearData] Error clearing userData directory:', error);
     }
 
-    // Step 8: Restart the application
+    // Step 10: Restart the application
     console.log('[ClearData] Scheduling application restart...');
 
     // Give a bit of time to ensure everything is cleaned up

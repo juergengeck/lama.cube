@@ -1,4 +1,3 @@
-"use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -36,9 +35,9 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.initializeDeviceHandlers = initializeDeviceHandlers;
+export { initializeDevicePlans };
 /**
- * IPC handlers for device management
+ * IPC plans for device management
  */
 var electron_1 = require("electron");
 var ipcMain = electron_1.default.ipcMain;
@@ -46,28 +45,28 @@ var device_manager_js_1 = require("../../core/device-manager.js");
 var node_one_core_js_1 = require("../../core/node-one-core.js");
 var one_core_js_1 = require("./one-core.js");
 /**
- * Initialize device IPC handlers
+ * Initialize device IPC plans
  */
-function initializeDeviceHandlers() {
+function initializeDevicePlans() {
     var _this = this;
     /**
      * Create an invitation for pairing
      * Delegates to IOMHandler for proper IoM/IoP support
      */
     ipcMain.handle('invitation:create', function (event, mode) { return __awaiter(_this, void 0, void 0, function () {
-        var connectionHandlers, error_1;
+        var connectionPlans, error_1;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
                     _a.trys.push([0, 3, , 4]);
                     return [4 /*yield*/, Promise.resolve().then(function () { return require('./connection.js'); })];
                 case 1:
-                    connectionHandlers = (_a.sent()).default;
-                    return [4 /*yield*/, connectionHandlers.createPairingInvitation(event, mode)];
+                    connectionPlans = (_a.sent()).default;
+                    return [4 /*yield*/, connectionPlans.createPairingInvitation(event, mode)];
                 case 2: return [2 /*return*/, _a.sent()];
                 case 3:
                     error_1 = _a.sent();
-                    console.error('[DeviceHandlers] Failed to create invitation:', error_1);
+                    console.error('[DevicePlans] Failed to create invitation:', error_1);
                     return [2 /*return*/, {
                             success: false,
                             error: error_1.message
@@ -85,7 +84,7 @@ function initializeDeviceHandlers() {
             switch (_a.label) {
                 case 0:
                     _a.trys.push([0, 2, , 3]);
-                    console.log('[DeviceHandlers] Registering new device:', deviceInfo);
+                    console.log('[DevicePlans] Registering new device:', deviceInfo);
                     // Ensure Node.js instance is initialized
                     if (!node_one_core_js_1.default.initialized) {
                         throw new Error('Node.js instance not initialized');
@@ -100,7 +99,7 @@ function initializeDeviceHandlers() {
                         }];
                 case 2:
                     error_2 = _a.sent();
-                    console.error('[DeviceHandlers] Failed to register device:', error_2);
+                    console.error('[DevicePlans] Failed to register device:', error_2);
                     return [2 /*return*/, {
                             success: false,
                             error: error_2.message
@@ -123,7 +122,7 @@ function initializeDeviceHandlers() {
                     }];
             }
             catch (error) {
-                console.error('[DeviceHandlers] Failed to list devices:', error);
+                console.error('[DevicePlans] Failed to list devices:', error);
                 return [2 /*return*/, {
                         success: false,
                         error: error.message
@@ -156,7 +155,7 @@ function initializeDeviceHandlers() {
                     return [3 /*break*/, 3];
                 case 2:
                     error_3 = _a.sent();
-                    console.error('[DeviceHandlers] Failed to get connected devices:', error_3);
+                    console.error('[DevicePlans] Failed to get connected devices:', error_3);
                     return [2 /*return*/, {
                             success: false,
                             error: error_3.message
@@ -182,7 +181,7 @@ function initializeDeviceHandlers() {
                         }];
                 case 2:
                     error_4 = _a.sent();
-                    console.error('[DeviceHandlers] Failed to remove device:', error_4);
+                    console.error('[DevicePlans] Failed to remove device:', error_4);
                     return [2 /*return*/, {
                             success: false,
                             error: error_4.message
@@ -208,7 +207,7 @@ function initializeDeviceHandlers() {
                     }];
             }
             catch (error) {
-                console.error('[DeviceHandlers] Failed to get device config:', error);
+                console.error('[DevicePlans] Failed to get device config:', error);
                 return [2 /*return*/, {
                         success: false,
                         error: error.message
@@ -231,7 +230,7 @@ function initializeDeviceHandlers() {
                     }];
             }
             catch (error) {
-                console.error('[DeviceHandlers] Failed to send to device:', error);
+                console.error('[DevicePlans] Failed to send to device:', error);
                 return [2 /*return*/, {
                         success: false,
                         error: error.message
@@ -252,7 +251,7 @@ function initializeDeviceHandlers() {
                     }];
             }
             catch (error) {
-                console.error('[DeviceHandlers] Failed to broadcast:', error);
+                console.error('[DevicePlans] Failed to broadcast:', error);
                 return [2 /*return*/, {
                         success: false,
                         error: error.message
@@ -283,7 +282,7 @@ function initializeDeviceHandlers() {
                     }];
             }
             catch (error) {
-                console.error('[DeviceHandlers] Failed to get connections status:', error);
+                console.error('[DevicePlans] Failed to get connections status:', error);
                 return [2 /*return*/, {
                         success: false,
                         error: error.message
@@ -312,7 +311,7 @@ function initializeDeviceHandlers() {
                     }];
             }
             catch (error) {
-                console.error('[DeviceHandlers] Failed to get connections info:', error);
+                console.error('[DevicePlans] Failed to get connections info:', error);
                 return [2 /*return*/, {
                         success: false,
                         error: error.message
@@ -368,7 +367,7 @@ function initializeDeviceHandlers() {
                         devices: device_manager_js_1.default.getAllDevices()
                     }
                 };
-                console.log('[DeviceHandlers] Instance info:', JSON.stringify({
+                console.log('[DevicePlans] Instance info:', JSON.stringify({
                     initialized: instanceInfo.initialized,
                     ownerId: instanceInfo.ownerId,
                     instanceName: instanceInfo.instanceName
@@ -376,7 +375,7 @@ function initializeDeviceHandlers() {
                 return [2 /*return*/, instanceInfo];
             }
             catch (error) {
-                console.error('[DeviceHandlers] Failed to get instance info:', error);
+                console.error('[DevicePlans] Failed to get instance info:', error);
                 return [2 /*return*/, {
                         success: false,
                         error: error.message

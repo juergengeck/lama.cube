@@ -33,6 +33,9 @@ export class MCPInitializationPlan {
     // Step 2: Initialize MCP Manager
     await this.initializeMCPManager(mcpManager);
 
+    // Step 2.5: Register LAMA plans with plan registry
+    await this.registerPlans(context.nodeOneCore);
+
     // Step 3: Start HTTP API server
     const lamaAPIServer = await this.startAPIServer();
 
@@ -60,6 +63,23 @@ export class MCPInitializationPlan {
     await mcpManager.init();
 
     console.log('[MCPInitializationPlan] ✅ MCP Manager initialized');
+  }
+
+  private async registerPlans(nodeOneCore: any): Promise<void> {
+    console.log('[MCPInitializationPlan] Registering plans with plan registry...');
+
+    const { registerLamaCorePlans, getLamaCoreDepend } = await import('@lama/core/services/plan-registration.js');
+    const deps = getLamaCoreDepend(nodeOneCore);
+    registerLamaCorePlans(deps);
+
+    // Register chat.core plan
+    const { chatPlan } = await import('../ipc/plans/chat.js');
+    if (chatPlan) {
+      const { planRegistry } = await import('@mcp/core');
+      planRegistry.registerPlan('chat', 'messaging', chatPlan, 'Chat and messaging operations');
+    }
+
+    console.log('[MCPInitializationPlan] ✅ Plans registered');
   }
 
   private async startAPIServer(): Promise<any> {

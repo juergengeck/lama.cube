@@ -49,7 +49,8 @@ export class ModelInitializationPlan {
     context.onProgress?.('llm', 50, 'LLM configuration loaded');
 
     // Step 3: Initialize ChannelManager (required for TopicModel)
-    const channelManager = await this.initializeChannelManager(context.connectionsModel);
+    // CRITICAL: ChannelManager needs leuteModel to calculate default owners
+    const channelManager = await this.initializeChannelManager(leuteModel);
     context.onProgress?.('channels', 60, 'Channels initialized');
 
     // Step 4: Initialize TopicModel (requires ChannelManager and LeuteModel)
@@ -134,7 +135,9 @@ export class ModelInitializationPlan {
         storeVersionedObject,
         createAccess: async (accessRequests: any[]) => {
           await createAccess(accessRequests);
-        }
+        },
+        // TODO: Implement queryAllLLMObjects to load from storage
+        // For now, cache is populated on-demand when AI contacts are created
       },
       undefined  // No group for now
     );
@@ -155,10 +158,11 @@ export class ModelInitializationPlan {
     return topicModel;
   }
 
-  private async initializeChannelManager(connectionsModel: any): Promise<ChannelManager> {
+  private async initializeChannelManager(leuteModel: LeuteModel): Promise<ChannelManager> {
     console.log('[ModelInitializationPlan] Initializing ChannelManager...');
 
-    const channelManager = new ChannelManager(connectionsModel);
+    // ChannelManager constructor takes leuteModel (not connectionsModel!)
+    const channelManager = new ChannelManager(leuteModel);
     await channelManager.init();
     console.log('[ModelInitializationPlan] ✅ ChannelManager initialized');
 

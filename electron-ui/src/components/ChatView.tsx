@@ -57,6 +57,7 @@ export const ChatView = memo(function ChatView({
   const [isProcessing, setIsProcessing] = useState(false)
   const [isAIProcessing, setIsAIProcessing] = useState(isInitiallyProcessing)
   const [aiStreamingContent, setAiStreamingContent] = useState('')
+  const [aiThinkingContent, setAiThinkingContent] = useState('')  // For reasoning models
   const [lastAnalysisMessageCount, setLastAnalysisMessageCount] = useState(0)
   const [showSummary, setShowSummary] = useState(false)
   const [showSubjectDetail, setShowSubjectDetail] = useState(false)
@@ -143,6 +144,14 @@ export const ChatView = memo(function ChatView({
       }
     }
 
+    // Handle thinking stream (for reasoning models)
+    const handleThinkingStream = (data: any) => {
+      if (data.conversationId === conversationId) {
+        console.log(`[ThinkingStream] Received thinking update (${data.thinking?.length || 0} chars)`)
+        setAiThinkingContent(data.thinking || '')
+      }
+    }
+
     // Handle streaming chunks
     const handleStream = (data: any) => {
       if (data.conversationId === conversationId) {
@@ -168,6 +177,7 @@ export const ChatView = memo(function ChatView({
         console.log(`[Progress] T+${totalElapsed}ms COMPLETE | Total response time: ${totalElapsed}ms`)
         setIsAIProcessing(false)
         setAiStreamingContent('')
+        setAiThinkingContent('')  // Clear thinking when complete
         thinkingStartTimeRef.current = null
         streamingStartTimeRef.current = null
         lastLogTimeRef.current = 0
@@ -175,16 +185,18 @@ export const ChatView = memo(function ChatView({
         onProcessingChange?.(false) // Update parent state
       }
     }
-    
+
     // Subscribe to streaming events via lamaBridge
     const unsubThinking = lamaBridge.on('message:thinking', handleThinking)
     const unsubThinkingStatus = lamaBridge.on('message:thinkingStatus', handleThinkingStatus)
+    const unsubThinkingStream = lamaBridge.on('message:thinkingStream', handleThinkingStream)
     const unsubStream = lamaBridge.on('message:stream', handleStream)
     const unsubComplete = lamaBridge.on('message:updated', handleComplete)
 
     return () => {
       if (unsubThinking) unsubThinking()
       if (unsubThinkingStatus) unsubThinkingStatus()
+      if (unsubThinkingStream) unsubThinkingStream()
       if (unsubStream) unsubStream()
       if (unsubComplete) unsubComplete()
     }
@@ -440,6 +452,7 @@ export const ChatView = memo(function ChatView({
           loading={loading}
           isAIProcessing={isAIProcessing}
           aiStreamingContent={aiStreamingContent}
+          aiThinkingContent={aiThinkingContent}
           topicId={conversationId}
           subjectsJustAppeared={subjectsJustAppeared}
           chatHeaderRef={chatHeaderRef}

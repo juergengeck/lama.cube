@@ -1,4 +1,3 @@
-"use strict";
 /**
  * IPC Handler for Subjects
  * Thin adapter that delegates to lama.core SubjectsHandler
@@ -40,15 +39,15 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.subjectsHandler = exports.subjectHandlers = void 0;
-var SubjectsHandler_js_1 = require("@lama/core/handlers/SubjectsHandler.js");
+export const subjectsHandler = exports.subjectPlans = void 0;
+var SubjectsHandler_js_1 = require("@lama/core/plans/SubjectsHandler.js");
 // Initialize handler
 var subjectsHandler = new SubjectsHandler_js_1.SubjectsHandler();
-exports.subjectsHandler = subjectsHandler;
+export { subjectsHandler };
 /**
- * Subject IPC handlers
+ * Subject IPC plans
  */
-var subjectHandlers = {
+var subjectPlans = {
     /**
      * Create or update a subject
      */
@@ -154,4 +153,4 @@ var subjectHandlers = {
         });
     }); }
 };
-exports.subjectHandlers = subjectHandlers;
+export { subjectPlans };

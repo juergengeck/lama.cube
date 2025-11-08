@@ -1,9 +1,8 @@
-"use strict";
 /**
- * Feed-Forward IPC Handlers (Thin Adapter)
+ * Feed-Forward IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to FeedForwardHandler methods.
- * Business logic lives in ../../../lama.core/handlers/FeedForwardHandler.ts
+ * Business logic lives in ../../../lama.core/plans/FeedForwardHandler.ts
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -42,7 +41,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-var FeedForwardHandler_js_1 = require("@chat/core/handlers/FeedForwardHandler.js");
+var FeedForwardHandler_js_1 = require("@chat/core/plans/FeedForwardHandler.js");
 var manager_js_1 = require("../../core/feed-forward/manager.js");
 // Manager and handler instances
 var manager = null;
@@ -158,7 +157,7 @@ function getTrustScore(event, params) {
         });
     });
 }
-var feedForwardHandlers = {
+var feedForwardPlans = {
     initializeFeedForward: initializeFeedForward,
     'feedForward:createSupply': createSupply,
     'feedForward:createDemand': createDemand,
@@ -168,4 +167,4 @@ var feedForwardHandlers = {
     'feedForward:enableSharing': enableSharing,
     'feedForward:getTrustScore': getTrustScore
 };
-exports.default = feedForwardHandlers;
+export default feedForwardPlans;

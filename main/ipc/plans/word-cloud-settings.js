@@ -1,9 +1,8 @@
-"use strict";
 /**
- * Word Cloud Settings IPC Handlers (Thin Adapter)
+ * Word Cloud Settings IPC Plans (Thin Adapter)
  *
  * Maps Electron IPC calls to WordCloudSettingsHandler methods.
- * Business logic lives in ../../../lama.core/handlers/WordCloudSettingsHandler.ts
+ * Business logic lives in ../../../lama.core/plans/WordCloudSettingsHandler.ts
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -42,10 +41,10 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getWordCloudSettings = getWordCloudSettings;
-exports.updateWordCloudSettings = updateWordCloudSettings;
-exports.resetWordCloudSettings = resetWordCloudSettings;
-var WordCloudSettingsHandler_js_1 = require("@lama/core/handlers/WordCloudSettingsHandler.js");
+export { getWordCloudSettings };
+export { updateWordCloudSettings };
+export { resetWordCloudSettings };
+var WordCloudSettingsHandler_js_1 = require("@lama/core/plans/WordCloudSettingsHandler.js");
 var word_cloud_settings_manager_js_1 = require("@lama/core/one-ai/storage/word-cloud-settings-manager.js");
 // Default settings matching WordCloudSettingsHandler interface
 var DEFAULT_SETTINGS = {

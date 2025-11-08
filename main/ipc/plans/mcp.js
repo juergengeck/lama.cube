@@ -1,6 +1,5 @@
-"use strict";
 /**
- * MCP Server IPC Handlers (TypeScript)
+ * MCP Server IPC Plans (TypeScript)
  * Manages Model Context Protocol server configuration and operations
  */
 var __assign = (this && this.__assign) || function () {
@@ -52,7 +51,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 var mcp_manager_js_1 = require("../../services/mcp-manager.js");
-var mcpHandlers = {
+var mcpPlans = {
     /**
      * List all configured MCP servers
      */
@@ -186,4 +185,4 @@ var mcpHandlers = {
         });
     }
 };
-exports.default = mcpHandlers;
+export default mcpPlans;

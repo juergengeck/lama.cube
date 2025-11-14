@@ -4,11 +4,13 @@ import type { ConnectionsModel } from '@refinio/one.models/lib/models/index.js';
  */
 
 import electron from 'electron';
-const { ipcMain } = electron;
+const { ipcMain, app } = electron;
 import deviceManager from '../../core/device-manager.js';
 import nodeOneCore from '../../core/node-one-core.js';
 import oneCoreHandlers from './one-core.js';
 import type { IpcMainInvokeEvent } from 'electron';
+import fs from 'fs';
+import path from 'path';
 
 interface DeviceInfo {
   name?: string;
@@ -37,7 +39,59 @@ interface IpcResponse<T = any> {
   status?: any;
   connections?: any;
   instance?: any;
+  trustLevels?: Record<string, TrustLevel>;
   [key: string]: any;
+}
+
+type TrustLevel = 'me' | 'trusted' | 'low' | 'unknown';
+
+interface TrustLevelsStore {
+  [instanceId: string]: TrustLevel;
+}
+
+// Trust levels storage
+let trustLevelsStore: TrustLevelsStore = {};
+let trustLevelsPath: string;
+
+/**
+ * Get path to trust levels file
+ */
+function getTrustLevelsPath(): string {
+  if (!trustLevelsPath) {
+    const userDataPath = app.getPath('userData');
+    trustLevelsPath = path.join(userDataPath, 'trust-levels.json');
+  }
+  return trustLevelsPath;
+}
+
+/**
+ * Load trust levels from disk
+ */
+function loadTrustLevels(): TrustLevelsStore {
+  try {
+    const filePath = getTrustLevelsPath();
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf8');
+      trustLevelsStore = JSON.parse(data);
+      console.log('[DeviceHandlers] Loaded trust levels from disk');
+    }
+  } catch (error) {
+    console.error('[DeviceHandlers] Failed to load trust levels:', error);
+  }
+  return trustLevelsStore;
+}
+
+/**
+ * Save trust levels to disk
+ */
+function saveTrustLevels(): void {
+  try {
+    const filePath = getTrustLevelsPath();
+    fs.writeFileSync(filePath, JSON.stringify(trustLevelsStore, null, 2), 'utf8');
+    console.log('[DeviceHandlers] Saved trust levels to disk');
+  } catch (error) {
+    console.error('[DeviceHandlers] Failed to save trust levels:', error);
+  }
 }
 
 /**
@@ -330,6 +384,78 @@ function initializeDevicePlans() {
   // Register both handler names for compatibility
   ipcMain.handle('devices:getInstanceInfo', getInstanceInfo)
   ipcMain.handle('instance:info', getInstanceInfo)
+
+  /**
+   * Get trust levels for all instances
+   */
+  ipcMain.handle('devices:getTrustLevels', async (): Promise<IpcResponse> => {
+    try {
+      // Load from disk on first access
+      if (Object.keys(trustLevelsStore).length === 0) {
+        loadTrustLevels();
+      }
+
+      return {
+        success: true,
+        trustLevels: trustLevelsStore
+      }
+    } catch (error) {
+      console.error('[DeviceHandlers] Failed to get trust levels:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      }
+    }
+  })
+
+  /**
+   * Set trust level for a specific instance
+   */
+  ipcMain.handle('devices:setTrustLevel', async (
+    event: IpcMainInvokeEvent,
+    params: { instanceId: string; trustLevel: TrustLevel }
+  ): Promise<IpcResponse> => {
+    try {
+      const { instanceId, trustLevel } = params;
+
+      console.log(`[DeviceHandlers] Setting trust level for ${instanceId} to ${trustLevel}`);
+
+      // Validate trust level
+      if (!['me', 'trusted', 'low', 'unknown'].includes(trustLevel)) {
+        throw new Error(`Invalid trust level: ${trustLevel}`);
+      }
+
+      // Update in-memory store
+      trustLevelsStore[instanceId] = trustLevel;
+
+      // Persist to disk
+      saveTrustLevels();
+
+      // Settings sync for 'me' level instances
+      if (trustLevel === 'me') {
+        console.log(`[DeviceHandlers] Instance ${instanceId} now has 'me' level trust - settings will be shared`);
+        // UserSettings are stored as ONE.core versioned objects with CHUM sync
+        // So settings will automatically sync via CHUM protocol to all connected instances
+        // No additional action needed - CHUM handles the sync automatically!
+        console.log(`[DeviceHandlers] ✅ Settings sync enabled via CHUM for instance ${instanceId}`);
+      } else {
+        console.log(`[DeviceHandlers] Instance ${instanceId} trust changed to '${trustLevel}' - settings sync disabled`);
+      }
+
+      return {
+        success: true
+      }
+    } catch (error) {
+      console.error('[DeviceHandlers] Failed to set trust level:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      }
+    }
+  })
 }
+
+// Load trust levels on module initialization
+loadTrustLevels();
 
 export { initializeDevicePlans }

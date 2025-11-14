@@ -32,15 +32,14 @@ import nodeOneCore from '../../core/node-one-core.js';
 const llmConfigHandler = new LLMConfigPlan(
   nodeOneCore,
   nodeOneCore.aiAssistantModel,
+  nodeOneCore.llmManager,
+  nodeOneCore.settingsStore,
   {
     testOllamaConnection,
     fetchOllamaModels,
   },
   {
-    encryptToken,
-    decryptToken,
     computeBaseUrl,
-    isEncryptionAvailable,
   }
 );
 

@@ -15,6 +15,7 @@ import { ElectronLLMPlatform } from '../../adapters/electron-llm-platform.js';
 import { AISettingsManager } from './ai-settings-manager.js';
 import type { NodeOneCore } from '../types/one-core.js';
 import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
+import { storeUnversionedObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
 import { getIdObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
 import { createDefaultKeys, hasDefaultKeys } from '@refinio/one.core/lib/keychain/keychain.js';
 import { mcpManager } from '@mcp/core';
@@ -60,10 +61,16 @@ export function createAIAssistantHandler(nodeOneCore: NodeOneCore, llmManager: a
     contextEnrichmentService: (nodeOneCore as any).contextEnrichmentService,
     topicAnalysisModel: (nodeOneCore as any).topicAnalysisModel,
     topicGroupManager: (nodeOneCore as any).topicGroupManager,
+    assemblyManager: (nodeOneCore as any).assemblyManager,
     mcpManager: mcpManager, // For memory context in analysis
     settingsPersistence: settingsPersistence,
     storageDeps: {
       storeVersionedObject,
+      // Wrap storeUnversionedObject to extract just the hash
+      storeUnversionedObject: async (obj: any) => {
+        const result = await storeUnversionedObject(obj);
+        return result.hash;
+      },
       getIdObject,
       createDefaultKeys,
       hasDefaultKeys

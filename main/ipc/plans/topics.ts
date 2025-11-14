@@ -104,34 +104,52 @@ export async function getOrCreateTopicForContact(
       };
     }
 
-    // For non-AI P2P contacts, use the existing profile-based approach
-    const p2pTopicId = contactId;
-    console.log('[Topics IPC] Using profile-based topic ID (Someone hash):', p2pTopicId);
+    // For non-AI P2P contacts, create proper P2P topic ID in format: personId1<->personId2
+    // Get local person ID
+    const localPersonId = myPersonId;
 
-    // Also get the Person ID for CHUM sync and permissions
-    let targetPersonId = contactId;
+    // Also get the remote Person ID for CHUM sync and permissions
+    let remotePersonId = contactId;
     if (nodeInstance.leuteModel) {
       const others = await nodeInstance.leuteModel.others();
       const contact = others.find((c: any) => c.id === contactId);
       if (contact && (contact as any).personId) {
-        targetPersonId = (contact as any).personId;
-        console.log(`[Topics IPC] Found Person ID ${targetPersonId} for Someone ${contactId}`);
+        remotePersonId = (contact as any).personId;
+        console.log(`[Topics IPC] Found Person ID ${remotePersonId} for Someone ${contactId}`);
       }
     }
 
-    // Ensure P2P channels exist using TopicGroupManager with profile-based approach
-    if (nodeInstance.topicGroupManager) {
-      await nodeInstance.topicGroupManager.ensureP2PChannelsForProfile(contactId, targetPersonId);
-      console.log('[Topics IPC] Profile-based P2P channels ensured via TopicGroupManager');
+    // Create P2P topic ID (lexicographically sorted)
+    const p2pTopicId = localPersonId < remotePersonId
+      ? `${localPersonId}<->${remotePersonId}`
+      : `${remotePersonId}<->${localPersonId}`;
+
+    console.log('[Topics IPC] P2P topic ID:', p2pTopicId);
+    console.log('[Topics IPC]   Local person:', localPersonId?.substring(0, 8));
+    console.log('[Topics IPC]   Remote person:', remotePersonId?.substring(0, 8));
+
+    // Ensure P2P topic and channels exist
+    if (nodeInstance.topicModel) {
+      try {
+        // Try to enter existing topic
+        await nodeInstance.topicModel.enterTopicRoom(p2pTopicId);
+        console.log('[Topics IPC] P2P topic already exists');
+      } catch (error) {
+        // Topic doesn't exist, create it via ChatPlan (eating our own dogfood)
+        console.log('[Topics IPC] Creating new P2P topic via ChatPlan...');
+        const { chatPlans } = await import('./chat.js');
+        const result = await chatPlans.createP2PConversation(event, {
+          localPersonId,
+          remotePersonId
+        });
+
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to create P2P conversation');
+        }
+
+        console.log('[Topics IPC] ✅ P2P topic created via ChatPlan:', result.topicId);
+      }
     }
-
-    // Return the P2P topic ID directly - no need to create it again
-    console.log('[Topics IPC] Topic ready:', p2pTopicId);
-
-    // For P2P conversations, the channel should already be created with null owner
-    // by TopicGroupManager.ensureP2PChannelsForPeer
-    // Don't create another channel with owner here
-    console.log('[Topics IPC] P2P channel should already exist with null owner');
 
     return {
       success: true,

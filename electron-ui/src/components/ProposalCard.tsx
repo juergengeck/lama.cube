@@ -32,6 +32,14 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
   return (
     <div className="proposal-card bg-blue-50/80 dark:bg-blue-900/30 backdrop-blur-sm border border-blue-200 dark:border-blue-700 rounded-lg p-2 shadow-sm hover:shadow-md transition-shadow w-full">
       <div className="flex items-center gap-2 min-h-0">
+        {/* Subject description or name - truncate with ellipsis */}
+        <span
+          className="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap overflow-hidden text-ellipsis max-w-md"
+          title={proposal.pastSubjectDescription || proposal.pastSubjectName}
+        >
+          {proposal.pastSubjectDescription || proposal.pastSubjectName}:
+        </span>
+
         {/* Keywords (scrollable) */}
         <div className="flex-1 overflow-x-auto no-scrollbar">
           <div className="flex gap-1">
@@ -45,11 +53,6 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
             ))}
           </div>
         </div>
-
-        {/* Match score */}
-        <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-          {Math.round(proposal.relevanceScore * 100)}%
-        </span>
 
         {/* Share button */}
         <button

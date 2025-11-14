@@ -58,6 +58,7 @@
     "specs/**",
     "tests/**",
     "packages/**",
-    "reference/**"
+    "reference/**",
+    "../trust.core/**"
   ]
 }

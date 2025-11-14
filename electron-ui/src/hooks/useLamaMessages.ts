@@ -6,6 +6,7 @@ export function useLamaMessages(conversationId: string) {
   const [loading, setLoading] = useState(false)
   const [lastUpdate, setLastUpdate] = useState(Date.now()) // Track updates
   const prevConversationIdRef = useRef<string>(conversationId)
+  const loadMessagesRef = useRef<(() => Promise<void>) | null>(null)
 
   // Debug: log when messages state changes
   useEffect(() => {
@@ -33,6 +34,11 @@ export function useLamaMessages(conversationId: string) {
     }
   }, [conversationId])
 
+  // Keep ref updated
+  useEffect(() => {
+    loadMessagesRef.current = loadMessages
+  }, [loadMessages])
+
   // Load on mount and conversation change
   useEffect(() => {
     // Only clear messages when conversation ACTUALLY changes (not on every reload)
@@ -41,14 +47,15 @@ export function useLamaMessages(conversationId: string) {
 
     if (conversationChanged) {
       console.log('[useLamaMessages] 🔄 Conversation changed:', prevConversationIdRef.current, '→', conversationId)
-      setMessages([]) // Clear only when switching conversations
+      // Don't clear messages immediately - let loadMessages replace them
+      // This prevents the empty state flash
       prevConversationIdRef.current = conversationId
     } else {
       console.log('[useLamaMessages] ♻️  Refreshing messages for:', conversationId)
     }
 
     loadMessages()
-  }, [conversationId, loadMessages])
+  }, [conversationId])
 
   // Listen for new messages - this is THE key part
   useEffect(() => {
@@ -68,8 +75,10 @@ export function useLamaMessages(conversationId: string) {
 
       if (normalizedEvent === normalizedCurrent) {
         console.log('[useLamaMessages] ✅✅✅ MATCH! Loading fresh messages...')
-        // Call loadMessages to fetch fresh data
-        loadMessages()
+        // Use ref to avoid dependency issues
+        if (loadMessagesRef.current) {
+          loadMessagesRef.current()
+        }
       } else {
         console.log('[useLamaMessages] ❌ No match, ignoring event')
       }
@@ -83,7 +92,7 @@ export function useLamaMessages(conversationId: string) {
       console.log('[useLamaMessages] 🧹 Cleaning up listener for:', conversationId)
       lamaBridge.off('chat:newMessages', handleNewMessages)
     }
-  }, [conversationId, loadMessages]) // Include loadMessages in dependencies
+  }, [conversationId])
 
   // Send message
   const sendMessage = async (topicId: string, content: string, attachments?: any[]) => {
@@ -114,5 +123,5 @@ export function useLamaMessages(conversationId: string) {
     return messageId
   }
 
-  return { messages, loading, sendMessage }
+  return { messages, loading, sendMessage, loadMessages }
 }

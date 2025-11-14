@@ -30,7 +30,25 @@ export function registerContactPlans() {
 
   // Get all contacts
   ipcMain.handle('contacts:list', async (): Promise<any> => {
-    return await contactsPlan.getContacts();
+    const response = await contactsPlan.getContacts();
+
+    // Enrich contacts with LLM metadata (same as getConversations)
+    if (response.success && response.contacts && nodeOneCore.aiAssistantModel) {
+      try {
+        response.contacts = response.contacts.map((contact: any) => {
+          const isAI = nodeOneCore.aiAssistantModel.isAIPerson(contact.id);
+          return {
+            ...contact,
+            isAI,
+            isLLM: isAI  // Backward compatibility
+          };
+        });
+      } catch (error) {
+        console.error('[ContactsIPC] Error enriching contacts with LLM info:', error);
+      }
+    }
+
+    return response;
   });
 
   // Get pending contacts for review
@@ -101,3 +119,4 @@ export function registerContactPlans() {
     });
   }
 }
+export { contactsPlan };

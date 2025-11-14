@@ -33,7 +33,8 @@ function getProposalsHandler(): ProposalsPlan {
   if (!proposalEngine && nodeOneCoreInstance.topicAnalysisModel && nodeOneCoreInstance.channelManager) {
     proposalEngine = new ProposalEngine(
       nodeOneCoreInstance.topicAnalysisModel,
-      nodeOneCoreInstance.channelManager
+      nodeOneCoreInstance.channelManager,
+      (nodeOneCoreInstance as any).subjectPlan  // Pass memory plan for memory-based proposals
     );
   }
   if (!proposalEngine) {
@@ -138,6 +139,45 @@ async function share(
 }
 
 /**
+ * Get proposals based on user's current input text (real-time)
+ * Handler: proposals:getForInput
+ */
+async function getForInput(
+  event: IpcMainInvokeEvent,
+  {
+    topicId,
+    inputText,
+  }: {
+    topicId: string;
+    inputText: string;
+  }
+) {
+  if (!proposalEngine) {
+    throw new Error('ProposalEngine not initialized');
+  }
+
+  // Get user config
+  const handler = getProposalsHandler();
+  const configResponse = await handler.getConfig({});
+  const config = configResponse.config;
+
+  // Generate proposals from input text
+  const startTime = Date.now();
+  const proposals = await proposalEngine.getProposalsForInput(topicId, inputText, config);
+  const computeTimeMs = Date.now() - startTime;
+
+  // Rank proposals
+  const rankedProposals = proposalRanker.rankProposals(proposals, config);
+
+  return {
+    proposals: rankedProposals,
+    count: rankedProposals.length,
+    cached: false,
+    computeTimeMs,
+  };
+}
+
+/**
  * Export proposal plans
  */
 export const proposalPlans = {
@@ -146,4 +186,5 @@ export const proposalPlans = {
   'proposals:getConfig': getConfig,
   'proposals:dismiss': dismiss,
   'proposals:share': share,
+  'proposals:getForInput': getForInput,
 };

@@ -9,7 +9,7 @@
     "build:nocheck": "vite build",
     "build:test": "npm run test:ci && npm run build",
     "preview": "vite preview",
-    "electron": "npm run build && cd .. && electron lama-electron-shadcn.js",
+    "electron": "npm run build && cd .. && electron dist/lama-electron-shadcn.js",
     "electron:test": "npm run build:test && electron ../lama-electron.js",
     "test": "jest --config jest.config.cjs --passWithNoTests",
     "test:watch": "jest --config jest.config.cjs --watch",

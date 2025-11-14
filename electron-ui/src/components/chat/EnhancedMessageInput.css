@@ -276,6 +276,12 @@
   position: relative;
 }
 
+/* Textarea wrapper for clear button positioning */
+.input-row > .relative {
+  display: flex;
+  align-items: flex-end;
+}
+
 .attach-button {
   background: none;
   border: none;
@@ -301,13 +307,16 @@
   background: #333;
   border: 1px solid #444;
   border-radius: 20px;
-  padding: 10px 15px;
+  padding: 10px 40px 10px 15px; /* Extra padding on right for clear button */
   color: #fff;
   font-size: 14px;
+  line-height: 1.5; /* 21px line height for 14px font */
   font-family: inherit;
   resize: none;
   min-height: 20px;
-  max-height: 100px;
+  max-height: 125px; /* 5 lines: (14px × 1.5 × 5) + 20px padding = 125px */
+  overflow-y: auto;
+  overflow-x: hidden; /* Prevent horizontal scrollbar */
   transition: all 0.2s ease;
 }
 
@@ -335,6 +344,50 @@
 
 .enhanced-message-input.light .message-textarea:disabled {
   background: #f5f5f5;
+}
+
+/* Textarea scrollbar - hidden for cleaner look */
+.message-textarea::-webkit-scrollbar {
+  display: none;
+}
+
+.message-textarea {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Clear text button - integrated into textarea */
+.clear-text-button {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+}
+
+.clear-text-button:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+  color: #999;
+}
+
+.enhanced-message-input.light .clear-text-button {
+  color: #999;
+}
+
+.enhanced-message-input.light .clear-text-button:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #666;
 }
 
 .send-button {

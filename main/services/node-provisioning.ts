@@ -8,6 +8,7 @@ import electron from 'electron';
 const { ipcMain } = electron;
 import nodeOneCore from '../core/node-one-core.js';
 import stateManager from '../state/manager.js';
+import assemblyManagerSingleton from './assembly-manager-singleton.js';
 
 class NodeProvisioning {
   public user: any;
@@ -114,49 +115,20 @@ class NodeProvisioning {
 
       // Initialize Unified Plan System (if not already initialized)
       try {
-        const { initializeUnifiedPlanSystem, getPlanRegistry } = await import('../unified-plan-system-init.js')
-        if (!getPlanRegistry()) {
-          await initializeUnifiedPlanSystem(nodeOneCore)
-          console.log('[NodeProvisioning] Unified Plan System initialized')
-        } else {
-          console.log('[NodeProvisioning] Unified Plan System already initialized')
-        }
+        const { initializeUnifiedPlanSystem } = await import('../unified-plan-system-init.js')
+        await initializeUnifiedPlanSystem(nodeOneCore)
+        console.log('[NodeProvisioning] ✅ Unified Plan System initialized (Phases 1-3)')
       } catch (error) {
         console.error('[NodeProvisioning] Failed to initialize Unified Plan System:', error)
         // Non-critical - allow app to continue
       }
 
-      // Create pairing invitation using the Node's own pairing manager
-      let pairingInvite = null
-      try {
-        if (nodeOneCore.connectionsModel && nodeOneCore.connectionsModel.pairing) {
-          console.log('[NodeProvisioning] Creating pairing invitation for browser connection...')
-          
-          // Use the proper API - let the Node instance create its own invitation
-          const invitation = await nodeOneCore.connectionsModel.pairing.createInvitation()
+      // Invitations are created on-demand via IPC, not automatically during init
 
-          // Use CommServer for pairing
-          pairingInvite = invitation  // Don't override URL, use what the invitation provides
-          
-          console.log('[NodeProvisioning] Created pairing invitation for already-initialized Node')
-          console.log('[NodeProvisioning] Pairing token:', pairingInvite.token)
-        }
-      } catch (error) {
-        console.error('[NodeProvisioning] Failed to create pairing invitation:', error)
-      }
-      
-      console.log('[NodeProvisioning] IPC returning result:', JSON.stringify({
-        success: true,
-        nodeId: nodeInfo.ownerId,
-        endpoint: (nodeOneCore as any).commServerUrl || 'wss://comm10.dev.refinio.one',
-        pairingInvite: pairingInvite
-      }, null, 2))
-      
       return {
         success: true,
         nodeId: nodeInfo.ownerId,
-        endpoint: (nodeOneCore as any).commServerUrl || 'wss://comm10.dev.refinio.one',
-        pairingInvite: pairingInvite  // Include pairing invitation
+        endpoint: (nodeOneCore as any).commServerUrl || 'wss://comm10.dev.refinio.one'
       }
     } else if (nodeInfo.initialized && !nodeInfo.ownerId) {
       console.log('[NodeProvisioning] Node initialized but no owner ID yet, re-initializing...')
@@ -190,31 +162,8 @@ class NodeProvisioning {
       await this.initializeNodeInstance(provisioningData)
       
       console.log('[NodeProvisioning] Node instance provisioned successfully')
-      
-      // Create pairing invitation using the Node's own pairing manager
-      // This is the PROPER way - let the instance create its own invitation
-      let pairingInvite = null
-      try {
-        if (nodeOneCore.connectionsModel && nodeOneCore.connectionsModel.pairing) {
-          console.log('[NodeProvisioning] Creating pairing invitation through Node\'s pairing manager...')
 
-          // Use the proper API - let the Node instance create its own invitation
-          // This ensures the invitation is properly registered with the correct keys
-          const invitation = await nodeOneCore.connectionsModel.pairing.createInvitation()
-          
-          // Use commserver URL from nodeOneCore for the invitation
-          pairingInvite = {
-            ...invitation,
-            url: (nodeOneCore as any).commServerUrl || 'wss://comm10.dev.refinio.one'  // Use configured commserver URL
-          }
-          
-          console.log('[NodeProvisioning] PAIRING INVITATION:', JSON.stringify(pairingInvite, null, 2))
-          console.log('[NodeProvisioning] Created invitation through proper API with token:', pairingInvite.token)
-          console.log('[NodeProvisioning] Pairing invitation ready at:', pairingInvite.url)
-        }
-      } catch (error) {
-        console.error('[NodeProvisioning] Failed to create pairing invitation:', error)
-      }
+      // Invitations are created on-demand via IPC, not automatically during init
 
       // Create profile with OneInstanceEndpoint so the instance can be paired
       console.log('[NodeProvisioning] Creating profile with OneInstanceEndpoint...')
@@ -322,8 +271,7 @@ class NodeProvisioning {
       return {
         success: true,
         nodeId: nodeOwnerId || 'node-' + Date.now(),
-        endpoint: (nodeOneCore as any).commServerUrl || 'wss://comm10.dev.refinio.one',
-        pairingInvite: pairingInvite  // Include pairing invitation
+        endpoint: (nodeOneCore as any).commServerUrl || 'wss://comm10.dev.refinio.one'
       }
       
     } catch (error) {
@@ -363,6 +311,8 @@ class NodeProvisioning {
   async initializeNodeInstance(provisioningData: any): Promise<any> {
     const { user } = provisioningData || {}
 
+    const t0 = performance.now();
+    console.log('[NodeProvisioning] ⏱️ Starting Node instance initialization at', t0.toFixed(1), 'ms');
     console.log('[NodeProvisioning] Initializing Node instance for user:', user?.name)
 
     // Check if Node is already initialized
@@ -371,20 +321,21 @@ class NodeProvisioning {
       console.log('[NodeProvisioning] Node already initialized')
       return
     }
-    
+
     // Initialize Node.js with same credentials as browser
     const username = user.name
     const password = user.password
-    
+
     if (!username || !password) {
       throw new Error('Username and password required for Node initialization')
     }
-    
+
     console.log('[NodeProvisioning] Initializing Node.js with username:', username)
 
     // Create progress callback that sends IPC events to browser
     const onProgress = (stage: string, percent: number, message: string) => {
-      console.log(`[NodeProvisioning] Progress: ${percent}% - ${message}`)
+      const tNow = performance.now();
+      console.log(`[NodeProvisioning] ⏱️ Progress at +${(tNow - t0).toFixed(1)}ms: ${percent}% - ${message}`)
 
       // Send progress event to browser via IPC
       if (global.mainWindow && !global.mainWindow.isDestroyed()) {
@@ -396,7 +347,11 @@ class NodeProvisioning {
       }
     }
 
+    const tBeforeInit = performance.now();
+    console.log('[NodeProvisioning] ⏱️ Calling nodeOneCore.initialize at +${(tBeforeInit - t0).toFixed(1)}ms');
     const result = await nodeOneCore.initialize(username, password, onProgress)
+    const tAfterInit = performance.now();
+    console.log('[NodeProvisioning] ⏱️ nodeOneCore.initialize completed after', (tAfterInit - tBeforeInit).toFixed(1), 'ms');
     if (!result.success) {
       // If it's a decryption error, it means passwords don't match
       if (result.error && result.error.includes('CYENC-SYMDEC')) {
@@ -408,24 +363,51 @@ class NodeProvisioning {
     console.log('[NodeProvisioning] Node.js ONE.core initialized with ID:', result.ownerId)
 
     // Set up message sync - initializes AI assistant model and message listeners
+    const tBeforeMessageSync = performance.now();
+    console.log('[NodeProvisioning] ⏱️ Starting setupMessageSync at +${(tBeforeMessageSync - t0).toFixed(1)}ms');
+
+    // Send progress update to UI
+    onProgress('ai-discovery', 105, 'Discovering AI models...');
+
     try {
       await nodeOneCore.setupMessageSync()
+      const tAfterMessageSync = performance.now();
+      console.log('[NodeProvisioning] ⏱️ setupMessageSync completed after', (tAfterMessageSync - tBeforeMessageSync).toFixed(1), 'ms');
       console.log('[NodeProvisioning] Message sync initialized - AI assistant ready')
+
+      // Final progress update
+      onProgress('complete', 110, 'AI assistant ready');
     } catch (error) {
       console.error('[NodeProvisioning] Failed to setup message sync:', error)
       throw error // This is critical - fail provisioning if AI setup fails
     }
 
     // Initialize memory tools with NodeOneCore reference
+    const tBeforeMCP = performance.now();
+    console.log('[NodeProvisioning] ⏱️ Starting MCP initialization at +${(tBeforeMCP - t0).toFixed(1)}ms');
     try {
       const { default: mcpManager } = await import('./mcp-manager.js')
       mcpManager.setNodeOneCore(nodeOneCore)
+      const tAfterMCP = performance.now();
+      console.log('[NodeProvisioning] ⏱️ MCP initialization completed after', (tAfterMCP - tBeforeMCP).toFixed(1), 'ms');
       console.log('[NodeProvisioning] Memory tools initialized with NodeOneCore')
     } catch (error) {
       console.warn('[NodeProvisioning] Failed to initialize memory tools:', error)
     }
 
+    // Initialize AssemblyManager for knowledge extraction and Supply/Demand markets
+    try {
+      console.log('[NodeProvisioning] Initializing AssemblyManager...')
+      await assemblyManagerSingleton.init()
+      console.log('[NodeProvisioning] AssemblyManager initialized - knowledge extraction active')
+    } catch (error) {
+      console.warn('[NodeProvisioning] Failed to initialize AssemblyManager:', error)
+      // Non-critical - continue without assembly
+    }
+
     // Update LLMManager SystemPromptBuilder with NodeOneCore dependencies
+    const tBeforeLLMUpdate = performance.now();
+    console.log('[NodeProvisioning] ⏱️ Starting LLMManager update at +${(tBeforeLLMUpdate - t0).toFixed(1)}ms');
     try {
       const { default: llmManager } = await import('./llm-manager-singleton.js')
       const userSettingsManager = (nodeOneCore as any).userSettingsManager
@@ -437,10 +419,15 @@ class NodeProvisioning {
         topicAnalysisModel,
         channelManager
       )
+      const tAfterLLMUpdate = performance.now();
+      console.log('[NodeProvisioning] ⏱️ LLMManager update completed after', (tAfterLLMUpdate - tBeforeLLMUpdate).toFixed(1), 'ms');
       console.log('[NodeProvisioning] LLMManager SystemPromptBuilder dependencies updated')
     } catch (error) {
       console.warn('[NodeProvisioning] Failed to update LLMManager dependencies:', error)
     }
+
+    const tEnd = performance.now();
+    console.log('[NodeProvisioning] ⏱️ TOTAL initializeNodeInstance time:', (tEnd - t0).toFixed(1), 'ms');
 
     // Skip heavy configuration during init - use minimal setup
     // Full capabilities can be enabled on-demand
@@ -449,7 +436,7 @@ class NodeProvisioning {
     try {
       const { initializeUnifiedPlanSystem } = await import('../unified-plan-system-init.js')
       await initializeUnifiedPlanSystem(nodeOneCore)
-      console.log('[NodeProvisioning] Unified Plan System initialized')
+      console.log('[NodeProvisioning] ✅ Unified Plan System initialized (Phases 1-3)')
     } catch (error) {
       console.error('[NodeProvisioning] Failed to initialize Unified Plan System:', error)
       // Non-critical - allow app to continue

@@ -63,7 +63,11 @@ export class SettingsHandler {
       if (!this.nodeOneCore.email) {
         throw new Error('[SettingsHandler] NodeOneCore not initialized - no user email');
       }
-      this.settingsManager = new UserSettingsManager(this.nodeOneCore, this.nodeOneCore.email);
+      this.settingsManager = new UserSettingsManager(
+        this.nodeOneCore,
+        this.nodeOneCore.email,
+        this.nodeOneCore.ownerId
+      );
     }
     return this.settingsManager;
   }

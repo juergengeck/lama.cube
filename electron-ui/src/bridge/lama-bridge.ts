@@ -29,6 +29,7 @@ export interface LamaAPI {
   getAvailableModels: () => Promise<any[]>
   getDefaultModel: () => Promise<string | null>
   setDefaultModel: (modelId: string) => Promise<boolean>
+  switchTopicModel: (topicId: string, newModelId: string) => Promise<boolean>
   enableAIForTopic: (topicId: string) => Promise<boolean>
   disableAIForTopic: (topicId: string) => Promise<boolean>
   getBestModelForTask: (task: 'coding' | 'reasoning' | 'chat' | 'analysis') => Promise<any>
@@ -38,6 +39,9 @@ export interface LamaAPI {
   createUdpSocket: (options: SocketOptions) => Promise<string>
   sendUdpMessage: (socketId: string, message: Buffer, port: number, address: string) => Promise<void>
   
+  // Proposals
+  updateProposalConfig: (config: { minJaccard?: number }) => Promise<void>
+
   // Events
   on: (event: string, callback: (...args: any[]) => void) => void
   off: (event: string, callback: (...args: any[]) => void) => void
@@ -312,7 +316,15 @@ class LamaBridge implements LamaAPI {
     const result = await window.electronAPI.invoke('ai:setDefaultModel', { modelId })
     return result.success
   }
-  
+
+  async switchTopicModel(topicId: string, newModelId: string): Promise<boolean> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('ai:switchTopicModel', { topicId, newModelId })
+    return result.success
+  }
+
   async enableAIForTopic(topicId: string): Promise<boolean> {
     if (!window.electronAPI) {
       throw new Error('IPC not available')
@@ -482,6 +494,16 @@ class LamaBridge implements LamaAPI {
       }
     }
     return await window.electronAPI.invoke('invitation:create', mode)
+  }
+
+  async updateProposalConfig(config: { minJaccard?: number }): Promise<void> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('proposals:updateConfig', { config })
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to update proposal config')
+    }
   }
 }
 

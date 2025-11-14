@@ -80,9 +80,22 @@ export const ChatContext: React.FC<ChatContextProps> = ({
   }
 
   // Check if this is an AI conversation (has AI participant)
-  const hasAIParticipant = messages.some(m => m.isAI) ||
-                           topicId === 'default' ||
-                           topicId === 'ai-chat'
+  const [hasAIParticipant, setHasAIParticipant] = useState(false)
+
+  // Check if topic has AI participant when topicId changes
+  useEffect(() => {
+    const checkAIParticipant = async () => {
+      try {
+        const response = await window.electronAPI.invoke('ai:isAITopic', { topicId })
+        if (response.success) {
+          setHasAIParticipant(response.isAI)
+        }
+      } catch (err) {
+        console.error('[ChatContext] Error checking AI topic:', err)
+      }
+    }
+    checkAIParticipant()
+  }, [topicId])
 
   // Load summary when component mounts or topicId changes
   useEffect(() => {

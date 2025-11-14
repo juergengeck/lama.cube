@@ -86,13 +86,18 @@ export const LLMRecipe = {
         },
         {
             itemprop: 'capabilities',
-            itemtype: { 
-                type: 'array', 
-                item: { 
+            itemtype: {
+                type: 'array',
+                item: {
                     type: 'string',
                     regexp: /^(chat|inference)$/
-                } 
+                }
             },
+            optional: true
+        },
+        {
+            itemprop: 'systemPrompt',
+            itemtype: { type: 'string' },
             optional: true
         },
         // Model parameters

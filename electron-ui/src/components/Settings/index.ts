@@ -2,3 +2,8 @@ export { AISettingsPanel } from './AISettingsPanel';
 export { UISettingsPanel } from './UISettingsPanel';
 export { ProposalSettingsPanel } from './ProposalSettingsPanel';
 export { SettingsErrorBoundary } from './SettingsErrorBoundary';
+export { ProfileSettingsPanel } from './ProfileSettingsPanel';
+export { NetworkSettingsPanel } from './NetworkSettingsPanel';
+export { AIConfigPanel } from './AIConfigPanel';
+export { PrivacySettingsPanel } from './PrivacySettingsPanel';
+export { AccountSettingsPanel } from './AccountSettingsPanel';

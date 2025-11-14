@@ -4,11 +4,25 @@
  *
  * IMPORTANT: These tools only work for -private models (LAMA)
  * They provide access to the LAMA topic which serves as the AI's memory
+ *
+ * TODO - ARCHITECTURAL DEBT:
+ * Most business logic is still in this file. memory_context delegates to MemoryPlan
+ * properly, but other tools still have inline logic. All should delegate to
+ * memory.core/plans/MemoryPlan. See chat.core/plans/ChatPlan for correct pattern.
  */
+
+import { MemoryPlan } from '../../../../../memory.core/dist/plans/MemoryPlan.js';
 
 export class MemoryTools {
   constructor(nodeOneCore) {
     this.nodeOneCore = nodeOneCore
+    // Initialize MemoryPlan with dependencies
+    // Note: subjectPlan is not used by getContextForMessage, so passing null for now
+    this.memoryPlan = new MemoryPlan(
+      null, // subjectPlan - TODO: wire this up properly
+      nodeOneCore?.topicAnalysisModel,
+      nodeOneCore?.channelManager
+    );
   }
 
   /**
@@ -16,6 +30,25 @@ export class MemoryTools {
    */
   getToolDefinitions() {
     return [
+      {
+        name: 'memory_context',
+        description: 'PROACTIVE TOOL: Call this BEFORE responding to get relevant memories based on keywords in the user\'s message. Automatically extracts keywords, finds matching memories, and returns context. Use at START of conversation to check for relevant context.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            message: {
+              type: 'string',
+              description: 'The user\'s message to extract keywords from and find relevant memories for'
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum number of memory items to return (default: 5)',
+              default: 5
+            }
+          },
+          required: ['message']
+        }
+      },
       {
         name: 'memory_store',
         description: 'Store a new memory (insight, learning, or important information) to your long-term memory. Use this to remember things across conversations.',
@@ -148,6 +181,9 @@ export class MemoryTools {
     // Access control is enforced by the topic system itself
 
     switch (toolName) {
+      case 'memory_context':
+        return await this.getContextForMessage(params.message, params.limit || 5)
+
       case 'memory_store':
         return await this.storeMemory(params.content, params.category, params.contactEmail)
 
@@ -696,6 +732,61 @@ export class MemoryTools {
         }],
         isError: true
       }
+    }
+  }
+
+  /**
+   * Get relevant context for a message - PROPERLY DELEGATES TO MEMORYPLAN
+   * This is the only method that follows the correct Plan architecture
+   */
+  async getContextForMessage(message, limit = 5) {
+    try {
+      console.error(`[MemoryTools] Getting context via MemoryPlan for: "${message.substring(0, 50)}..."`)
+
+      const result = await this.memoryPlan.getContextForMessage(message, limit);
+
+      if (result.subjects.length === 0) {
+        return {
+          content: [{
+            type: 'text',
+            text: result.keywords.length > 0
+              ? `Keywords found: ${result.keywords.join(', ')}\n\nNo existing memories for these keywords - new context.`
+              : 'No keywords extracted from message - no relevant context.'
+          }]
+        };
+      }
+
+      // Format results for MCP
+      let contextText = `# Relevant Context\n\n`;
+      contextText += `Keywords: ${result.keywords.join(', ')}\n\n`;
+      contextText += `Found ${result.subjects.length} relevant subjects:\n\n`;
+
+      for (const { subject, matchingKeywords } of result.subjects) {
+        contextText += `## ${subject.keywordCombination || subject.name}\n`;
+        contextText += `**Keywords**: ${subject.keywords?.join(', ') || 'none'}\n`;
+        contextText += `**Description**: ${subject.description || 'no description'}\n`;
+        contextText += `**Matching**: ${matchingKeywords.join(', ')}\n\n`;
+      }
+
+      contextText += `\n**Use this context** to inform your response.`;
+
+      console.error(`[MemoryTools] ✅ MemoryPlan returned ${result.subjects.length} subjects`);
+
+      return {
+        content: [{
+          type: 'text',
+          text: contextText
+        }]
+      };
+    } catch (error) {
+      console.error('[MemoryTools] MemoryPlan.getContextForMessage failed:', error);
+      return {
+        content: [{
+          type: 'text',
+          text: `Failed to get context: ${error.message}`
+        }],
+        isError: true
+      };
     }
   }
 }

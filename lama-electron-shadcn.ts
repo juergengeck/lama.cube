@@ -283,7 +283,7 @@ function startViteServer(): Promise<void> {
           // Verify server is actually responding instead of arbitrary delay
           const checkServer = async () => {
             try {
-              const response = await fetch('http://localhost:5173');
+              const response = await fetch('http://localhost:5176');
               if (response.ok) {
                 console.log('Vite server verified and responding');
                 resolve();
@@ -370,16 +370,17 @@ app.on('window-all-closed', () => {
     viteProcess.kill('SIGTERM');
   }
 
-  // On macOS, keep app in dock but clean up resources
-  // On other platforms, quit completely
-  if (process.platform !== 'darwin') {
-    console.log(`[Main-${process.pid}] Non-macOS platform, quitting...`);
-    app.quit();
-  } else {
-    console.log(`[Main-${process.pid}] macOS: App stays in dock, resources cleaned`);
-    // Clean up any instance-specific resources here
-    mainWindow = null;
-  }
+  // Quit on all platforms when window closes
+  console.log(`[Main-${process.pid}] Quitting application...`);
+
+  // Force shutdown after brief cleanup period
+  // This ensures the app exits even if there are lingering timers/intervals
+  setTimeout(() => {
+    console.log(`[Main-${process.pid}] Force exiting...`);
+    process.exit(0);
+  }, 500);
+
+  app.quit();
 });
 
 app.on('activate', () => {

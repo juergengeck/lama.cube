@@ -17,6 +17,11 @@ export const UserSettingsRecipe: Recipe = {
             itemtype: { type: 'string' }
         },
         {
+            itemprop: 'instanceId',
+            itemtype: { type: 'string' },
+            optional: true // Optional for backwards compatibility
+        },
+        {
             itemprop: 'ai',
             itemtype: {
                 type: 'object',

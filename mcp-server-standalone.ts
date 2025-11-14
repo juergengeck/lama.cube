@@ -88,6 +88,28 @@ class NodeOneCoreHTTPClient {
           // HTTP endpoint enriches AI data server-side, just unwrap response
           return response.data || [];
         }
+      },
+      // Required by sendMessage - proxy to HTTP call
+      enterTopicRoom: async (topicId: string) => {
+        // The HTTP API doesn't need enterTopicRoom - it handles this internally
+        // Just return a mock room object with the methods ChatPlan needs
+        return {
+          sendMessage: async (message: any, channelOwner?: any) => {
+            // Delegate to HTTP API chat:sendMessage
+            return await this.call('chat:sendMessage', {
+              conversationId: topicId,
+              content: message.text || message.content,
+              attachments: message.attachments || []
+            });
+          },
+          sendMessageWithAttachmentAsHash: async (message: any, attachmentHashes: string[], channelOwner?: any) => {
+            return await this.call('chat:sendMessage', {
+              conversationId: topicId,
+              content: message.text || message.content,
+              attachments: attachmentHashes
+            });
+          }
+        };
       }
     };
   }

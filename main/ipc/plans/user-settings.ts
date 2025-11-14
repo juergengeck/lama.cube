@@ -23,7 +23,11 @@ export default function createUserSettingsHandlers(nodeOneCoreInstance: typeof n
             if (!nodeOneCoreInstance.email) {
                 throw new Error('[UserSettings] NodeOneCore not initialized - no user email');
             }
-            settingsManager = new UserSettingsManager(nodeOneCoreInstance, nodeOneCoreInstance.email);
+            settingsManager = new UserSettingsManager(
+                nodeOneCoreInstance,
+                nodeOneCoreInstance.email,
+                nodeOneCoreInstance.ownerId
+            );
         }
         return settingsManager;
     }

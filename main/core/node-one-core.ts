@@ -15,7 +15,8 @@ import TopicAnalysisModel from '@lama/core/one-ai/models/TopicAnalysisModel.js';
 // import RefinioApiServer from '../api/refinio-api-server.js';
 import TopicGroupManager from './topic-group-manager.js';
 import QuicTransport from './quic-transport.js';
-import CubeManager from './cube-manager.js';
+// CubeManager temporarily disabled - being replaced by unified plan system
+// import CubeManager from './cube-manager.js';
 import { UserSettingsManager } from './user-settings-manager.js';
 import type { NodeOneCore as INodeOneCore } from '../types/one-core.js';
 
@@ -43,6 +44,7 @@ import { LLMObjectManager } from '@lama/core/models/LLMObjectManager.js';
 import { storeVersionedObject, storeVersionObjectAsChange, getObjectByIdHash } from '@refinio/one.core/lib/storage-versioned-objects.js';
 import { storeUnversionedObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
 import { getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
+import { getAllEntries } from '@refinio/one.core/lib/reverse-map-query.js';
 import { calculateIdHashOfObj, calculateHashOfObj } from '@refinio/one.core/lib/util/object.js';
 import { createAccess } from '@refinio/one.core/lib/access.js';
 import SingleUserNoAuth from '@refinio/one.models/lib/models/Authenticator/SingleUserNoAuth.js';
@@ -65,7 +67,6 @@ class NodeOneCore implements INodeOneCore {
   public aiAssistantModel?: any; // AIAssistantHandler from lama.core
   public apiServer: any;
   public topicGroupManager?: TopicGroupManager;
-  public cubeManager?: any; // CubeManager for Assembly/Plan system
   public federationGroup: any;
 
   onPairingStarted: any;
@@ -113,6 +114,8 @@ class NodeOneCore implements INodeOneCore {
   llmManager?: any
   llmObjectManager?: any
   userSettingsManager?: any  // UserSettingsManager for user preferences
+  assemblyManager?: any  // AssemblyManager for knowledge assembly infrastructure
+  knowledgeAssembly?: any  // KnowledgeAssembly for knowledge extraction
 
   // Additional properties
   oneAuth: SingleUserNoAuth
@@ -134,6 +137,8 @@ class NodeOneCore implements INodeOneCore {
   accessRightsManager: any
   initFailed: any
   directSocketStopFn: any
+
+  private progressCallback?: (stage: string, percent: number, message: string) => void;
 
   constructor() {
     this.initialized = false
@@ -165,6 +170,22 @@ class NodeOneCore implements INodeOneCore {
     this.aiDiscoveryPlan = new AIDiscoveryPlan();
     this.messageListenersPlan = new MessageListenersPlan();
     this.mcpInitPlan = new MCPInitializationPlan();
+  }
+
+  /**
+   * Send progress update to UI
+   */
+  private sendProgressUpdate(stage: string, percent: number, message: string): void {
+    if (this.progressCallback) {
+      this.progressCallback(stage, percent, message);
+    }
+    if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+      global.mainWindow.webContents.send('onecore:init-progress', {
+        stage,
+        percent,
+        message
+      });
+    }
   }
 
   /**
@@ -246,6 +267,9 @@ class NodeOneCore implements INodeOneCore {
     password?: string,
     onProgress?: (stage: string, percent: number, message: string) => void
   ): Promise<{ success: boolean; ownerId?: string; instanceName?: string; name?: string; error?: string }> {
+    // Store progress callback for later use
+    this.progressCallback = onProgress;
+
     if (this.initialized) {
       console.log('[NodeOneCore] Already initialized')
       return { success: true, ownerId: this.ownerId, instanceName: this.instanceName }
@@ -345,10 +369,11 @@ class NodeOneCore implements INodeOneCore {
   }
 
   /**
-   * Monitor pairing and CHUM transitions
-   * ConnectionsModel handles the transition automatically
+   * DEPRECATED: Monitor pairing and CHUM transitions
+   * This method is no longer used - pairing is now handled by ConnectionPlan
+   * Kept for reference during migration
    */
-  setupConnectionMonitoring(): any {
+  setupConnectionMonitoring_DEPRECATED(): any {
     console.log('[NodeOneCore] Setting up connection monitoring...')
 
     // Register pairing callbacks - must be done BEFORE init (like one.leute.replicant)
@@ -561,17 +586,18 @@ class NodeOneCore implements INodeOneCore {
       ownerId: this.ownerId,
       email: this.email,
       commServerUrl: this.commServerUrl,
-      connectionsModel: this.connectionsModel,
       onProgress
     })
 
     // Assign models to instance
     this.leuteModel = models.leuteModel
+    this.connectionsModel = models.connectionsModel
     this.channelManager = models.channelManager
     this.topicModel = models.topicModel
     this.llmObjectManager = models.llmObjectManager
 
-    // CHUM handler registration removed - ConnectionsModel handles CHUM automatically
+    // Pairing event handling is now managed by ConnectionPlan (via IPC handlers)
+    // ConnectionPlan registers its own handler and fires callbacks for platform-specific UI updates
 
     // Initialize Content Sharing Manager for Browser<->Node sync
     const { default: ContentSharingManager } = await import('./content-sharing.js')
@@ -691,11 +717,15 @@ class NodeOneCore implements INodeOneCore {
       return
     }
 
+    // Send progress update
+    this.sendProgressUpdate('ai-discovery', 102, 'Initializing LLM manager...');
+
     // Get LLM manager singleton
     const { default: llmManager } = await import('../services/llm-manager-singleton.js')
 
     // Initialize Topic Analysis Model for keyword/subject extraction
     if (!this.topicAnalysisModel) {
+      this.sendProgressUpdate('ai-discovery', 103, 'Setting up topic analysis...');
       this.topicAnalysisModel = new TopicAnalysisModel(this.channelManager, this.topicModel)
       await this.topicAnalysisModel.init()
       console.log('[NodeOneCore] ✅ Topic Analysis Model initialized')
@@ -718,6 +748,7 @@ class NodeOneCore implements INodeOneCore {
     // this.chatMemoryHandler = memoryServices.chatMemoryPlan
 
     // Use AIDiscoveryPlan to discover Claude models and initialize AI
+    this.sendProgressUpdate('ai-discovery', 105, 'Discovering AI models...');
     const aiServices = await this.aiDiscoveryPlan.execute({
       nodeOneCore: this,
       llmManager,
@@ -729,12 +760,23 @@ class NodeOneCore implements INodeOneCore {
     this.userSettingsManager = aiServices.userSettingsManager
     this.aiAssistantModel = aiServices.aiAssistantModel
 
-    // Use MCPInitializationPlan to initialize MCP services
-    await this.mcpInitPlan.execute({
+    // Use MCPInitializationPlan to initialize MCP services (LAZY - non-blocking)
+    // MCP servers connect in background, app continues without waiting
+    this.sendProgressUpdate('mcp', 107, 'Initializing MCP services...');
+
+    // Set up progress callback for MCP initialization
+    this.mcpInitPlan.setProgressCallback((stage, progress, message) => {
+      console.log(`[MCP Progress] ${stage}: ${progress}% - ${message}`);
+      this.sendProgressUpdate(stage, progress, message);
+    });
+
+    // Use lazy initialization - returns immediately, servers connect in background
+    await this.mcpInitPlan.executeLazy({
       nodeOneCore: this
     })
 
     // Use MessageListenersPlan to create and start listeners
+    this.sendProgressUpdate('listeners', 108, 'Setting up message listeners...');
     const listeners = await this.messageListenersPlan.execute({
       channelManager: this.channelManager,
       topicModel: this.topicModel,
@@ -747,6 +789,7 @@ class NodeOneCore implements INodeOneCore {
     this.aiMessageListener = listeners.aiMessageListener
     this.peerMessageListener = listeners.peerMessageListener
 
+    this.sendProgressUpdate('complete', 110, 'Initialization complete');
     console.log('[NodeOneCore] ✅ Event-based message sync set up using Plans')
   }
   
@@ -1188,6 +1231,27 @@ class NodeOneCore implements INodeOneCore {
     this.initFailed = false
 
     console.log('[NodeOneCore] Instance reset to clean state')
+  }
+
+  /**
+   * Setup additional access rights after pairing (OPTIONAL)
+   *
+   * NOTE: Basic access rights are already configured by PairingManager.convertIdentityToProfile()
+   * This method is called by ConnectionPlan's onPairingSuccess callback for platform-specific
+   * customization if needed. The default implementation is now a no-op since PairingManager
+   * already handles everything.
+   *
+   * @deprecated Use PairingManager's built-in access rights setup via convertIdentityToProfile
+   */
+  async setupPairingAccessRights(remotePersonId: SHA256IdHash<Person>, localPersonId: SHA256IdHash<Person>): Promise<void> {
+    console.log('[NodeOneCore] Pairing access rights callback (no-op - handled by PairingManager)', {
+      remotePersonId: String(remotePersonId).substring(0, 8),
+      localPersonId: String(localPersonId).substring(0, 8)
+    });
+
+    // Access rights are already configured by PairingManager via convertIdentityToProfile()
+    // which creates the Profile with sign keys and certifies with TrustKeysCertificate.
+    // This callback is kept for backward compatibility and future customization.
   }
 
   /**

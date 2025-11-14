@@ -12,21 +12,22 @@
 
 import LeuteModel from '@refinio/one.models/lib/models/Leute/LeuteModel.js';
 import ChannelManager from '@refinio/one.models/lib/models/ChannelManager.js';
+import ConnectionsModel from '@refinio/one.models/lib/models/ConnectionsModel.js';
 import TopicModel from '@refinio/one.models/lib/models/Chat/TopicModel.js';
 import { LLMObjectManager } from '@lama/core/models/LLMObjectManager.js';
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
-import type { Person } from '@refinio/one.core/lib/recipes.js';
+import type { Person, Group } from '@refinio/one.core/lib/recipes.js';
 
 export interface ModelInitContext {
   ownerId: SHA256IdHash<Person>;
   email: string;
   commServerUrl: string;
-  connectionsModel: any;
   onProgress?: (stage: string, percent: number, message: string) => void;
 }
 
 export interface InitializedModels {
   leuteModel: LeuteModel;
+  connectionsModel: ConnectionsModel;
   channelManager: ChannelManager;
   topicModel: TopicModel;
   llmObjectManager: LLMObjectManager;
@@ -42,18 +43,23 @@ export class ModelInitializationPlan {
 
     // Step 1: Initialize LeuteModel
     const leuteModel = await this.initializeLeuteModel(context);
-    context.onProgress?.('leute', 40, 'Contact management initialized');
+    context.onProgress?.('leute', 30, 'Contact management initialized');
 
-    // Step 2: Initialize LLMObjectManager
-    const llmObjectManager = await this.initializeLLMObjectManager();
+    // Step 2: Initialize ConnectionsModel (CRITICAL: Required for CHUM sync)
+    // Must be initialized AFTER LeuteModel but BEFORE ChannelManager
+    const connectionsModel = await this.initializeConnectionsModel(leuteModel, context.commServerUrl);
+    context.onProgress?.('connections', 40, 'CHUM sync initialized');
+
+    // Step 3: Initialize LLMObjectManager
+    const llmObjectManager = await this.initializeLLMObjectManager(context);
     context.onProgress?.('llm', 50, 'LLM configuration loaded');
 
-    // Step 3: Initialize ChannelManager (required for TopicModel)
+    // Step 4: Initialize ChannelManager (required for TopicModel)
     // CRITICAL: ChannelManager needs leuteModel to calculate default owners
-    const channelManager = await this.initializeChannelManager(leuteModel);
+    const channelManager = await this.initializeChannelManager(leuteModel, context.ownerId);
     context.onProgress?.('channels', 60, 'Channels initialized');
 
-    // Step 4: Initialize TopicModel (requires ChannelManager and LeuteModel)
+    // Step 5: Initialize TopicModel (requires ChannelManager and LeuteModel)
     const topicModel = await this.initializeTopicModel(channelManager, leuteModel);
     context.onProgress?.('topics', 70, 'Chat topics initialized');
 
@@ -61,6 +67,7 @@ export class ModelInitializationPlan {
 
     return {
       leuteModel,
+      connectionsModel,
       channelManager,
       topicModel,
       llmObjectManager
@@ -124,20 +131,24 @@ export class ModelInitializationPlan {
     }
   }
 
-  private async initializeLLMObjectManager(): Promise<LLMObjectManager> {
+  private async initializeLLMObjectManager(context: ModelInitContext): Promise<LLMObjectManager> {
     console.log('[ModelInitializationPlan] Initializing LLMObjectManager...');
 
     const { storeVersionedObject } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
     const { createAccess } = await import('@refinio/one.core/lib/access.js');
+    const { getObjectByIdHash } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
+    const { calculateIdHashOfObj } = await import('@refinio/one.core/lib/util/object.js');
+
+    // Capture ownerId for closure
+    const ownerId = context.ownerId;
 
     const llmObjectManager = new LLMObjectManager(
       {
         storeVersionedObject,
         createAccess: async (accessRequests: any[]) => {
           await createAccess(accessRequests);
-        },
-        // TODO: Implement queryAllLLMObjects to load from storage
-        // For now, cache is populated on-demand when AI contacts are created
+        }
+        // queryAllLLMObjects not provided - will be handled by AIAssistantHandler
       },
       undefined  // No group for now
     );
@@ -158,13 +169,42 @@ export class ModelInitializationPlan {
     return topicModel;
   }
 
-  private async initializeChannelManager(leuteModel: LeuteModel): Promise<ChannelManager> {
+  private async initializeConnectionsModel(leuteModel: LeuteModel, commServerUrl: string): Promise<ConnectionsModel> {
+    console.log('[ModelInitializationPlan] Initializing ConnectionsModel...');
+
+    // Create ConnectionsModel with configuration
+    const connectionsModel = new ConnectionsModel(leuteModel, {
+      commServerUrl,
+      acceptIncomingConnections: true,
+      acceptUnknownInstances: true,       // Accept new instances via pairing
+      acceptUnknownPersons: false,        // Require pairing for new persons
+      allowPairing: true,                 // Enable pairing protocol
+      establishOutgoingConnections: true,  // Auto-connect to discovered endpoints
+      allowDebugRequests: true,
+      pairingTokenExpirationDuration: 60000 * 15,  // 15 minutes
+      noImport: false,
+      noExport: false
+    });
+
+    // Initialize ConnectionsModel (blacklist group is optional)
+    await connectionsModel.init();
+    console.log('[ModelInitializationPlan] ✅ ConnectionsModel initialized - CHUM sync active');
+
+    return connectionsModel;
+  }
+
+  private async initializeChannelManager(leuteModel: LeuteModel, ownerId: SHA256IdHash<Person>): Promise<ChannelManager> {
     console.log('[ModelInitializationPlan] Initializing ChannelManager...');
 
     // ChannelManager constructor takes leuteModel (not connectionsModel!)
     const channelManager = new ChannelManager(leuteModel);
     await channelManager.init();
     console.log('[ModelInitializationPlan] ✅ ChannelManager initialized');
+
+    // Create the 'lama' channel for LLM config storage
+    // Use ownerId as the channel owner since LLM config is per-user
+    await channelManager.createChannel('lama', ownerId);
+    console.log('[ModelInitializationPlan] ✅ Created lama channel for LLM config storage');
 
     return channelManager;
   }

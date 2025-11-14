@@ -56,6 +56,8 @@ export class BrowserInit {
 
       // Initialize Node.js ONE.core instance with timeout
       const INIT_TIMEOUT = 30000 // 30 seconds
+      const t0 = performance.now()
+      console.log('[BrowserInit] ⏱️ Calling onecore:initializeNode at', t0.toFixed(1), 'ms')
       const nodeResult = await Promise.race([
         window.electronAPI.invoke('onecore:initializeNode', {
           user: {
@@ -67,6 +69,8 @@ export class BrowserInit {
           setTimeout(() => reject(new Error('Initialization timeout - Node.js did not respond within 30 seconds')), INIT_TIMEOUT)
         )
       ])
+      const t1 = performance.now()
+      console.log('[BrowserInit] ⏱️ onecore:initializeNode returned after', (t1-t0).toFixed(1), 'ms')
 
       // Cleanup progress listener
       cleanupListener()

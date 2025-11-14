@@ -36,11 +36,13 @@ export interface EnhancedMessageInputProps {
   onSendMessage: (text: string, attachments?: EnhancedAttachment[]) => Promise<void>;
   onStopStreaming?: () => void;
   onHashtagClick?: (hashtag: string) => void;
+  onTextChange?: (text: string) => void; // NEW: Callback for real-time input tracking
   placeholder?: string;
   disabled?: boolean;
   theme?: 'light' | 'dark';
   conversationId?: string; // Used to detect conversation changes for auto-focus
   isStreaming?: boolean; // Show stop button when streaming
+  initialText?: string; // Pre-fill input with text
 }
 
 // Subject hashtag extractor (simplified web version)
@@ -250,13 +252,15 @@ export const EnhancedMessageInput: React.FC<EnhancedMessageInputProps> = ({
   onSendMessage,
   onStopStreaming,
   onHashtagClick,
+  onTextChange,
   placeholder = "Type a message...",
   disabled = false,
   theme = 'light',
   conversationId,
-  isStreaming = false
+  isStreaming = false,
+  initialText = ''
 }) => {
-  const [messageText, setMessageText] = useState('');
+  const [messageText, setMessageText] = useState(initialText);
   const [attachments, setAttachments] = useState<EnhancedAttachment[]>([]);
   
   // Log attachments whenever they change
@@ -280,29 +284,48 @@ export const EnhancedMessageInput: React.FC<EnhancedMessageInputProps> = ({
     }
   }, [conversationId, disabled]);
 
+  // Update message text when initialText changes
+  useEffect(() => {
+    if (initialText) {
+      setMessageText(initialText);
+      // Auto-resize textarea to fit content - use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+        }
+      });
+    }
+  }, [initialText]);
+
   // Handle text input changes and hashtag detection
   const handleTextChange = useCallback(async (text: string) => {
     setMessageText(text);
-    
+
+    // Notify parent component of text change (for real-time proposals)
+    if (onTextChange) {
+      onTextChange(text);
+    }
+
     // Auto-resize textarea
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-    
+
     // Check if user is typing a hashtag
     const hashtagMatch = text.match(/#[\w-]*$/);
     if (hashtagMatch) {
       const partialHashtag = hashtagMatch[0];
-      
+
       if (partialHashtag.length > 1) {
         const suggestions = await hashtagSuggester.suggestHashtags(text, {});
-        
+
         // Filter suggestions based on partial input
         const filteredSuggestions = suggestions.filter(s =>
           s.hashtag.toLowerCase().includes(partialHashtag.slice(1).toLowerCase())
         );
-        
+
         setHashtagSuggestions(filteredSuggestions);
         setShowSuggestions(filteredSuggestions.length > 0);
       } else {
@@ -311,7 +334,7 @@ export const EnhancedMessageInput: React.FC<EnhancedMessageInputProps> = ({
     } else {
       setShowSuggestions(false);
     }
-  }, [hashtagSuggester]);
+  }, [hashtagSuggester, onTextChange]);
   
   // Select hashtag from suggestions
   const selectHashtag = useCallback((hashtag: string) => {
@@ -554,7 +577,7 @@ export const EnhancedMessageInput: React.FC<EnhancedMessageInputProps> = ({
       )}
       
       {/* Input row */}
-      <div 
+      <div
         className="input-row"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -569,7 +592,7 @@ export const EnhancedMessageInput: React.FC<EnhancedMessageInputProps> = ({
         >
           📎
         </button>
-        
+
         <input
           ref={fileInputRef}
           type="file"
@@ -582,19 +605,39 @@ export const EnhancedMessageInput: React.FC<EnhancedMessageInputProps> = ({
           }}
           accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
         />
-        
-        {/* Text input */}
-        <textarea
-          ref={textareaRef}
-          className="message-textarea"
-          value={messageText}
-          onChange={(e) => handleTextChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={disabled || isUploading}
-          rows={1}
-        />
-        
+
+        {/* Text input container with clear button */}
+        <div className="relative flex-1">
+          <textarea
+            ref={textareaRef}
+            className="message-textarea"
+            value={messageText}
+            onChange={(e) => handleTextChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            disabled={disabled || isUploading}
+            rows={1}
+          />
+          {/* Clear button - integrated into the textarea */}
+          {messageText && !disabled && !isUploading && (
+            <button
+              onClick={() => {
+                setMessageText('');
+                if (textareaRef.current) {
+                  textareaRef.current.style.height = 'auto';
+                  textareaRef.current.focus();
+                }
+              }}
+              className="clear-text-button"
+              title="Clear text"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round"/>
+              </svg>
+            </button>
+          )}
+        </div>
+
         {/* Send or Stop button */}
         {isStreaming ? (
           <button

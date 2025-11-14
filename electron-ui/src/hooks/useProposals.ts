@@ -17,6 +17,8 @@ interface UseProposalsOptions {
   topicId: string;
   currentSubjects?: string[];
   autoRefresh?: boolean;
+  mode?: 'subject' | 'input'; // 'subject' = based on extracted subjects, 'input' = based on user input
+  inputText?: string; // For input-based mode
 }
 
 interface UseProposalsResult {
@@ -34,12 +36,15 @@ interface UseProposalsResult {
     includeMessages?: boolean
   ) => Promise<ShareProposalResponse>;
   refresh: () => Promise<void>;
+  refreshForInput: (inputText: string) => Promise<void>; // New: fetch proposals for input text
 }
 
 export function useProposals({
   topicId,
   currentSubjects,
   autoRefresh = true,
+  mode = 'subject',
+  inputText = '',
 }: UseProposalsOptions): UseProposalsResult {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
@@ -47,7 +52,7 @@ export function useProposals({
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Fetch proposals from IPC handler
+   * Fetch proposals from IPC handler (subject-based mode)
    */
   const fetchProposals = useCallback(
     async (forceRefresh = false) => {
@@ -96,6 +101,53 @@ export function useProposals({
       }
     },
     [topicId, currentSubjects]
+  );
+
+  /**
+   * Fetch proposals based on input text (input-based mode)
+   */
+  const fetchProposalsForInput = useCallback(
+    async (text: string) => {
+      if (!topicId || !text || text.trim().length < 3) {
+        console.log('[useProposals] Skipping input fetch - no topicId or text too short');
+        setProposals([]);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        console.log('[useProposals] Fetching proposals for input:', text);
+        const ipcResponse: any = await window.electronAPI.invoke(
+          'proposals:getForInput',
+          {
+            topicId,
+            inputText: text,
+          }
+        );
+
+        // Unwrap the IPC response
+        const response: GetProposalsResponse = ipcResponse.success ? ipcResponse.data : ipcResponse;
+
+        console.log('[useProposals] Input proposals response:', response);
+        setProposals(response.proposals || []);
+        setCurrentIndex(0);
+
+        if (response.count > 0 && response.computeTimeMs) {
+          console.log(
+            `[useProposals] Found ${response.count} input proposals in ${response.computeTimeMs}ms`
+          );
+        }
+      } catch (err: any) {
+        console.error('[useProposals] Error fetching input proposals:', err);
+        setError(err.message || 'Failed to fetch input proposals');
+        setProposals([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [topicId]
   );
 
   /**
@@ -203,11 +255,18 @@ export function useProposals({
   );
 
   /**
-   * Manually refresh proposals
+   * Manually refresh proposals (subject-based)
    */
   const refresh = useCallback(async () => {
     await fetchProposals(true);
   }, [fetchProposals]);
+
+  /**
+   * Manually refresh proposals for input text
+   */
+  const refreshForInput = useCallback(async (text: string) => {
+    await fetchProposalsForInput(text);
+  }, [fetchProposalsForInput]);
 
   const currentProposal = proposals[currentIndex] || null;
 
@@ -222,5 +281,6 @@ export function useProposals({
     dismissProposal,
     shareProposal,
     refresh,
+    refreshForInput,
   };
 }

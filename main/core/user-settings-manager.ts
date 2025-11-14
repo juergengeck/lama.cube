@@ -28,11 +28,13 @@ import {
 export class UserSettingsManager {
     private nodeOneCore: any;
     private userEmail: string;
+    private instanceId?: string;
     private cachedSettings?: UserSettings; // In-memory cache (Decision 4)
 
-    constructor(nodeOneCore: any, userEmail: string) {
+    constructor(nodeOneCore: any, userEmail: string, instanceId?: string) {
         this.nodeOneCore = nodeOneCore;
         this.userEmail = userEmail;
+        this.instanceId = instanceId;
     }
 
     /**
@@ -274,6 +276,7 @@ export class UserSettingsManager {
         const settings: UserSettings = {
             $type$: 'UserSettings',
             userEmail: this.userEmail,
+            instanceId: this.instanceId,
             ...DEFAULT_USER_SETTINGS,
             updatedAt: Date.now()
         };
@@ -292,6 +295,7 @@ export class UserSettingsManager {
         return {
             $type$: 'UserSettings',
             userEmail: this.userEmail,
+            instanceId: this.instanceId,
             ...DEFAULT_USER_SETTINGS,
             updatedAt: Date.now()
         };

@@ -13,7 +13,9 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@components': path.resolve(__dirname, './src/components'),
-      '@lib': path.resolve(__dirname, './src/lib')
+      '@lib': path.resolve(__dirname, './src/lib'),
+      '@lama/core': path.resolve(__dirname, '../../lama.core'),
+      '@lama/ui': path.resolve(__dirname, '../../lama.ui/src')
     }
   },
   define: {

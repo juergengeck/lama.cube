@@ -12,6 +12,7 @@
 export interface UserSettings {
   $type$: 'UserSettings';
   userEmail: string;  // ID field for ONE.core versioning
+  instanceId?: string;  // Instance that owns these settings (optional for backwards compat)
   ai: AISettings;
   ui: UISettings;
   proposals: ProposalSettings;

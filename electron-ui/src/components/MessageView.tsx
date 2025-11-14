@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Loader2, ArrowDown } from 'lucide-react'
 import { type Message, lamaBridge } from '@/bridge/lama-bridge'
 import './MessageView.css'
 
@@ -10,7 +11,7 @@ import { EnhancedMessageBubble, type EnhancedMessageData } from './chat/Enhanced
 
 // Import attachment system
 import { attachmentService } from '@/services/attachments/AttachmentService'
-import { createAttachmentView } from '@/components/attachments/AttachmentViewFactory'
+import { createAttachmentView } from '@lama/ui'
 import type { MessageAttachment, BlobDescriptor } from '@/types/attachments'
 
 // Import keyword detail panel
@@ -79,12 +80,57 @@ export function MessageView({
     nextProposal,
     previousProposal,
     dismissProposal,
-    shareProposal
+    shareProposal,
+    refreshForInput
   } = useProposals({
     topicId: topicId || '',
     autoRefresh: true
   })
-  
+
+  // Debounced input tracking for real-time proposals
+  const inputDebounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Input pre-fill state for shared proposals
+  const [inputPrefillText, setInputPrefillText] = useState<string>('')
+
+  // Clear prefill text after it's been applied
+  useEffect(() => {
+    if (inputPrefillText) {
+      // Clear after a short delay to ensure the input component has received it
+      const timer = setTimeout(() => {
+        setInputPrefillText('')
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [inputPrefillText])
+
+  // Handle input text change with debouncing
+  const handleInputTextChange = useCallback((text: string) => {
+    // Clear existing timer
+    if (inputDebounceTimerRef.current) {
+      clearTimeout(inputDebounceTimerRef.current)
+    }
+
+    // Set new timer to fetch proposals after 500ms of no typing
+    const timer = setTimeout(() => {
+      console.log('[MessageView] Debounced input:', text)
+      if (text && text.trim().length >= 3) {
+        refreshForInput(text)
+      }
+    }, 500)
+
+    inputDebounceTimerRef.current = timer
+  }, [refreshForInput])
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (inputDebounceTimerRef.current) {
+        clearTimeout(inputDebounceTimerRef.current)
+      }
+    }
+  }, [])
+
   // Load contact names
   useEffect(() => {
     const loadContactNames = async () => {
@@ -124,27 +170,23 @@ export function MessageView({
   // Adjust scroll position when subjects appear to compensate for header height change
   useEffect(() => {
     if (subjectsJustAppeared && chatHeaderRef?.current && scrollAreaRef.current) {
-      // console.log('[MessageView] Subjects just appeared, adjusting scroll position')
+      // Only adjust scroll if user is at the bottom (not scrolled up)
+      // This respects user scroll position while fixing layout shift for those at bottom
+      if (isUserScrolledUp) {
+        // User has scrolled up - don't adjust, keep their position
+        return
+      }
 
-      // Measure the height of the subject line that just appeared
-      // We use requestAnimationFrame to wait for the DOM to update
+      // User is at bottom - adjust scroll to stay at bottom after header grows
       requestAnimationFrame(() => {
-        if (!chatHeaderRef.current || !scrollAreaRef.current) return
-
-        // The subject line is roughly 48px (py-2 + text height + border)
-        // But let's measure it to be precise
-        const headerHeight = chatHeaderRef.current.offsetHeight
-        // console.log('[MessageView] Header height after subjects:', headerHeight)
-
-        // Adjust scroll to compensate for the header growth
-        // This keeps the visible content in the same position
-        const currentScroll = scrollAreaRef.current.scrollTop
-        // Approximate subject line height is ~48px
-        const subjectLineHeight = 48
-        scrollAreaRef.current.scrollTop = currentScroll + subjectLineHeight
+        if (!messagesEndRef.current) return
+        messagesEndRef.current.scrollIntoView({
+          behavior: 'instant',
+          block: 'end'
+        })
       })
     }
-  }, [subjectsJustAppeared, chatHeaderRef])
+  }, [subjectsJustAppeared, chatHeaderRef, isUserScrolledUp])
 
   // Track previous streaming state to detect when streaming just ended
   const prevStreamingRef = useRef(false)
@@ -158,19 +200,13 @@ export function MessageView({
 
   // Auto-scroll to bottom when new messages arrive or during streaming
   useEffect(() => {
-    // During streaming, always scroll (ignore user scroll position)
-    const isStreaming = isAIProcessing || aiStreamingContent
+    // Only consider it streaming when we have actual content to display
+    // (not just "thinking" state with no content yet)
+    const isStreaming = !!aiStreamingContent
     const wasStreaming = prevStreamingRef.current
 
     // Update ref for next render
     prevStreamingRef.current = isStreaming
-
-    // If streaming just ended (was streaming but now not), don't scroll
-    // The final message is already visible from the streaming view
-    if (wasStreaming && !isStreaming) {
-      // console.log('[MessageView] Streaming ended, skipping scroll')
-      return
-    }
 
     // On first render with messages, scroll immediately to bottom
     if (messages.length > 0 && !hasScrolledInitiallyRef.current) {
@@ -186,21 +222,51 @@ export function MessageView({
       return
     }
 
-    // If user has scrolled up, NEVER auto-scroll (respect user intent)
+    // If streaming just ended, scroll to show the final persisted message
+    // Use instant scroll to avoid jumping up/down during rerender
+    if (wasStreaming && !isStreaming) {
+      console.log('[MessageView] Streaming ended, scrolling to final message')
+      requestAnimationFrame(() => {
+        if (messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({
+            behavior: 'instant',
+            block: 'end'
+          })
+        }
+      })
+      return
+    }
+
+    // During streaming, only auto-scroll if user is at bottom
+    // This allows users to scroll up to read previous messages during streaming
+    if (isStreaming) {
+      // Only auto-scroll during streaming if user hasn't scrolled up
+      if (isUserScrolledUp) return
+
+      requestAnimationFrame(() => {
+        if (messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({
+            behavior: 'instant',
+            block: 'end'
+          })
+        }
+      })
+      return
+    }
+
+    // For normal messages (not streaming), respect user scroll position
     if (isUserScrolledUp) return
 
     // Use requestAnimationFrame to ensure DOM has finished rendering before scrolling
     requestAnimationFrame(() => {
       if (messagesEndRef.current) {
-        // Use instant scroll during streaming for better responsiveness
-        // Use smooth scroll for normal message updates
         messagesEndRef.current.scrollIntoView({
-          behavior: isStreaming ? 'instant' : 'smooth',
+          behavior: 'smooth',
           block: 'end'
         })
       }
     })
-  }, [messages, aiStreamingContent, isUserScrolledUp, isAIProcessing])
+  }, [messages, aiStreamingContent, isUserScrolledUp])
 
 
 
@@ -459,10 +525,34 @@ export function MessageView({
               )}
             </>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
       </div>
+
+      {/* Scroll to bottom button - Shows when user scrolls up */}
+      {isUserScrolledUp && (
+        <div className={`absolute right-6 pointer-events-none ${proposals.length > 0 ? 'bottom-32' : 'bottom-20'}`}>
+          <Button
+            size="icon"
+            variant="secondary"
+            className="pointer-events-auto rounded-full shadow-lg h-10 w-10 bg-primary/90 hover:bg-primary"
+            onClick={() => {
+              setIsUserScrolledUp(false)
+              requestAnimationFrame(() => {
+                if (messagesEndRef.current) {
+                  messagesEndRef.current.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'end'
+                  })
+                }
+              })
+            }}
+          >
+            <ArrowDown className="h-5 w-5" />
+          </Button>
+        </div>
+      )}
 
       {/* Proposal Carousel - Absolutely positioned above message input */}
       {proposals.length > 0 && (
@@ -476,9 +566,11 @@ export function MessageView({
               onShare={async (proposalId, pastSubjectIdHash) => {
                 const result = await shareProposal(proposalId, pastSubjectIdHash, false)
                 if (result.success && result.sharedContent) {
-                  // Insert shared content as a message
-                  const contextMessage = `Related context from "${result.sharedContent.subjectName}": ${result.sharedContent.keywords.join(', ')}`
-                  await onSendMessage(contextMessage)
+                  // Pre-fill input with description (if available) or keywords as fallback
+                  const contextMessage = result.sharedContent.description || result.sharedContent.keywords.join(', ')
+                  setInputPrefillText(contextMessage)
+                  // Dismiss the proposal after sharing
+                  dismissProposal(proposalId)
                 }
               }}
               onDismiss={dismissProposal}
@@ -492,10 +584,12 @@ export function MessageView({
         onSendMessage={handleEnhancedSend}
         onStopStreaming={onStopStreaming}
         onHashtagClick={handleHashtagClick}
+        onTextChange={handleInputTextChange}
         placeholder={placeholder}
         theme="dark"
         conversationId={topicId}
         isStreaming={isAIProcessing}
+        initialText={inputPrefillText}
       />
     </div>
   )

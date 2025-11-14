@@ -45,7 +45,7 @@ const defaultConfig: LamaConfig = {
     },
     network: {
         commServer: {
-            url: 'wss://comm.refinio.one',  // Production commserver
+            url: 'wss://comm10.dev.refinio.one',  // Dev commserver
             enabled: true
         },
         direct: {

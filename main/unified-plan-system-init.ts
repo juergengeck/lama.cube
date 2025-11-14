@@ -9,15 +9,14 @@
  * - Plans are platform-agnostic business logic
  * - IPC transport bridges Electron renderer to plans
  * - Same plans work through HTTP, stdio, React Native (future)
+ * - AssemblyPlan + StoryFactory for automatic audit trail
  */
 
-import { PlanRegistry } from '@refinio/api/plan-system';
-import { IPCTransportPlan } from '@refinio/api/transports/IPCTransportPlan.js';
-import { ExportPlanSimple } from '@chat/core/plans/ExportPlanSimple.js';
+import { AssemblyPlan, StoryFactory, type StorageFunctions } from '@refinio/api/plan-system';
 import type { NodeOneCore } from './types/one-core.js';
 
-let planRegistry: PlanRegistry | null = null;
-let ipcTransport: IPCTransportPlan | null = null;
+let assemblyPlan: AssemblyPlan | null = null;
+let storyFactory: StoryFactory | null = null;
 
 /**
  * Initialize the Unified Plan System with real ONE.core instance
@@ -25,65 +24,84 @@ let ipcTransport: IPCTransportPlan | null = null;
  * Called after nodeOneCore is provisioned and ready.
  */
 export async function initializeUnifiedPlanSystem(nodeOneCore: NodeOneCore): Promise<{
-    registry: PlanRegistry;
-    transport: IPCTransportPlan;
+    storyFactory: StoryFactory;
 }> {
     console.log('[UnifiedPlanSystem] Initializing with ONE.core...');
 
-    // Create PlanRegistry
-    planRegistry = new PlanRegistry({
-        devMode: process.env.NODE_ENV !== 'production'
-    });
+    // Initialize AssemblyPlan + StoryFactory for audit trail (Phase 1-2)
+    const { storeVersionedObject, getObjectByIdHash } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
+    const { storeUnversionedObject } = await import('@refinio/one.core/lib/storage-unversioned-objects.js');
 
-    console.log('[UnifiedPlanSystem] Registry created');
+    const storageFunctions: StorageFunctions = {
+        storeVersionedObject,
+        storeUnversionedObject,
+        getObjectByIdHash
+    };
 
-    // Register ExportPlan with real dependencies
-    const exportPlan = new ExportPlanSimple(nodeOneCore);
+    assemblyPlan = new AssemblyPlan(storageFunctions);
+    storyFactory = new StoryFactory(assemblyPlan);
 
-    planRegistry.register({
-        domain: 'chat',
-        method: 'exportHistory',
-        plan: exportPlan,
-        version: '1.0.0',
-        description: 'Export chat history in various formats (JSON, Markdown, HTML)',
-        requiredCapability: 'chat:export'
-    });
+    console.log('[UnifiedPlanSystem] ✅ AssemblyPlan + StoryFactory initialized (Phase 1-2)');
 
-    console.log('[UnifiedPlanSystem] Registered operations:');
-    const operations = planRegistry.list();
-    operations.forEach(op => {
-        console.log(`  - ${op.operation} (v${op.version}): ${op.description}`);
-    });
+    // Inject StoryFactory into existing Plans (Phase 3)
+    await injectStoryFactoryIntoPlans(storyFactory);
 
-    // Create IPC transport
-    ipcTransport = new IPCTransportPlan(planRegistry, {
-        channel: 'plan:invoke'
-    });
-
-    // Start IPC transport
-    await ipcTransport.start();
-
-    console.log('[UnifiedPlanSystem] IPC transport started on channel: plan:invoke');
-    console.log('[UnifiedPlanSystem] Initialization complete');
+    console.log('[UnifiedPlanSystem] ✅ Initialization complete (Phases 1-3)');
 
     return {
-        registry: planRegistry,
-        transport: ipcTransport
+        storyFactory: storyFactory
     };
 }
 
 /**
- * Get the initialized plan registry
+ * Inject StoryFactory into all existing Plan instances
+ * Called after unified plan system initialization
  */
-export function getPlanRegistry(): PlanRegistry | null {
-    return planRegistry;
+async function injectStoryFactoryIntoPlans(factory: StoryFactory): Promise<void> {
+    console.log('[UnifiedPlanSystem] Injecting StoryFactory into Plans...');
+
+    try {
+        // Import IPC plan modules (they export chatPlan, contactsPlan, etc.)
+        const chatModule = await import('./ipc/plans/chat.js');
+        const contactsModule = await import('./ipc/plans/contacts.js');
+        const connectionModule = await import('./ipc/plans/connection.js');
+
+        // Inject StoryFactory into each Plan
+        if (chatModule.chatPlan && typeof chatModule.chatPlan.setStoryFactory === 'function') {
+            chatModule.chatPlan.setStoryFactory(factory);
+            console.log('[UnifiedPlanSystem] ✅ StoryFactory injected into ChatPlan');
+        }
+
+        if (contactsModule.contactsPlan && typeof contactsModule.contactsPlan.setStoryFactory === 'function') {
+            contactsModule.contactsPlan.setStoryFactory(factory);
+            console.log('[UnifiedPlanSystem] ✅ StoryFactory injected into ContactsPlan');
+        }
+
+        if (connectionModule.connectionPlan && typeof connectionModule.connectionPlan.setStoryFactory === 'function') {
+            connectionModule.connectionPlan.setStoryFactory(factory);
+            console.log('[UnifiedPlanSystem] ✅ StoryFactory injected into ConnectionPlan');
+        }
+
+        console.log('[UnifiedPlanSystem] StoryFactory injection complete');
+    } catch (error) {
+        console.error('[UnifiedPlanSystem] Failed to inject StoryFactory:', error);
+        // Don't throw - this is optional functionality (gradual adoption)
+    }
+}
+
+
+/**
+ * Get the initialized StoryFactory
+ */
+export function getStoryFactory(): StoryFactory | null {
+    return storyFactory;
 }
 
 /**
- * Get the initialized IPC transport
+ * Get the initialized AssemblyPlan
  */
-export function getIPCTransport(): IPCTransportPlan | null {
-    return ipcTransport;
+export function getAssemblyPlan(): AssemblyPlan | null {
+    return assemblyPlan;
 }
 
 /**
@@ -92,12 +110,8 @@ export function getIPCTransport(): IPCTransportPlan | null {
 export async function shutdownUnifiedPlanSystem(): Promise<void> {
     console.log('[UnifiedPlanSystem] Shutting down...');
 
-    if (ipcTransport) {
-        await ipcTransport.stop();
-        ipcTransport = null;
-    }
-
-    planRegistry = null;
+    assemblyPlan = null;
+    storyFactory = null;
 
     console.log('[UnifiedPlanSystem] Shutdown complete');
 }

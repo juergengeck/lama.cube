@@ -18,7 +18,6 @@ class AIMessageListener {
   unsubscribe: (() => void) | null;
   debounceTimers: Map<string, NodeJS.Timeout>;
   DEBOUNCE_MS: number;
-  pollInterval: NodeJS.Timeout | null;
 
   constructor(channelManager: ChannelManager, llmManager: LLMManager) {
     this.channelManager = channelManager
@@ -26,8 +25,7 @@ class AIMessageListener {
     this.aiAssistantModel = null // Will be set after AIAssistantModel is initialized
     this.unsubscribe = null
     this.debounceTimers = new Map()
-    this.DEBOUNCE_MS = 800 // Increased delay to ensure user message displays first
-    this.pollInterval = null
+    this.DEBOUNCE_MS = 50 // Minimal delay for local AI - just enough to batch rapid updates
 }
   
   /**
@@ -43,7 +41,7 @@ class AIMessageListener {
    */
   async start(): Promise<any> {
     // Prevent multiple starts
-    if (this.unsubscribe || this.pollInterval) {
+    if (this.unsubscribe) {
       console.log('[AIMessageListener] Already started - skipping')
       return
     }
@@ -96,19 +94,6 @@ class AIMessageListener {
       console.log('[AIMessageListener] Could not get channels:', err)
     }
 
-    // Add periodic check for channels - save to this.pollInterval for cleanup
-    this.pollInterval = setInterval(async () => {
-      try {
-        const channels = await this.channelManager.getMatchingChannelInfos({})
-        console.log(`[AIMessageListener] 📊 Periodic channel check - found ${(channels as any)?.length} channels`)
-        if ((channels as any)?.length > 0) {
-          console.log('[AIMessageListener] Channel IDs:', channels.map(c => c.id))
-        }
-      } catch (err: any) {
-        console.error('[AIMessageListener] Periodic check failed:', err)
-      }
-    }, 10000) // Check every 10 seconds
-    
     // Use onUpdated as a function like other parts of the codebase
     this.unsubscribe = this.channelManager.onUpdated(async (
       channelInfoIdHash,
@@ -270,18 +255,12 @@ class AIMessageListener {
    * Stop listening for messages
    */
   stop(): void {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval)
-      this.pollInterval = null
-      console.log('[AIMessageListener] Polling stopped')
-    }
-    
     if (this.unsubscribe) {
       this.unsubscribe()
       this.unsubscribe = null
       console.log('[AIMessageListener] Message listener stopped')
     }
-    
+
     // Clear all timers
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer)
@@ -419,21 +398,12 @@ class AIMessageListener {
           return
         }
 
-        // Check if this conversation has any AI participants
-        // Get all channels and filter by topic ID (one channel per participant)
-        const allChannelInfos = await this.channelManager.getMatchingChannelInfos({})
-        const channelInfos = allChannelInfos.filter((ch: any) => ch.id === channelId)
+        // Check if this topic is registered with AI
+        // The AITopicManager registry is the source of truth
+        const isAITopic = this.aiAssistantModel.isAITopic(channelId)
 
-        // Extract unique participant IDs from channel owners
-        const participantIds = [...new Set(channelInfos.map((ch: any) => ch.owner).filter(Boolean))]
-
-        // Check if any participant is an AI person
-        const hasAIParticipant = participantIds.some((participantId: any) =>
-          this.aiAssistantModel.isAIPerson(participantId)
-        )
-
-        if (!hasAIParticipant) {
-          console.log(`[AIMessageListener] Topic ${channelId} has no AI participants, skipping`)
+        if (!isAITopic) {
+          console.log(`[AIMessageListener] Topic ${channelId} is not registered as AI topic, skipping`)
           return
         }
 

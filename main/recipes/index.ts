@@ -9,7 +9,12 @@ import { KeywordRecipe } from '@lama/core/one-ai/recipes/KeywordRecipe.js'
 import { SubjectRecipe } from '@lama/core/one-ai/recipes/SubjectRecipe.js'
 import { SummaryRecipe } from '@lama/core/one-ai/recipes/SummaryRecipe.js'
 import { KeywordAccessStateRecipe } from '@lama/core/one-ai/recipes/KeywordAccessState.js'
-import { ProposalConfigRecipe } from './proposal-recipes.js'
+import {
+    ProposalConfigRecipe,
+    ProposalRecipe,
+    ProposalInteractionPlanRecipe,
+    ProposalInteractionResponseRecipe
+} from './proposal-recipes.js'
 import { MCPRecipes } from './mcp-recipes.js'
 import { AvatarPreferenceRecipe } from './avatar-recipes.js'
 // import { FeedForwardRecipes } from './feed-forward-recipes.js'
@@ -170,7 +175,11 @@ const LamaRecipes = [
     KeywordRecipe,
     SummaryRecipe,
     KeywordAccessStateRecipe,
+    // Proposal system (Plan/Response architecture)
     ProposalConfigRecipe,
+    ProposalRecipe,
+    ProposalInteractionPlanRecipe,
+    ProposalInteractionResponseRecipe,
     UserSettingsRecipe,
     AvatarPreferenceRecipe,
     ChatMemoryConfigRecipe,

@@ -1,35 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
-import { MessageSquare, Plus, Trash2, Bot, Loader2, MoreVertical, Edit, Check, CheckCheck, UserPlus, Users, ChevronLeft, ChevronRight, Settings } from 'lucide-react'
+import { MessageSquare, Plus, Users, ChevronLeft, ChevronRight } from 'lucide-react'
 import { ChatView } from './ChatView'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
-import { lamaBridge } from '@/bridge/lama-bridge'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { lamaBridge } from '@/bridge/lama-bridge'
+import { ConversationList, type Conversation } from '@lama/ui'
 import { InputDialog } from './InputDialog'
 import { UserSelectionDialog } from './UserSelectionDialog'
 import { GroupChatDialog } from './GroupChatDialog'
-import { ParticipantAvatars } from './ParticipantAvatars'
 import { MCPConfigDialog } from './MCPConfigDialog'
-
-interface Conversation {
-  id: string
-  name: string
-  type?: 'direct' | 'group'
-  participants: string[]  // Array of participant person IDs
-  participantCount?: number
-  lastMessage?: string
-  lastMessageTime?: Date | string
-  modelName?: string
-  isGroup?: boolean
-  hasAIParticipant?: boolean
-  isAITopic?: boolean
-}
 
 interface ChatLayoutProps {
   selectedConversationId?: string
@@ -110,11 +95,16 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
         const uiConversations: Conversation[] = conversations.map((conv: any) => ({
           id: conv.id,
           name: conv.name || 'Unnamed Chat',
-          participants: conv.participants || [],
+          participants: (conv.participants || []).map((p: any) => ({
+            id: typeof p === 'string' ? p : p.id,
+            name: typeof p === 'string' ? p : (p.name || p.id),
+            isLLM: typeof p === 'string' ? false : (p.isLLM || false),
+            color: typeof p === 'string' ? undefined : p.color
+          })),
           participantCount: conv.participantCount || 0,
           lastMessage: conv.lastMessage?.text || '',
           lastMessageTime: new Date(conv.lastMessageTime || conv.createdAt || Date.now()),
-          modelName: conv.modelName, // No fallback - if missing, backend needs to provide it
+          modelName: conv.modelName || conv.aiModelId,
           hasAIParticipant: conv.hasAIParticipant || false,
           isAITopic: conv.isAITopic || false
         }))
@@ -215,11 +205,16 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
       const uiConversations: Conversation[] = conversations.map((conv: any) => ({
         id: conv.id,
         name: conv.name || 'Unnamed Chat',
-        participants: conv.participants || [],
+        participants: (conv.participants || []).map((p: any) => ({
+          id: typeof p === 'string' ? p : p.id,
+          name: typeof p === 'string' ? p : (p.name || p.id),
+          isLLM: typeof p === 'string' ? false : (p.isLLM || false),
+          color: typeof p === 'string' ? undefined : p.color
+        })),
         participantCount: conv.participantCount || 0,
         lastMessage: conv.lastMessage?.text || '',
         lastMessageTime: new Date(conv.lastMessageTime || conv.createdAt || Date.now()),
-        modelName: conv.modelName, // No fallback - if missing, backend needs to provide it
+        modelName: conv.modelName || conv.aiModelId,
         hasAIParticipant: conv.hasAIParticipant || false,
         isAITopic: conv.isAITopic || false
       }))
@@ -236,12 +231,23 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
       if (!window.electronAPI) {
         throw new Error('Electron API not available')
       }
-      
-      // Create conversation through IPC handler
+
+      // Get default AI model
+      const defaultModelResult = await window.electronAPI.invoke('ai:getDefaultModel')
+      if (!defaultModelResult.success) {
+        throw new Error(defaultModelResult.error || 'Failed to get default AI model')
+      }
+      const aiModelId = defaultModelResult.data
+      if (!aiModelId) {
+        throw new Error('No default AI model configured. Please select a default model in settings.')
+      }
+
+      // Create conversation through IPC handler with AI model
       const result = await window.electronAPI.invoke('chat:createConversation', {
         type: 'direct',
         participants: [],
-        name: chatName
+        name: chatName,
+        aiModelId
       })
       
       if (!result.success || !result.data) {
@@ -535,15 +541,15 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
                       <Plus className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setShowNewChatDialog(true)}>
-                  <MessageSquare className="mr-2 h-4 w-4" />
-                  New Chat
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShowNewGroupDialog(true)}>
-                  <Users className="mr-2 h-4 w-4" />
-                  New Group Chat
-                </DropdownMenuItem>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => setShowNewChatDialog(true)}>
+                      <MessageSquare className="mr-2 h-4 w-4" />
+                      New Chat
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setShowNewGroupDialog(true)}>
+                      <Users className="mr-2 h-4 w-4" />
+                      New Group Chat
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
@@ -572,148 +578,19 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
 
         <>
           {/* Conversation list */}
-          <ScrollArea className="flex-1">
-            <div className={isCollapsed ? "py-2 space-y-1" : "p-2 space-y-1"}>
-              {filteredConversations.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {isCollapsed ? (
-                    <Bot className="h-6 w-6 mx-auto opacity-50" />
-                  ) : (
-                    <>
-                      <Bot className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p className="text-sm">No matches found</p>
-                      <p className="text-xs">Try a different search</p>
-                    </>
-                  )}
-                </div>
-              ) : (
-                filteredConversations.map((conv) =>
-                  isCollapsed ? (
-                    // Collapsed: minimal avatar only
-                    <div
-                      key={conv.id}
-                      onClick={() => setSelectedConversation(conv.id)}
-                      className={`w-8 h-8 mx-auto rounded-full cursor-pointer transition-all flex items-center justify-center ${
-                        selectedConversation === conv.id
-                          ? 'bg-primary text-primary-foreground ring-1 ring-primary/50'
-                          : 'bg-primary/10 hover:bg-primary/20'
-                      }`}
-                      title={conv.name}
-                    >
-                      {processingConversations.has(conv.id) ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Bot className="w-4 h-4" />
-                      )}
-                    </div>
-                  ) : (
-                    // Expanded: full conversation card
-                    <div
-                      key={conv.id}
-                      onClick={() => setSelectedConversation(conv.id)}
-                      className={`group flex items-start gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
-                        selectedConversation === conv.id
-                          ? 'bg-primary/10 border border-primary/30'
-                          : 'hover:bg-muted/50 border border-transparent'
-                      }`}
-                    >
-                      {/* Avatar */}
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                        {processingConversations.has(conv.id) ? (
-                          <Loader2 className="w-4 h-4 text-primary animate-spin" />
-                        ) : (
-                          <Bot className="w-4 h-4 text-primary" />
-                        )}
-                      </div>
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1 mb-0.5">
-                        <h3 className="font-medium text-xs truncate">{conv.name}</h3>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              onClick={(e) => e.stopPropagation()}
-                              size="icon"
-                              variant="ghost"
-                              className="h-5 w-5 flex-shrink-0 opacity-0 group-hover:opacity-100"
-                            >
-                              <MoreVertical className="h-3 w-3" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                openRenameDialog(conv.id)
-                              }}
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              Rename
-                            </DropdownMenuItem>
-                            {/* Show Add User option for all chats */}
-                            {/* For P2P chats, this will create a new group chat */}
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                openAddUsersDialog(conv.id)
-                              }}
-                            >
-                              <UserPlus className="mr-2 h-4 w-4" />
-                              Add User
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                openMCPConfigDialog(conv.id)
-                              }}
-                            >
-                              <Settings className="mr-2 h-4 w-4" />
-                              MCP Settings
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                deleteConversation(conv.id)
-                              }}
-                              className="text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-
-                      {conv.lastMessage && (
-                        <p className="text-[10px] text-muted-foreground mb-0.5 line-clamp-1">
-                          {(() => {
-                            const cleaned = stripMarkdown(conv.lastMessage)
-                            return cleaned.length > 40
-                              ? cleaned.substring(0, 40) + '...'
-                              : cleaned
-                          })()}
-                        </p>
-                      )}
-
-                      <div className="flex items-center justify-between gap-1 text-[10px] text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <span>{formatTime(conv.lastMessageTime)}</span>
-                          {conv.lastMessage && (
-                            <CheckCheck className="h-3 w-3 text-primary/70" />
-                          )}
-                        </div>
-                        {conv.modelName && (
-                          <span className="text-primary text-[10px] font-medium">{conv.modelName}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  )
-                ))
-              }
-            </div>
-          </ScrollArea>
+          <ConversationList
+            conversations={filteredConversations}
+            selectedConversationId={selectedConversation}
+            processingConversations={processingConversations}
+            isCollapsed={isCollapsed}
+            onSelectConversation={setSelectedConversation}
+            onRenameConversation={openRenameDialog}
+            onAddUsers={openAddUsersDialog}
+            onConfigureMCP={openMCPConfigDialog}
+            onDeleteConversation={deleteConversation}
+            formatTime={formatTime}
+            stripMarkdown={stripMarkdown}
+          />
 
           {/* Resize handle */}
           {!isCollapsed && (
@@ -754,14 +631,17 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
             isInitiallyProcessing={processingConversations.has(selectedConversation)}
             onProcessingChange={handleProcessingChange}
             onMessageUpdate={handleMessageUpdate}
-            hasAIParticipant={conversations.find(c => c.id === selectedConversation)?.hasAIParticipant}
+            hasAIParticipant={conversations.find(c => c.id === selectedConversation)?.hasAIParticipant || conversations.find(c => c.id === selectedConversation)?.isAITopic}
             onAddUsers={() => openAddUsersDialog(selectedConversation)}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground">
             <div className="text-center">
+              <h1 className="text-6xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-6">
+                LAMA
+              </h1>
               <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <p className="text-lg mb-2">Welcome to LAMA</p>
+              <p className="text-lg mb-2">Welcome</p>
               <p className="text-sm">Select a conversation or create a new one to get started</p>
             </div>
           </div>
@@ -805,13 +685,6 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
       }
     />
 
-    {/* New Group Chat Dialog */}
-    <GroupChatDialog
-      open={showNewGroupDialog}
-      onOpenChange={setShowNewGroupDialog}
-      onSubmit={handleCreateGroupConversation}
-    />
-
     {/* MCP Configuration Dialog */}
     <MCPConfigDialog
       open={showMCPConfigDialog}
@@ -821,6 +694,13 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
         setShowMCPConfigDialog(false)
         setConversationToConfigureMCP(null)
       }}
+    />
+
+    {/* New Group Chat Dialog */}
+    <GroupChatDialog
+      open={showNewGroupDialog}
+      onOpenChange={setShowNewGroupDialog}
+      onSubmit={handleCreateGroupConversation}
     />
     </>
   )

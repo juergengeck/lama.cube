@@ -31,30 +31,21 @@ async function startApp() {
   try {
     console.log('[MAIN] Checking if ready to show login screen...')
     const initResult = await browserInit.initialize()
-    
+
     if (initResult.ready) {
       console.log('[MAIN] ✅ Ready to show UI (NO ONE.CORE initialized yet)')
-      
-      ReactDOM.createRoot(document.getElementById('root')!).render(
-        <App />
-      )
     } else {
       console.error('[MAIN] ❌ Browser ONE.CORE initialization failed')
-      // Still render the app - it can show error state
-      ReactDOM.createRoot(document.getElementById('root')!).render(
-        <App />
-      )
     }
-    
+
   } catch (error) {
     console.error('[MAIN] Fatal initialization error:', error)
-    // Still try to render the app
-    ReactDOM.createRoot(document.getElementById('root')!).render(
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>,
-    )
   }
+
+  // Always render the app exactly once, regardless of initialization outcome
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <App />
+  )
 }
 
 // Start the application

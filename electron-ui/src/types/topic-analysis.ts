@@ -14,7 +14,7 @@ export interface Subject {
   $type$: 'Subject';
   id: string; // Keyword combination used as ID
   topic: string; // Topic ID (plain string, Topic is unversioned)
-  keywords: string[]; // Array of Keyword ID hashes (SHA256IdHash<Keyword> from backend)
+  keywords: string[]; // Array of keyword terms (resolved from ID hashes by backend)
   timeRanges: Array<{
     start: number;
     end: number;
@@ -22,7 +22,9 @@ export interface Subject {
   messageCount: number;
   createdAt: number;
   lastSeenAt: number;
+  description?: string; // LLM-generated description
   archived?: boolean;
+  timestamp?: number; // Alias for lastSeenAt (for UI display)
 }
 
 /**

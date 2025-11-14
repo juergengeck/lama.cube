@@ -29,7 +29,7 @@ export const ChatView = memo(function ChatView({
   hasAIParticipant?: boolean
   onAddUsers?: () => void
 }) {
-  const { messages, loading, sendMessage } = useLamaMessages(conversationId)
+  const { messages, loading, sendMessage, loadMessages } = useLamaMessages(conversationId)
   const { user } = useLamaAuth()
   const { subjects, subjectsJustAppeared } = useChatSubjects(conversationId)
   const { keywords } = useChatKeywords(conversationId, messages)
@@ -56,6 +56,7 @@ export const ChatView = memo(function ChatView({
   const [conversationName, setConversationName] = useState<string>('Messages')
   const [isProcessing, setIsProcessing] = useState(false)
   const [isAIProcessing, setIsAIProcessing] = useState(isInitiallyProcessing)
+  const [isAIStreaming, setIsAIStreaming] = useState(false)  // Track streaming separately from thinking
   const [aiStreamingContent, setAiStreamingContent] = useState('')
   const [aiThinkingContent, setAiThinkingContent] = useState('')  // For reasoning models
   const [lastAnalysisMessageCount, setLastAnalysisMessageCount] = useState(0)
@@ -66,10 +67,34 @@ export const ChatView = memo(function ChatView({
   const streamingStartTimeRef = useRef<number | null>(null)
   const lastLogTimeRef = useRef<number>(0)
   const [thinkingStatus, setThinkingStatus] = useState<string>('')
+  const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string }>>([])
 
   // Check if this is an AI conversation
   // Use the authoritative value from backend conversation metadata
   const hasAIParticipant = hasAIParticipantProp || false
+
+  // Load available models for LLM error recovery
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const models = await lamaBridge.getAvailableModels()
+        setAvailableModels(models)
+      } catch (error) {
+        console.error('[ChatView] Failed to load available models:', error)
+      }
+    }
+    loadModels()
+  }, [])
+
+  // Handle model switching
+  const handleSwitchModel = useCallback(async (newModelId: string) => {
+    try {
+      await lamaBridge.switchTopicModel(conversationId, newModelId)
+      console.log(`[ChatView] Switched to model ${newModelId} for topic ${conversationId}`)
+    } catch (error) {
+      console.error('[ChatView] Failed to switch model:', error)
+    }
+  }, [conversationId])
 
 
   // Analysis is handled automatically by chatWithAnalysis() in ai-assistant-model.ts
@@ -96,7 +121,7 @@ export const ChatView = memo(function ChatView({
 
   // Set analyzing flag when AI response completes (analysis happens in background)
   useEffect(() => {
-    if (!isAIProcessing && messages.length > 0 && hasAIParticipant) {
+    if (!isAIStreaming && messages.length > 0 && hasAIParticipant) {
       const lastMessage = messages[messages.length - 1]
       if (lastMessage?.isAI) {
         console.log(`[Progress] Starting background analysis for conversation ${conversationId}`)
@@ -104,17 +129,17 @@ export const ChatView = memo(function ChatView({
         // Analysis will complete and trigger subjects:updated event
       }
     }
-  }, [isAIProcessing, messages.length, conversationId, hasAIParticipant])
+  }, [isAIStreaming, messages.length, conversationId, hasAIParticipant])
 
-  // Clear AI processing state when conversation changes
+  // Initialize AI processing state when conversation changes
+  // ONLY when the conversationId actually changes (not when hasAIParticipant updates)
   useEffect(() => {
-    // console.log(`[ChatView] Conversation changed to: ${conversationId}, clearing AI state`)
-    setIsAIProcessing(false)
+    console.log(`[ChatView] Conversation changed to: ${conversationId}, resetting AI state`)
+    // Reset state when switching conversations
+    setIsAIProcessing(isInitiallyProcessing)
+    setIsAIStreaming(false)
     setAiStreamingContent('')
-  }, [conversationId])
-
-  // Spinner is controlled by message:thinking event from backend
-  // No need to predict state here - backend emits event when generating welcome
+  }, [conversationId])  // Only depend on conversationId, not hasAIParticipant!
 
   // Listen for AI streaming events
   useEffect(() => {
@@ -122,6 +147,12 @@ export const ChatView = memo(function ChatView({
     
     // Handle thinking indicator (used for all AI messages including welcome)
     const handleThinking = (data: any) => {
+      console.log(`[ChatView] 📨 handleThinking received:`, {
+        eventConversationId: data.conversationId,
+        currentConversationId: conversationId,
+        matches: data.conversationId === conversationId
+      })
+
       if (data.conversationId === conversationId) {
         const startTime = Date.now()
         thinkingStartTimeRef.current = startTime
@@ -130,8 +161,10 @@ export const ChatView = memo(function ChatView({
         setThinkingStatus(data.status || '')
         console.log(`[Progress] T+0ms AI thinking started | conversation: ${conversationId}`)
         setIsAIProcessing(true)
+        setIsAIStreaming(false)  // Don't show stop button until streaming actually starts
         setAiStreamingContent('')
         onProcessingChange?.(true) // Update parent state
+        console.log(`[ChatView] ✅ isAIProcessing set to TRUE`)
       }
     }
 
@@ -146,8 +179,15 @@ export const ChatView = memo(function ChatView({
 
     // Handle thinking stream (for reasoning models)
     const handleThinkingStream = (data: any) => {
+      console.log(`[ThinkingStream] 🧠 RAW EVENT RECEIVED:`, {
+        eventConversationId: data.conversationId,
+        currentConversationId: conversationId,
+        matches: data.conversationId === conversationId,
+        thinkingLength: data.thinking?.length || 0,
+        messageId: data.messageId
+      })
       if (data.conversationId === conversationId) {
-        console.log(`[ThinkingStream] Received thinking update (${data.thinking?.length || 0} chars)`)
+        console.log(`[ThinkingStream] 🧠 Setting aiThinkingContent (${data.thinking?.length || 0} chars)`)
         setAiThinkingContent(data.thinking || '')
       }
     }
@@ -165,7 +205,8 @@ export const ChatView = memo(function ChatView({
           console.log(`[Progress] T+${thinkingElapsed}ms FIRST CHUNK | Thinking took ${thinkingElapsed}ms`)
         }
 
-        setIsAIProcessing(false)
+        setIsAIProcessing(false)  // Stop showing "thinking" indicator
+        setIsAIStreaming(true)     // Keep streaming state (and stop button) visible
         setAiStreamingContent(data.partial || '')
       }
     }
@@ -176,13 +217,35 @@ export const ChatView = memo(function ChatView({
         const totalElapsed = thinkingStartTimeRef.current ? Date.now() - thinkingStartTimeRef.current : 0
         console.log(`[Progress] T+${totalElapsed}ms COMPLETE | Total response time: ${totalElapsed}ms`)
         setIsAIProcessing(false)
-        setAiStreamingContent('')
+        setIsAIStreaming(false)  // Clear streaming state - hide stop button
         setAiThinkingContent('')  // Clear thinking when complete
         thinkingStartTimeRef.current = null
         streamingStartTimeRef.current = null
         lastLogTimeRef.current = 0
         setThinkingStatus('')
         onProcessingChange?.(false) // Update parent state
+
+        // Reload messages from storage to display the final persisted message
+        // Keep aiStreamingContent displayed until reload completes to avoid flicker
+        console.log(`[Progress] Reloading messages from storage...`)
+        const currentMessageCount = messages.length
+        loadMessages().then(() => {
+          // Only clear streaming content if we actually got new messages
+          // This prevents the message from disappearing if storage hasn't been updated yet
+          if (messages.length > currentMessageCount) {
+            console.log(`[Progress] New message found in storage, clearing streaming content`)
+            setAiStreamingContent('')
+          } else {
+            console.log(`[Progress] No new messages yet, keeping streaming content visible`)
+            // Try again after a short delay to catch late-persisted messages
+            setTimeout(() => {
+              loadMessages().then(() => {
+                console.log(`[Progress] Second attempt - clearing streaming content`)
+                setAiStreamingContent('')
+              })
+            }, 100)
+          }
+        })
       }
     }
 
@@ -269,15 +332,8 @@ export const ChatView = memo(function ChatView({
     setIsProcessing(true)
     onProcessingChange?.(true)
 
-    // Check if this is an AI conversation to show processing indicator
-    const isAIConversation = conversationId === 'lama' ||
-                             conversationId === 'ai-chat' ||
-                             messages.some(m => m.isAI)
-
-    if (isAIConversation) {
-      setIsAIProcessing(true)
-      setAiStreamingContent('')
-    }
+    // Don't set isAIProcessing here - let message:thinking event handle it
+    // This avoids race condition where finally block clears it before thinking event fires
 
     try {
       await sendMessage(conversationId, content, attachments)
@@ -300,6 +356,7 @@ export const ChatView = memo(function ChatView({
       console.log('[ChatView] Stop streaming result:', result)
       if (result.success) {
         setIsAIProcessing(false)
+        setIsAIStreaming(false)  // Clear streaming state
         setAiStreamingContent('')
         onProcessingChange?.(false)
       }
@@ -446,16 +503,18 @@ export const ChatView = memo(function ChatView({
           messages={messages}
           currentUserId={user?.id}
           onSendMessage={handleSendMessage}
+          onSwitchModel={handleSwitchModel}
           onStopStreaming={handleStopStreaming}
           placeholder="Type a message..."
           showSender={true}
           loading={loading}
-          isAIProcessing={isAIProcessing}
+          isAIProcessing={isAIProcessing || isAIStreaming}  // Show spinner during thinking or streaming
           aiStreamingContent={aiStreamingContent}
           aiThinkingContent={aiThinkingContent}
           topicId={conversationId}
           subjectsJustAppeared={subjectsJustAppeared}
           chatHeaderRef={chatHeaderRef}
+          availableModels={availableModels}
         />
       </CardContent>
     </Card>

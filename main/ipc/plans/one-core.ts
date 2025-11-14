@@ -76,12 +76,16 @@ const oneCoreHandlers = {
    */
   async initializeNode(event: IpcMainInvokeEvent, params: any) {
     const { name, password } = params.user || params;
+    const t0 = performance.now();
+    console.log('[OneCoreElectronHandler] ⏱️ IPC initializeNode received at', t0.toFixed(1), 'ms');
     console.log('[OneCoreElectronHandler] Initialize Node.js ONE.core instance:', name);
 
     try {
       const result = await nodeProvisioning.provision({
         user: { name, password }
       });
+      const t1 = performance.now();
+      console.log('[OneCoreElectronHandler] ⏱️ IPC initializeNode completed after', (t1-t0).toFixed(1), 'ms');
       return result;
     } catch (error) {
       console.error('[OneCoreElectronHandler] Failed to initialize Node:', error);
@@ -167,7 +171,18 @@ const oneCoreHandlers = {
    */
   async getContacts(event?: IpcMainInvokeEvent) {
     const contacts = await getContactService().getContacts();
-    return { success: true, contacts };
+
+    // Enrich with AI/LLM flags
+    const enrichedContacts = contacts.map((contact: any) => {
+      const isAI = nodeOneCore.aiAssistantModel?.isAIPerson(contact.id) || false;
+      return {
+        ...contact,
+        isAI,
+        isLLM: isAI  // Backward compatibility
+      };
+    });
+
+    return { success: true, contacts: enrichedContacts };
   },
 
   /**

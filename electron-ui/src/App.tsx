@@ -1,18 +1,19 @@
 import { useState, useEffect } from 'react'
-import { Button } from '@lama/ui'
+import { Button, ModelOnboarding } from '@lama/ui'
 // import { ScrollArea } from '@lama/ui'
 import { ChatLayout } from '@/components/ChatLayout'
-import { JournalView } from '@/components/JournalView'
 import { ContactsView } from '@/components/ContactsView'
 import { SettingsView } from '@/components/SettingsView'
 import { DataDashboard } from '@/components/DataDashboard'
-import { DevicesView } from '@/components/DevicesView'
+import { JournalViewWrapper } from '@/components/JournalViewWrapper'
+import { UnifiedDevicesView } from '@lama/ui'
+import { createElectronDeviceAdapter } from '@/adapters/device-adapter'
 import { LoginDeploy } from '@lama/ui'
-import { ModelOnboarding } from '@/components/ModelOnboarding'
 import { MessageSquare, BookOpen, Users, Settings, Loader2, Smartphone, BarChart3, Wifi, WifiOff, RefreshCw } from 'lucide-react'
 import { useLamaInit } from '@/hooks/useLamaInit'
 import { lamaBridge } from '@/bridge/lama-bridge'
 import { ipcStorage } from '@/services/ipc-storage'
+import { createLLMConfigOperations, createAIOperations, CLOUD_MODEL_OPTIONS } from '@/adapters/llm-operations'
 
 function App() {
   const [activeTab, setActiveTab] = useState('chats')
@@ -22,8 +23,25 @@ function App() {
   const [mcpApiStatus, setMcpApiStatus] = useState<{ running: boolean; requestCount: number }>({ running: false, requestCount: 0 })
   const [mcpReconnecting, setMcpReconnecting] = useState(false)
   const [memoryScanStatus, setMemoryScanStatus] = useState<{ scanning: boolean; progress?: string }>({ scanning: false })
+  const [proposalSensitivity, setProposalSensitivity] = useState<number>(0.9) // 0-1 scale where 0=no proposals, 1=all proposals
   const { isInitialized, isAuthenticated, isLoading, login, logout, error, initProgress } = useLamaInit()
   // NO AppModel in browser - use IPC for everything
+
+  // Update proposal config when sensitivity changes
+  // Invert the scale: 0% sensitivity = high threshold (1.0), 100% sensitivity = low threshold (0.0)
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const updateConfig = async () => {
+      try {
+        const minJaccard = 1 - proposalSensitivity // Invert: 0% = 1.0 (strict), 100% = 0.0 (loose)
+        await lamaBridge.updateProposalConfig({ minJaccard })
+        console.log('[App] Updated proposal sensitivity:', (proposalSensitivity * 100).toFixed(0) + '%', '-> minJaccard:', minJaccard.toFixed(2))
+      } catch (error) {
+        console.error('[App] Failed to update proposal config:', error)
+      }
+    }
+    updateConfig()
+  }, [proposalSensitivity, isAuthenticated])
 
   // Check if any topics exist (for onboarding detection)
   useEffect(() => {
@@ -191,8 +209,11 @@ function App() {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center max-w-md">
+          <h1 className="text-6xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-6">
+            LAMA
+          </h1>
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-          <h2 className="text-2xl font-bold mb-2">Initializing LAMA Desktop</h2>
+          <h2 className="text-2xl font-bold mb-2">Initializing Desktop</h2>
           {initProgress ? (
             <>
               <div className="mt-4 mb-2">
@@ -223,7 +244,18 @@ function App() {
   // Show login/deploy screen if not authenticated
   // Security through obscurity - credentials deploy or access instances
   if (!isAuthenticated) {
-    return <LoginDeploy onLogin={login} />
+    return <LoginDeploy
+      onLogin={login}
+      logo={
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          LAMA
+        </h1>
+      }
+      testOllamaConnection={async (baseUrl: string) => {
+        const llmConfig = createLLMConfigOperations()
+        return await llmConfig.testConnection({ baseUrl })
+      }}
+    />
   }
 
   // Debug: Log all relevant state
@@ -242,11 +274,22 @@ function App() {
 
   if (shouldShowOnboarding) {
     console.log('[App] ✅ Showing ModelOnboarding component because hasDefaultModel === false')
-    return <ModelOnboarding onComplete={async () => {
-      // Model has been selected and saved to settings
-      console.log('[App] ModelOnboarding completed, setting hasDefaultModel to true')
-      setHasDefaultModel(true)
-    }} />
+    return <ModelOnboarding
+      llmConfig={createLLMConfigOperations()}
+      aiPlan={createAIOperations()}
+      modelOptions={CLOUD_MODEL_OPTIONS}
+      allowSkip={true}
+      logo={
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          LAMA
+        </h1>
+      }
+      onComplete={async () => {
+        // Model has been selected and saved to settings
+        console.log('[App] ModelOnboarding completed, setting hasDefaultModel to true')
+        setHasDefaultModel(true)
+      }}
+    />
   }
 
   // Show loading while checking for default model
@@ -255,8 +298,11 @@ function App() {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center">
+          <h1 className="text-6xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-6">
+            LAMA
+          </h1>
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-          <h2 className="text-2xl font-bold mb-2">Loading LAMA</h2>
+          <h2 className="text-2xl font-bold mb-2">Loading</h2>
           <p className="text-muted-foreground">Checking for existing conversations...</p>
         </div>
       </div>
@@ -291,7 +337,7 @@ function App() {
       case 'chats':
         return <ChatLayout selectedConversationId={selectedConversationId} />
       case 'journal':
-        return <JournalView />
+        return <JournalViewWrapper />
       case 'contacts':
         return <ContactsView onNavigateToChat={async (topicId, contactName) => {
           // Add or update the conversation in browser localStorage (not IPC secure storage)
@@ -331,7 +377,12 @@ function App() {
           setActiveTab('chats')
         }} />
       case 'devices':
-        return <DevicesView />
+        return <UnifiedDevicesView
+          adapter={createElectronDeviceAdapter()}
+          onNavigateToSettings={(instanceId) => {
+            handleNavigate('settings', undefined, `instance-${instanceId}`)
+          }}
+        />
       case 'settings':
         return <SettingsView onLogout={logout} onNavigate={handleNavigate} />
       default:
@@ -342,7 +393,7 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
       {/* Top Navigation Bar */}
-      <div className="border-b bg-card">
+      <div className="border-b bg-card" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
         <div className="flex items-center justify-between px-6 py-3">
           {/* Logo and App Name */}
           <div className="flex items-center space-x-4">
@@ -353,7 +404,7 @@ function App() {
           </div>
 
           {/* Tab Navigation */}
-          <div className="flex items-center justify-between flex-1">
+          <div className="flex items-center justify-between flex-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             {/* Left side - main navigation */}
             <div className="flex items-center space-x-2">
               {tabs.filter(tab => tab.id !== 'settings').map((tab) => {
@@ -372,7 +423,7 @@ function App() {
                 )
               })}
             </div>
-            
+
             {/* Right side - settings */}
             <div className="flex items-center space-x-2">
               {tabs.filter(tab => tab.id === 'settings').map((tab) => {
@@ -443,6 +494,25 @@ function App() {
             )}
           </div>
           <div className="flex items-center space-x-4">
+            {/* Proposal sensitivity slider */}
+            <div className="flex items-center gap-2">
+              <span className="whitespace-nowrap">Proposals:</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={proposalSensitivity}
+                onChange={(e) => setProposalSensitivity(parseFloat(e.target.value))}
+                className="w-24 h-1 bg-muted rounded-lg appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, hsl(var(--primary)) 0%, hsl(var(--primary)) ${proposalSensitivity * 100}%, hsl(var(--muted)) ${proposalSensitivity * 100}%, hsl(var(--muted)) 100%)`
+                }}
+                title="Adjust proposal sensitivity: 0% = no proposals, 100% = all proposals"
+              />
+              <span className="font-mono min-w-[3ch]">{(proposalSensitivity * 100).toFixed(0)}%</span>
+            </div>
+            <span>·</span>
             <span>Identity: {isAuthenticated ? 'Active' : 'None'}</span>
           </div>
         </div>

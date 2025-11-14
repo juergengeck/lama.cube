@@ -301,6 +301,32 @@ const aiPlans = {
   },
 
   /**
+   * Discover Ollama models from local Ollama instance
+   * Called after Ollama config is saved to dynamically register available models
+   */
+  async discoverOllamaModels(
+    event: IpcMainInvokeEvent
+  ) {
+    try {
+      // Discover Ollama models (no API key needed for local Ollama)
+      await llmManager.discoverOllamaModels();
+
+      // Get discovered Ollama models to return to UI
+      const allModels = llmManager.getModels();
+      const ollamaModels = allModels.filter((m: any) => m.provider === 'ollama');
+
+      return {
+        success: true,
+        data: {
+          models: ollamaModels
+        }
+      };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
    * Check if a topic is an AI topic
    */
   async isAITopic(
@@ -344,6 +370,24 @@ const aiPlans = {
       const modelId = handler.getModelIdForTopic(topicId);
       return { success: true, modelId };
     } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Switch the model for a specific topic
+   */
+  async switchTopicModel(
+    event: IpcMainInvokeEvent,
+    { topicId, newModelId }: { topicId: string; newModelId: string }
+  ) {
+    try {
+      const handler = getAIHandler();
+      handler.topicManager.switchTopicModel(topicId, newModelId);
+      console.log(`[AI IPC] Switched topic ${topicId} to model ${newModelId}`);
+      return { success: true };
+    } catch (error: any) {
+      console.error('[AI IPC] Failed to switch topic model:', error);
       return { success: false, error: error.message };
     }
   },

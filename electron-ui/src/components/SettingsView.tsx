@@ -2,58 +2,33 @@ import { useState, useEffect } from 'react'
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
   Button,
-  Input,
-  Label,
   Badge,
-  Separator,
   ScrollArea,
   Progress,
-  Alert, AlertDescription,
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
+  Label,
+  Separator
 } from '@lama/ui'
 import {
-  Settings, User, Shield, Globe, Cpu, HardDrive,
-  Moon, Sun, Save, RefreshCw, LogOut, Brain, Download, CheckCircle, Circle, Zap, MessageSquare, Code, Key, AlertTriangle, Users, Trash2, Database, Hash, Clock, Package, Eye, ChevronDown, ChevronRight, Copy, FileText, Monitor, Smile, Frown, Angry, Wind, Sparkles, Coffee, Target, Minus
+  Settings, User, Shield, Globe, HardDrive,
+  Save, RefreshCw, Brain, Code, Key, Database, Hash, Clock, Package, Eye, ChevronDown, ChevronRight, Copy, FileText, Monitor, Sparkles, Download, LogOut
 } from 'lucide-react'
-import { lamaBridge } from '@/bridge/lama-bridge'
 import { ipcStorage } from '@/services/ipc-storage'
-import InstancesView from './InstancesView'
-import { MCPSettings } from './settings/MCPSettings'
-import { AISettingsPanel, UISettingsPanel, ProposalSettingsPanel, SettingsErrorBoundary } from './settings'
-
-interface NetworkSettings {
-  relayServer: string
-  port: number
-  udpPort: number
-  enableP2P: boolean
-  enableRelay: boolean
-  eddaDomain?: string
-}
+import { MCPSettings } from './Settings/MCPSettings'
+import {
+  AISettingsPanel,
+  UISettingsPanel,
+  ProposalSettingsPanel,
+  SettingsErrorBoundary,
+  ProfileSettingsPanel,
+  NetworkSettingsPanel,
+  AIConfigPanel,
+  PrivacySettingsPanel,
+  AccountSettingsPanel
+} from './Settings'
 
 interface SettingsViewProps {
   onLogout?: () => void
   onNavigate?: (tab: string, conversationId?: string, section?: string) => void
-}
-
-interface ModelInfo {
-  id: string
-  name: string
-  description: string
-  provider: string
-  modelType: string
-  capabilities: string[]
-  contextLength: number
-  size: number
-  isLoaded: boolean
-  isDefault: boolean
 }
 
 interface SystemObject {
@@ -67,16 +42,10 @@ interface SystemObject {
 }
 
 export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
-  const [models, setModels] = useState<ModelInfo[]>([])
-  const [loadingModels, setLoadingModels] = useState(true)
-  const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({})
-  const [claudeApiKey, setClaudeApiKey] = useState('')
-  const [showApiKey, setShowApiKey] = useState(false)
-  const [apiKeyStatus, setApiKeyStatus] = useState<'unconfigured' | 'testing' | 'valid' | 'invalid'>('unconfigured')
-  const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434')
-  const [ollamaStatus, setOllamaStatus] = useState<'unconfigured' | 'testing' | 'valid' | 'invalid'>('unconfigured')
-  const [currentMood, setCurrentMood] = useState<string | null>(null)
-  const [savingMood, setSavingMood] = useState(false)
+  // Instance-specific settings state
+  const [viewingInstanceId, setViewingInstanceId] = useState<string | null>(null)
+  const [viewingInstanceName, setViewingInstanceName] = useState<string>('Unknown Device')
+  const [userSettings, setUserSettings] = useState<any>(null)
 
   // System objects state
   const [systemObjects, setSystemObjects] = useState<{
@@ -138,9 +107,6 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'ai' | 'ui' | 'proposals' | 'mcp'>('general')
 
   useEffect(() => {
-    loadModels()
-    loadClaudeApiKey()
-    loadOllamaConfig()
     loadSystemObjects()
     loadDataStats()
 
@@ -154,110 +120,60 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
       }
     })
 
+    // Load user settings with instance information
+    loadUserSettings()
+
     // Handle navigation to specific section
     const scrollToSection = sessionStorage.getItem('settings-scroll-to')
-    if (scrollToSection === 'system-objects') {
-      // Clear the navigation flag
-      sessionStorage.removeItem('settings-scroll-to')
-      
-      // Expand the system objects sections and scroll to it
-      setExpandedSections({
-        keys: true,
-        metadata: true, 
-        crdt: true
-      })
-      
-      // Scroll after a short delay to allow DOM to update
-      setTimeout(() => {
-        const systemObjectsElement = document.getElementById('system-objects-section')
-        if (systemObjectsElement) {
-          systemObjectsElement.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
-          })
+    if (scrollToSection) {
+      // Check if navigating to instance-specific settings
+      if (scrollToSection.startsWith('instance-')) {
+        const instanceId = scrollToSection.replace('instance-', '')
+        setViewingInstanceId(instanceId)
+
+        // Determine instance name
+        if (instanceId === 'browser-renderer') {
+          setViewingInstanceName('Browser UI')
+        } else if (instanceId.startsWith('contact-')) {
+          setViewingInstanceName(`Contact Device`)
+        } else {
+          // Could be Node.js hub or other device
+          setViewingInstanceName(instanceId.substring(0, 20))
         }
-      }, 100)
+
+        // Clear the navigation flag
+        sessionStorage.removeItem('settings-scroll-to')
+      } else if (scrollToSection === 'system-objects') {
+        // Clear the navigation flag
+        sessionStorage.removeItem('settings-scroll-to')
+
+        // Expand the system objects sections and scroll to it
+        setExpandedSections({
+          keys: true,
+          metadata: true,
+          crdt: true
+        })
+
+        // Scroll after a short delay to allow DOM to update
+        setTimeout(() => {
+          const systemObjectsElement = document.getElementById('system-objects-section')
+          if (systemObjectsElement) {
+            systemObjectsElement.scrollIntoView({
+              behavior: 'smooth',
+              block: 'start'
+            })
+          }
+        }, 100)
+      }
     }
   }, [])
 
-  const loadModels = async () => {
+  const loadUserSettings = async () => {
     try {
-      setLoadingModels(true)
-      const modelList = await lamaBridge.getAvailableModels()
-      console.log('[SettingsView] Loaded models:', modelList)
-      modelList.forEach((m: ModelInfo) => {
-        console.log(`[SettingsView] Model ${m.id}: modelType=${m.modelType}, isLoaded=${m.isLoaded}, size=${m.size}`)
-      })
-      setModels(modelList)
+      const settings = await window.electronAPI.invoke('settings:get', {})
+      setUserSettings(settings)
     } catch (error) {
-      console.error('Failed to load models:', error)
-    } finally {
-      setLoadingModels(false)
-    }
-  }
-
-  const handleLoadModel = async (modelId: string) => {
-    setLoadingStates(prev => ({ ...prev, [modelId]: true }))
-    try {
-      const success = await lamaBridge.loadModel(modelId)
-      if (success) {
-        await loadModels()
-      }
-    } catch (error) {
-      console.error('Failed to load model:', error)
-    } finally {
-      setLoadingStates(prev => ({ ...prev, [modelId]: false }))
-    }
-  }
-
-  const handleSetDefault = async (modelId: string) => {
-    try {
-      const success = await lamaBridge.setDefaultModel(modelId)
-      if (success) {
-        await loadModels()
-      }
-    } catch (error) {
-      console.error('Failed to set default model:', error)
-    }
-  }
-
-  const handleStartChat = async (modelId: string, modelName: string) => {
-    try {
-      console.log(`[SettingsView] Starting chat with model: ${modelId}`)
-
-      // First, ensure the AI contact exists (creates it if not)
-      const contactResult = await window.electronAPI?.invoke('ai:getOrCreateContact', {
-        modelId: modelId
-      })
-
-      if (!contactResult?.success || !contactResult.data?.personId) {
-        console.error(`[SettingsView] Failed to get or create AI contact for ${modelId}`)
-        return
-      }
-
-      const aiPersonId = contactResult.data.personId
-      console.log(`[SettingsView] Got AI contact person ID:`, aiPersonId)
-
-      // Create a direct conversation with this AI contact
-      const result = await window.electronAPI?.invoke('chat:createConversation', {
-        type: 'direct',
-        participants: [aiPersonId],
-        name: modelName,
-        aiModelId: modelId  // CRITICAL: Pass model ID so ChatHandler registers the topic
-      })
-
-      if (result?.success && result?.data) {
-        console.log(`[SettingsView] Created conversation:`, result.data.id)
-
-        // Trigger a custom event to switch to the chat view
-        window.dispatchEvent(new CustomEvent('open-conversation', {
-          detail: { conversationId: result.data.id }
-        }))
-      } else {
-        console.error('[SettingsView] Failed to create conversation:', result?.error)
-      }
-    } catch (error) {
-      console.error('[SettingsView] Error starting chat:', error)
+      console.error('[SettingsView] Failed to load user settings:', error)
     }
   }
 
@@ -269,13 +185,13 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
         window.electronAPI?.invoke('crypto:getKeys'),
         window.electronAPI?.invoke('crypto:getCertificates')
       ])
-      
-      const keys = []
-      const certificates = []
-      
+
+      const keys: SystemObject[] = []
+      const certificates: SystemObject[] = []
+
       if (keysResult?.success && keysResult.data) {
         // Process keys from crypto handler
-        keysResult.data.forEach(key => {
+        keysResult.data.forEach((key: any) => {
           keys.push({
             id: key.id,
             type: key.type,
@@ -295,7 +211,7 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
       
       if (certsResult?.success && certsResult.data) {
         // Process certificates from crypto handler
-        certsResult.data.forEach(cert => {
+        certsResult.data.forEach((cert: any) => {
           certificates.push({
             id: cert.id,
             type: cert.type,
@@ -547,219 +463,6 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
     }
   }
   
-  const loadClaudeApiKey = async () => {
-    try {
-      // Retrieve API key from UserSettings (NEW system - syncs via CHUM)
-      const apiKey = await window.electronAPI?.invoke('settings:getApiKey', {
-        provider: 'anthropic'
-      })
-
-      if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0) {
-        // Key exists and is non-empty - it was validated when saved, so show as valid
-        setClaudeApiKey(apiKey)
-        setApiKeyStatus('valid')
-        console.log('[SettingsView] Loaded existing API key from storage (previously validated)')
-      } else {
-        // No key or empty key - show unconfigured
-        setClaudeApiKey('')
-        setApiKeyStatus('unconfigured')
-        console.log('[SettingsView] No API key found in storage')
-      }
-    } catch (error) {
-      console.error('Failed to load Claude API key:', error)
-      setClaudeApiKey('')
-      setApiKeyStatus('unconfigured')
-    }
-  }
-
-  const loadOllamaConfig = async () => {
-    try {
-      // Get Ollama configuration from IPC
-      const result = await window.electronAPI?.invoke('llm:getConfig', {
-        provider: 'ollama'
-      })
-
-      if (result?.success && result.config) {
-        setOllamaUrl(result.config.baseUrl || 'http://localhost:11434')
-        setOllamaStatus('valid')
-      }
-    } catch (error) {
-      console.error('Failed to load Ollama config:', error)
-    }
-  }
-  
-  const handleSaveClaudeApiKey = async () => {
-    if (!claudeApiKey) {
-      setApiKeyStatus('invalid')
-      return
-    }
-
-    setApiKeyStatus('testing')
-    try {
-      // Store API key in UserSettings (NEW system - syncs via CHUM)
-      const result = await window.electronAPI?.invoke('settings:setApiKey', {
-        provider: 'anthropic',
-        apiKey: claudeApiKey
-      })
-
-      if (result) {
-        // Test the API key with Claude
-        const testResult = await window.electronAPI?.invoke('llm:testApiKey', {
-          provider: 'anthropic',
-          apiKey: claudeApiKey
-        })
-
-        if (testResult?.success) {
-          setApiKeyStatus('valid')
-
-          // Trigger LLM manager to discover Claude models with the new API key
-          console.log('[SettingsView] Triggering Claude model discovery...')
-          const discoveryResult = await window.electronAPI?.invoke('ai:discoverClaudeModels', {
-            apiKey: claudeApiKey
-          })
-
-          if (discoveryResult?.success && discoveryResult.data?.models) {
-            const claudeModels = discoveryResult.data.models
-            console.log(`[SettingsView] Discovered ${claudeModels.length} Claude models from API`)
-
-            // Create AI contacts for each discovered Claude model
-            for (const model of claudeModels) {
-              try {
-                const contactResult = await window.electronAPI?.invoke('ai:getOrCreateContact', {
-                  modelId: model.id
-                })
-                if (contactResult?.success) {
-                  console.log(`[SettingsView] Created AI contact for ${model.name}`)
-                }
-              } catch (err) {
-                console.warn(`[SettingsView] Failed to create contact for ${model.name}:`, err)
-              }
-            }
-          }
-
-          // Reload models to show newly discovered Claude models
-          await loadModels()
-        } else {
-          setApiKeyStatus('invalid')
-        }
-      } else {
-        throw new Error('Failed to store API key in UserSettings')
-      }
-    } catch (error) {
-      console.error('Failed to save Claude API key:', error)
-      setApiKeyStatus('invalid')
-    }
-  }
-
-  const handleSaveOllamaConfig = async () => {
-    if (!ollamaUrl) {
-      setOllamaStatus('invalid')
-      return
-    }
-
-    setOllamaStatus('testing')
-    try {
-      // Save Ollama configuration via IPC
-      const result = await window.electronAPI?.invoke('llm:updateConfig', {
-        provider: 'ollama',
-        config: {
-          baseUrl: ollamaUrl
-        }
-      })
-
-      if (result?.success) {
-        setOllamaStatus('valid')
-
-        // Reload models
-        await loadModels()
-
-        // Discover Ollama models and create AI contacts
-        console.log('[SettingsView] Triggering Ollama model discovery...')
-        const discoveryResult = await window.electronAPI?.invoke('ai:discoverOllamaModels')
-
-        if (discoveryResult?.success && discoveryResult.data?.models) {
-          const ollamaModels = discoveryResult.data.models
-          console.log(`[SettingsView] Discovered ${ollamaModels.length} Ollama models`)
-
-          // Create AI contacts for each discovered Ollama model
-          for (const model of ollamaModels) {
-            try {
-              const contactResult = await window.electronAPI?.invoke('ai:getOrCreateContact', {
-                modelId: model.id
-              })
-              if (contactResult?.success) {
-                console.log(`[SettingsView] Created AI contact for ${model.name}`)
-              }
-            } catch (err) {
-              console.warn(`[SettingsView] Failed to create contact for ${model.name}:`, err)
-            }
-          }
-
-          // Reload models again to show updated contact info
-          await loadModels()
-        }
-      } else {
-        setOllamaStatus('invalid')
-      }
-    } catch (error) {
-      console.error('Failed to save Ollama config:', error)
-      setOllamaStatus('invalid')
-    }
-  }
-
-  const getProviderIcon = (provider: string) => {
-    switch (provider.toLowerCase()) {
-      case 'qwen': return <Brain className="h-4 w-4" />
-      case 'openai': return <Zap className="h-4 w-4" />
-      case 'anthropic': return <MessageSquare className="h-4 w-4" />
-      default: return <Cpu className="h-4 w-4" />
-    }
-  }
-
-  const getCapabilityIcon = (capability: string) => {
-    switch (capability.toLowerCase()) {
-      case 'coding': return <Code className="h-3 w-3" />
-      case 'reasoning': return <Brain className="h-3 w-3" />
-      case 'chat': return <MessageSquare className="h-3 w-3" />
-      default: return <Circle className="h-3 w-3" />
-    }
-  }
-
-  const getMoodIcon = (mood: string) => {
-    switch (mood) {
-      case 'happy': return <Smile className="h-4 w-4" />
-      case 'sad': return <Frown className="h-4 w-4" />
-      case 'angry': return <Angry className="h-4 w-4" />
-      case 'calm': return <Wind className="h-4 w-4" />
-      case 'excited': return <Sparkles className="h-4 w-4" />
-      case 'tired': return <Coffee className="h-4 w-4" />
-      case 'focused': return <Target className="h-4 w-4" />
-      case 'neutral': return <Minus className="h-4 w-4" />
-      default: return <Circle className="h-4 w-4" />
-    }
-  }
-
-  const handleUpdateMood = async (mood: string | null) => {
-    setSavingMood(true)
-    try {
-      const result = await window.electronAPI?.invoke('onecore:updateMood', { mood })
-      if (result?.success) {
-        setCurrentMood(mood)
-      }
-    } catch (error) {
-      console.error('Failed to update mood:', error)
-    } finally {
-      setSavingMood(false)
-    }
-  }
-
-  const formatSize = (size: number) => {
-    if (size === 0) return 'API-based'
-    if (size >= 1e9) return `${(size / 1e9).toFixed(1)}B params`
-    if (size >= 1e6) return `${(size / 1e6).toFixed(1)}M params`
-    return `${size} bytes`
-  }
-
   const handleSave = () => {
     console.log('Saving settings:', settings)
     setHasChanges(false)
@@ -796,6 +499,48 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
           </div>
         </CardHeader>
       </Card>
+
+      {/* Instance-Specific Settings Banner */}
+      {(viewingInstanceId || userSettings?.instanceId) && (
+        <Card className="mb-4 bg-blue-500/10 border-blue-500">
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-start space-x-3">
+                <Monitor className="h-5 w-5 text-blue-500 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-blue-500">
+                    {viewingInstanceId ? `Viewing Settings for: ${viewingInstanceName}` : 'Current Instance Settings'}
+                  </div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    {viewingInstanceId ? (
+                      <span>Instance ID: <code className="text-xs bg-muted px-1 py-0.5 rounded">{viewingInstanceId}</code></span>
+                    ) : userSettings?.instanceId ? (
+                      <span>Your Settings Instance: <code className="text-xs bg-muted px-1 py-0.5 rounded">{userSettings.instanceId.substring(0, 20)}...</code></span>
+                    ) : null}
+                  </div>
+                  {userSettings?.instanceId && !viewingInstanceId && (
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Settings from this device will be shared with devices marked as "Me" trust level
+                    </div>
+                  )}
+                </div>
+              </div>
+              {viewingInstanceId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setViewingInstanceId(null)
+                    setViewingInstanceName('Unknown Device')
+                  }}
+                >
+                  View My Settings
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tab Navigation */}
       <div className="mb-4 flex space-x-2 border-b">
@@ -893,77 +638,13 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
               </div>
               <CardDescription>Manage your identity and keys</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label>Display Name</Label>
-                <Input 
-                  value={settings.profile.name}
-                  onChange={(e) => updateSetting('profile', 'name', e.target.value)}
-                />
-              </div>
-              <div>
-                <Label>Identity ID</Label>
-                <div className="flex items-center space-x-2">
-                  <Input value={settings.profile.id} disabled />
-                  <Button variant="outline" size="sm">Copy</Button>
-                </div>
-              </div>
-              <div>
-                <Label>Public Key</Label>
-                <div className="flex items-center space-x-2">
-                  <code className="text-xs bg-muted p-2 rounded flex-1">{settings.profile.publicKey}</code>
-                  <Button variant="outline" size="sm">Export</Button>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div>
-                <Label className="mb-2 block">Avatar Mood</Label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Set your current mood to change your avatar color
-                </p>
-                <div className="grid grid-cols-4 gap-2">
-                  {[
-                    { value: 'happy', label: 'Happy' },
-                    { value: 'sad', label: 'Sad' },
-                    { value: 'angry', label: 'Angry' },
-                    { value: 'calm', label: 'Calm' },
-                    { value: 'excited', label: 'Excited' },
-                    { value: 'tired', label: 'Tired' },
-                    { value: 'focused', label: 'Focused' },
-                    { value: 'neutral', label: 'Neutral' }
-                  ].map((mood) => (
-                    <Button
-                      key={mood.value}
-                      variant={currentMood === mood.value ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => handleUpdateMood(mood.value)}
-                      disabled={savingMood}
-                      className="flex items-center gap-2"
-                    >
-                      {getMoodIcon(mood.value)}
-                      <span className="text-xs">{mood.label}</span>
-                    </Button>
-                  ))}
-                </div>
-                {currentMood && (
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">
-                      Current: {currentMood.charAt(0).toUpperCase() + currentMood.slice(1)}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleUpdateMood(null)}
-                      disabled={savingMood}
-                      className="text-xs"
-                    >
-                      Clear Mood
-                    </Button>
-                  </div>
-                )}
-              </div>
+            <CardContent>
+              <ProfileSettingsPanel
+                profile={settings.profile}
+                onUpdateName={async (name) => updateSetting('profile', 'name', name)}
+                onCopyId={() => {/* TODO: implement copy */}}
+                onExportKey={() => {/* TODO: implement export */}}
+              />
             </CardContent>
           </Card>
 
@@ -976,59 +657,8 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
               </div>
               <CardDescription>P2P connections and device pairing</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Edda Domain Configuration */}
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Globe className="h-4 w-4" />
-                  <h3 className="font-medium">Invitation Domain</h3>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edda-domain">Edda Domain for Invitations</Label>
-                  <div className="flex space-x-2">
-                    <Input
-                      id="edda-domain"
-                      type="text"
-                      value={settings.network.eddaDomain}
-                      onChange={(e) => {
-                        const newDomain = e.target.value
-                        setSettings(prev => ({
-                          ...prev,
-                          network: { ...prev.network, eddaDomain: newDomain }
-                        }))
-                        setHasChanges(true)
-                      }}
-                      placeholder="edda.dev.refinio.one"
-                      className="font-mono text-sm"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        // Save the domain to localStorage
-                        if (settings.network.eddaDomain) {
-                          await ipcStorage.setItem('edda-domain', settings.network.eddaDomain)
-                        } else {
-                          await ipcStorage.removeItem('edda-domain')
-                        }
-                        setHasChanges(false)
-                      }}
-                      disabled={!hasChanges}
-                    >
-                      <Save className="h-4 w-4 mr-1" />
-                      Save
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    This domain will be used in invitation URLs. Use 'edda.dev.refinio.one' for development or 'edda.one' for production.
-                  </p>
-                </div>
-              </div>
-              
-              <Separator />
-              
-              {/* Instance Management */}
-              <InstancesView />
+            <CardContent>
+              <NetworkSettingsPanel />
             </CardContent>
           </Card>
 
@@ -1041,183 +671,8 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
               </div>
               <CardDescription>Configure API keys and AI model providers</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Ollama Configuration */}
-              <div className="space-y-2">
-                <Label>Ollama Service URL</Label>
-                <div className="flex items-center space-x-2">
-                  <Input
-                    type="text"
-                    value={ollamaUrl}
-                    onChange={(e) => setOllamaUrl(e.target.value)}
-                    placeholder="http://localhost:11434"
-                  />
-                  <Button
-                    size="sm"
-                    onClick={handleSaveOllamaConfig}
-                    disabled={ollamaStatus === 'testing'}
-                  >
-                    {ollamaStatus === 'testing' ? 'Testing...' : 'Save'}
-                  </Button>
-                </div>
-                {ollamaStatus === 'valid' && (
-                  <p className="text-xs text-green-500">✓ Ollama service configured</p>
-                )}
-                {ollamaStatus === 'invalid' && (
-                  <p className="text-xs text-red-500">✗ Failed to configure Ollama service</p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  URL of your Ollama service (local or remote). Default: http://localhost:11434
-                </p>
-              </div>
-
-              <Separator />
-
-              {/* Claude API Key Configuration */}
-              <div className="space-y-2">
-                <Label>Claude API Key</Label>
-                <div className="flex items-center space-x-2">
-                  <Input
-                    type={showApiKey ? "text" : "password"}
-                    value={claudeApiKey}
-                    onChange={(e) => setClaudeApiKey(e.target.value)}
-                    placeholder="sk-ant-..."
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                  >
-                    {showApiKey ? 'Hide' : 'Show'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleSaveClaudeApiKey}
-                    disabled={apiKeyStatus === 'testing'}
-                  >
-                    {apiKeyStatus === 'testing' ? 'Testing...' : 'Save'}
-                  </Button>
-                </div>
-                {apiKeyStatus === 'valid' && (
-                  <p className="text-xs text-green-500">✓ API key is valid</p>
-                )}
-                {apiKeyStatus === 'invalid' && (
-                  <p className="text-xs text-red-500">✗ Invalid API key</p>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* AI Model Management */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Available AI Models</Label>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (onNavigate) {
-                        onNavigate('contacts')
-                      }
-                    }}
-                  >
-                    <MessageSquare className="h-3 w-3 mr-1" />
-                    Go to Contacts
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  AI models are automatically added as contacts. Go to Contacts tab to start chatting with them.
-                </p>
-                {loadingModels ? (
-                  <div className="flex items-center justify-center py-4">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-                  </div>
-                ) : models.length === 0 ? (
-                  <Alert>
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>
-                      No AI models available. Configure Claude API key or Ollama above to add models.
-                    </AlertDescription>
-                  </Alert>
-                ) : (
-                  <div className="space-y-2">
-                    {models.map((model) => (
-                      <div key={model.id} className="border rounded-lg p-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            {getProviderIcon(model.provider)}
-                            <span className="font-medium">{model.name}</span>
-                            <Badge variant="outline" className="text-xs">
-                              {model.provider}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            {/* Local models (Ollama) need to be loaded, remote/API models are always ready */}
-                            {model.modelType === 'local' && !model.isLoaded && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleLoadModel(model.id)}
-                                disabled={loadingStates[model.id]}
-                              >
-                                {loadingStates[model.id] ? (
-                                  <>
-                                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary mr-1" />
-                                    Loading...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Download className="h-3 w-3 mr-1" />
-                                    Load
-                                  </>
-                                )}
-                              </Button>
-                            )}
-                            {model.isLoaded && model.modelType === 'local' && (
-                              <Badge variant="secondary" className="text-xs">
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Loaded
-                              </Badge>
-                            )}
-                            {(model.isLoaded || model.modelType === 'remote') && (
-                              <Button
-                                size="sm"
-                                variant="default"
-                                onClick={() => handleStartChat(model.id, model.name)}
-                                className="text-xs"
-                              >
-                                <MessageSquare className="h-3 w-3 mr-1" />
-                                Chat
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {model.description}
-                        </div>
-                        <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                          {model.size !== undefined && <span>{formatSize(model.size)}</span>}
-                          {model.size !== undefined && <span>·</span>}
-                          {model.contextLength !== undefined && <span>{model.contextLength.toLocaleString()} tokens</span>}
-                          {model.capabilities && model.capabilities.length > 0 && (
-                            <>
-                              <span>·</span>
-                              <div className="flex items-center space-x-1">
-                                {model.capabilities.map((cap) => (
-                                  <Badge key={cap} variant="secondary" className="text-xs py-0">
-                                    {getCapabilityIcon(cap)}
-                                    <span className="ml-1">{cap}</span>
-                                  </Badge>
-                                ))}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+            <CardContent>
+              <AIConfigPanel onNavigate={onNavigate} />
             </CardContent>
           </Card>
 
@@ -1230,216 +685,29 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
               </div>
               <CardDescription>Security and data preferences</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>Auto-encrypt Messages</Label>
-                <Button 
-                  variant={settings.privacy.autoEncrypt ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => updateSetting('privacy', 'autoEncrypt', !settings.privacy.autoEncrypt)}
-                >
-                  {settings.privacy.autoEncrypt ? 'Enabled' : 'Disabled'}
-                </Button>
-              </div>
-              <div className="flex items-center justify-between">
-                <Label>Save Chat History</Label>
-                <Button 
-                  variant={settings.privacy.saveHistory ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => updateSetting('privacy', 'saveHistory', !settings.privacy.saveHistory)}
-                >
-                  {settings.privacy.saveHistory ? 'Enabled' : 'Disabled'}
-                </Button>
-              </div>
-              <Separator />
-              <div className="pt-2 space-y-2">
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" className="w-full">
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Reset All App Data
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                      <AlertDialogDescription className="space-y-2">
-                        <p>This action cannot be undone. This will permanently delete:</p>
-                        <ul className="list-disc list-inside space-y-1 text-sm">
-                          <li>All chat history and messages</li>
-                          <li>All contacts and connections</li>
-                          <li>All settings and preferences</li>
-                          <li>All locally stored AI models</li>
-                          <li>Your identity and keys</li>
-                        </ul>
-                        <p className="font-semibold text-red-500">
-                          You will need to create a new identity or restore from backup after this operation.
-                        </p>
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel autoFocus>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        className="bg-red-600 hover:bg-red-700"
-                        onClick={async () => {
-                          try {
-                            console.log('[SettingsView] Starting app reset...')
-                            
-                            // Show immediate feedback
-                            const alertDiv = document.createElement('div')
-                            alertDiv.style.cssText = `
-                              position: fixed;
-                              top: 50%;
-                              left: 50%;
-                              transform: translate(-50%, -50%);
-                              background: #1f2937;
-                              color: white;
-                              padding: 20px;
-                              border-radius: 8px;
-                              z-index: 9999;
-                              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                              text-align: center;
-                              font-family: system-ui;
-                            `
-                            alertDiv.innerHTML = `
-                              <div style="font-size: 16px; margin-bottom: 10px;">🔄 Clearing App Data</div>
-                              <div style="font-size: 14px; opacity: 0.8;">This will take a few seconds...</div>
-                              <div style="margin-top: 15px; font-size: 12px; opacity: 0.6;">
-                                The app will automatically restart when complete
-                              </div>
-                            `
-                            document.body.appendChild(alertDiv)
-                            
-                            // Clear browser-side data first
-                            console.log('[SettingsView] Clearing browser storage...')
-                            
-                            // Clear localStorage and sessionStorage
-                            await ipcStorage.clear()
-                            sessionStorage.clear()
-                            
-                            // Clear IndexedDB databases
-                            if ('indexedDB' in window) {
-                              try {
-                                const databases = await indexedDB.databases()
-                                for (const db of databases) {
-                                  if (db.name) {
-                                    await indexedDB.deleteDatabase(db.name)
-                                    console.log(`[SettingsView] Deleted IndexedDB database: ${db.name}`)
-                                  }
-                                }
-                              } catch (e) {
-                                console.error('[SettingsView] Error clearing IndexedDB:', e)
-                              }
-                            }
-                            
-                            // Clear service worker caches if any
-                            if ('caches' in window) {
-                              try {
-                                const cacheNames = await caches.keys()
-                                await Promise.all(
-                                  cacheNames.map(name => caches.delete(name))
-                                )
-                                console.log('[SettingsView] Service worker caches cleared')
-                              } catch (e) {
-                                console.error('[SettingsView] Error clearing caches:', e)
-                              }
-                            }
-                            
-                            // Clear cache in the bridge
-                            try {
-                              lamaBridge.clearConversation('default')
-                              console.log('[SettingsView] Bridge cache cleared')
-                            } catch (e) {
-                              console.error('[SettingsView] Error clearing bridge cache:', e)
-                            }
-                            
-                            // Request main process to clear all data and restart
-                            if (window.electronAPI?.clearAppData) {
-                              console.log('[SettingsView] Requesting main process to clear all app data...')
-                              
-                              // Update progress message
-                              alertDiv.innerHTML = `
-                                <div style="font-size: 16px; margin-bottom: 10px;">🗑️ Clearing All Data</div>
-                                <div style="font-size: 14px; opacity: 0.8;">Removing storage files and resetting state...</div>
-                                <div style="margin-top: 15px; font-size: 12px; opacity: 0.6;">
-                                  App will restart automatically
-                                </div>
-                              `
-                              
-                              const result = await window.electronAPI.clearAppData()
-                              
-                              if (result?.success) {
-                                console.log('[SettingsView] App data cleared successfully, app will restart...')
-                                
-                                // Show final message
-                                alertDiv.innerHTML = `
-                                  <div style="font-size: 16px; margin-bottom: 10px;">✅ Reset Complete</div>
-                                  <div style="font-size: 14px; opacity: 0.8;">Application restarting...</div>
-                                `
-                                
-                                // The main process handles restart
-                              } else {
-                                console.error('[SettingsView] Failed to clear app data:', result?.error)
-                                alertDiv.innerHTML = `
-                                  <div style="font-size: 16px; margin-bottom: 10px;">⚠️ Partial Reset</div>
-                                  <div style="font-size: 14px; opacity: 0.8;">Some data cleared, restarting app...</div>
-                                `
-                                
-                                // Force restart anyway
-                                setTimeout(() => window.location.reload(), 2000)
-                              }
-                            } else {
-                              console.log('[SettingsView] No Electron API available, reloading after browser cleanup...')
-                              alertDiv.innerHTML = `
-                                <div style="font-size: 16px; margin-bottom: 10px;">🔄 Browser Reset</div>
-                                <div style="font-size: 14px; opacity: 0.8;">Browser data cleared, reloading...</div>
-                              `
-                              setTimeout(() => window.location.reload(), 1000)
-                            }
-                            
-                          } catch (error) {
-                            console.error('[SettingsView] Failed to reset app data:', error)
-                            
-                            // Show error message
-                            const errorDiv = document.createElement('div')
-                            errorDiv.style.cssText = `
-                              position: fixed;
-                              top: 50%;
-                              left: 50%;
-                              transform: translate(-50%, -50%);
-                              background: #dc2626;
-                              color: white;
-                              padding: 20px;
-                              border-radius: 8px;
-                              z-index: 9999;
-                              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                              text-align: center;
-                              font-family: system-ui;
-                            `
-                            errorDiv.innerHTML = `
-                              <div style="font-size: 16px; margin-bottom: 10px;">❌ Reset Error</div>
-                              <div style="font-size: 14px; opacity: 0.9;">
-                                Failed to reset completely. Please restart the app manually.
-                              </div>
-                              <div style="margin-top: 15px; font-size: 12px; opacity: 0.7;">
-                                Error: ${error.message}
-                              </div>
-                            `
-                            document.body.appendChild(errorDiv)
-                            
-                            // Try to reload anyway after a delay
-                            setTimeout(() => window.location.reload(), 3000)
-                          }
-                        }}
-                      >
-                        Delete Everything
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
+            <CardContent>
+              <PrivacySettingsPanel
+                privacy={settings.privacy}
+                onToggleAutoEncrypt={async () => updateSetting('privacy', 'autoEncrypt', !settings.privacy.autoEncrypt)}
+                onToggleSaveHistory={async () => updateSetting('privacy', 'saveHistory', !settings.privacy.saveHistory)}
+              />
             </CardContent>
           </Card>
+
+          {/* Account / Logout */}
+          {onLogout && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <User className="h-4 w-4" />
+                  <CardTitle className="text-lg">Account</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <AccountSettingsPanel onLogout={onLogout} />
+              </CardContent>
+            </Card>
+          )}
 
           {/* System Objects */}
           <Card id="system-objects-section">
@@ -1449,9 +717,9 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
                   <Package className="h-4 w-4" />
                   <CardTitle className="text-lg">System Objects</CardTitle>
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={loadSystemObjects}
                   disabled={loadingSystemObjects}
                 >

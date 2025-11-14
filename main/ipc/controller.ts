@@ -12,6 +12,7 @@ import authPlans from './plans/auth.js';
 import statePlans from './plans/state.js';
 import { chatPlans } from './plans/chat.js';
 import connectionPlans from './plans/connection.js';
+import groupChatPlans from './plans/group-chat.js';
 import cryptoPlans from './plans/crypto.js';
 import settingsPlans from './plans/settings.js';
 import aiPlans from './plans/ai.js';
@@ -27,12 +28,16 @@ import * as wordCloudSettingsPlans from './plans/word-cloud-settings.js';
 import registerMemoryPlans from './plans/memory.js';
 import keywordDetailPlans from './plans/keyword-detail.js';
 import auditPlans from './plans/audit.js';
+import trustPlans from './plans/trust.js';
+import journalPlans from './plans/journal.js';
 import exportPlans from './plans/export.js';
 import feedForwardPlans from './plans/feed-forward.js';
 import { registerLlmConfigPlans } from './plans/llm-config.js';
 import { proposalPlans } from './plans/proposals.js';
 import mcpPlans from './plans/mcp.js';
 import createUserSettingsPlans from './plans/user-settings.js';
+// import { registerAssemblyPlans } from './plans/assembly.js'; // Disabled - migrating to assembly.core
+import { registerDirectAssemblyPlans } from './plans/assembly-direct.js';
 
 // Node error type
 interface NodeError extends Error {
@@ -139,6 +144,24 @@ class IPCController {
     this.handle('audit:exportTopic', auditPlans.exportTopic);
     this.handle('audit:verifyAttestation', auditPlans.verifyAttestation);
 
+    // Trust plans
+    this.handle('trust:setTrustStatus', trustPlans.setTrustStatus);
+    this.handle('trust:getTrustStatus', trustPlans.getTrustStatus);
+    this.handle('trust:getTrustedDevices', trustPlans.getTrustedDevices);
+    this.handle('trust:verifyDeviceKey', trustPlans.verifyDeviceKey);
+    this.handle('trust:evaluateTrust', trustPlans.evaluateTrust);
+    this.handle('trust:getDeviceCredentials', trustPlans.getDeviceCredentials);
+    this.handle('trust:setTrustLevel', trustPlans.setTrustLevel);
+    this.handle('trust:getTrustLevel', trustPlans.getTrustLevel);
+    this.handle('trust:getTrustChain', trustPlans.getTrustChain);
+
+    // Journal plans
+    this.handle('journal:recordLLMCall', journalPlans.recordLLMCall);
+    this.handle('journal:recordAIContactCreation', journalPlans.recordAIContactCreation);
+    this.handle('journal:getCallEntries', journalPlans.getCallEntries);
+    this.handle('journal:getConversationHistory', journalPlans.getConversationHistory);
+    this.handle('journal:getAllEntries', journalPlans.getAllEntries);
+
     // Test handler to manually trigger message updates
     this.handle('test:triggerMessageUpdate', async (event: IpcMainInvokeEvent, { conversationId }: any) => {
       console.log('[TEST] Manually triggering message update for:', conversationId);
@@ -166,6 +189,17 @@ class IPCController {
     this.handle('connection:acceptPairingInvitation', connectionPlans.acceptPairingInvitation);
     this.handle('connection:getDataStats', connectionPlans.getDataStats);
 
+    // Group chat plans (certificate-based group chat establishment)
+    this.handle('groupChat:createGroup', groupChatPlans.createGroup);
+    this.handle('groupChat:distributeGroup', groupChatPlans.distributeGroup);
+    this.handle('groupChat:initializeGroupChat', groupChatPlans.initializeGroupChat);
+    this.handle('groupChat:joinGroupChat', groupChatPlans.joinGroupChat);
+    this.handle('groupChat:waitForGroupSync', groupChatPlans.waitForGroupSync);
+    this.handle('groupChat:validateGroupCertificate', groupChatPlans.validateGroupCertificate);
+    this.handle('groupChat:hasGroup', groupChatPlans.hasGroup);
+    this.handle('groupChat:getGroup', groupChatPlans.getGroup);
+    this.handle('groupChat:getGroupMembers', groupChatPlans.getGroupMembers);
+
     // Crypto plans
     this.handle('crypto:getKeys', cryptoPlans.getKeys);
     this.handle('crypto:getCertificates', cryptoPlans.getCertificates);
@@ -187,6 +221,7 @@ class IPCController {
 
     // AI/LLM plans
     this.handle('ai:chat', aiPlans.chat);
+    this.handle('ai:stopStreaming', aiPlans.stopStreaming);
     this.handle('ai:getModels', aiPlans.getModels);
     this.handle('ai:setDefaultModel', aiPlans.setDefaultModel);
     this.handle('ai:setApiKey', aiPlans.setApiKey);
@@ -196,9 +231,11 @@ class IPCController {
     this.handle('ai:initializeLLM', aiPlans.initializeLLM); // Alias for UI compatibility
     this.handle('ai:getOrCreateContact', aiPlans.getOrCreateContact);
     this.handle('ai:discoverClaudeModels', aiPlans.discoverClaudeModels);
+    this.handle('ai:discoverOllamaModels', aiPlans.discoverOllamaModels);
     this.handle('ai:debugTools', aiPlans.debugTools);
     this.handle('llm:testApiKey', aiPlans.testApiKey);
     this.handle('ai:getDefaultModel', aiPlans['ai:getDefaultModel']);
+    this.handle('ai:isAITopic', aiPlans.isAITopic);
 
     // LLM Configuration plans (network Ollama support)
     registerLlmConfigPlans();
@@ -249,6 +286,7 @@ class IPCController {
 
     // Proposal plans
     this.handle('proposals:getForTopic', proposalPlans['proposals:getForTopic']);
+    this.handle('proposals:getForInput', proposalPlans['proposals:getForInput']);
     this.handle('proposals:updateConfig', proposalPlans['proposals:updateConfig']);
     this.handle('proposals:getConfig', proposalPlans['proposals:getConfig']);
     this.handle('proposals:dismiss', proposalPlans['proposals:dismiss']);
@@ -327,6 +365,9 @@ class IPCController {
 
     // Contact plans
     registerContactPlans();
+
+    // Assembly plans (Direct creation using assembly.core)
+    registerDirectAssemblyPlans();
 
     // Note: app:clearData is handled in lama-electron-shadcn.js
 

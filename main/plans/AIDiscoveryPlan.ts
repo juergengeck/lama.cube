@@ -10,7 +10,7 @@
  * - Minimal glue code only
  */
 
-import { AIInitializationHandler } from '@lama/core/ai/AIInitializationHandler.js';
+import { AIInitializationPlan } from '@lama/core/ai/AIInitializationPlan.js';
 import { UserSettingsManager } from '../core/user-settings-manager.js';
 import { initializeAIAssistantHandler } from '../core/ai-assistant-handler-adapter.js';
 
@@ -35,23 +35,23 @@ export class AIDiscoveryPlan {
   async execute(context: AIDiscoveryContext): Promise<AIServices> {
     console.log('[AIDiscoveryPlan] Orchestrating AI initialization (Electron)...');
 
-    // Create handler with injected Electron dependencies
-    const handler = new AIInitializationHandler({
+    // Create plan with injected Electron dependencies
+    const plan = new AIInitializationPlan({
       storage: context.nodeOneCore,
       llmManager: context.llmManager,
       getEnvVar: (key: string) => process.env[key],  // Inject Node.js env access
       createUserSettingsManager: (storage: any, email: string) => {
         // Factory for UserSettingsManager
-        return new UserSettingsManager(storage, email);
+        return new UserSettingsManager(storage, email, storage.ownerId);
       },
       initializeAIAssistant: async (storage: any, llmManager: any) => {
-        // Factory for AI Assistant Handler
+        // Factory for AI Assistant
         return await initializeAIAssistantHandler(storage, llmManager);
       }
     });
 
-    // Delegate to platform-agnostic handler
-    const result = await handler.initialize({
+    // Delegate to platform-agnostic plan
+    const result = await plan.initialize({
       email: context.email,
       channelManager: context.channelManager
     });

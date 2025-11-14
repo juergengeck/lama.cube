@@ -10,22 +10,26 @@ import nodeOneCoreInstance from '../../core/node-one-core.js';
 import llmManager from '../../services/llm-manager-singleton.js';
 import type { IpcMainInvokeEvent } from 'electron';
 
-// Create handler instance
-const topicAnalysisHandler = new TopicAnalysisPlan(
-  nodeOneCoreInstance.topicAnalysisModel as any,
-  nodeOneCoreInstance.topicModel as any,
-  llmManager,
-  nodeOneCoreInstance
-);
+// Create handler instance - models will be set after initialization
+const topicAnalysisHandler = new TopicAnalysisPlan();
 
-// Initialize handler with models after nodeOneCore is ready
-if (nodeOneCoreInstance.initialized && nodeOneCoreInstance.topicAnalysisModel) {
-  topicAnalysisHandler.setModels(
-    nodeOneCoreInstance.topicAnalysisModel as any,
-    nodeOneCoreInstance.topicModel as any,
-    llmManager,
-    nodeOneCoreInstance
-  );
+// Helper to ensure models are initialized before use
+function ensureModelsInitialized() {
+  console.log('[TopicAnalysisIPC] ensureModelsInitialized called', {
+    hasHandlerModel: !!topicAnalysisHandler['topicAnalysisModel'],
+    hasNodeModel: !!nodeOneCoreInstance.topicAnalysisModel
+  });
+  if (!topicAnalysisHandler['topicAnalysisModel'] && nodeOneCoreInstance.topicAnalysisModel) {
+    console.log('[TopicAnalysisIPC] ✅ Initializing models for TopicAnalysisPlan');
+    topicAnalysisHandler.setModels(
+      nodeOneCoreInstance.topicAnalysisModel as any,
+      nodeOneCoreInstance.topicModel as any,
+      llmManager,
+      nodeOneCoreInstance
+    );
+  } else if (!nodeOneCoreInstance.topicAnalysisModel) {
+    console.log('[TopicAnalysisIPC] ❌ nodeOneCoreInstance.topicAnalysisModel is not available yet');
+  }
 }
 
 /**
@@ -60,6 +64,7 @@ const topicAnalysisHandlers = {
       includeArchived?: boolean;
     }
   ) {
+    ensureModelsInitialized();
     return await topicAnalysisHandler.getSubjects({
       topicId,
       includeArchived
@@ -202,6 +207,7 @@ const topicAnalysisHandlers = {
     event: IpcMainInvokeEvent,
     params: { topicId: string; limit?: number }
   ) {
+    ensureModelsInitialized();
     return await topicAnalysisHandler.getKeywords({
       topicId: params.topicId,
       limit: params.limit

@@ -393,36 +393,48 @@ export class MemoryStorageHandler {
                 subjects: analysis.subjects.length
             });
 
+            // Supply/Demand/Assembly creation temporarily disabled - being migrated to new Assembly system
             // Step 3: Create Supply → what capability this memory offers
-            console.log('[MemoryStorage] Creating Supply...');
-            const supply = await this.createSupply(
-                analysis.keywords,
-                authorId,
-                topicRef || 'lama',
-                analysis.summary
-            );
+            // console.log('[MemoryStorage] Creating Supply...');
+            // const supply = await this.createSupply(
+            //     analysis.keywords,
+            //     authorId,
+            //     topicRef || 'lama',
+            //     analysis.summary
+            // );
 
             // Step 4: Create Demand → what constraints it satisfies
-            console.log('[MemoryStorage] Creating Demand...');
-            const demand = await this.createDemand(
-                analysis.keywords,
-                authorId,
-                content,
-                topicRef
-            );
+            // console.log('[MemoryStorage] Creating Demand...');
+            // const demand = await this.createDemand(
+            //     analysis.keywords,
+            //     authorId,
+            //     content,
+            //     topicRef
+            // );
 
             // Step 5: Create Assembly → wraps Memory + Supply + Demand
-            console.log('[MemoryStorage] Creating Assembly...');
-            const assembly: Assembly = {
-                $type$: 'CubeAssembly',
-                supply: supply.$idHash$!,
-                instanceVersion: String(memoryHash), // Version hash of Memory
-                demand: demand.$idHash$!,
-                created: Date.now()
-            };
+            // console.log('[MemoryStorage] Creating Assembly...');
+            // Create a placeholder plan ID for memory storage (Assembly requires aiAssistantCall)
+            // const memoryPlanId = await this.nodeOneCore.calculateIdHashOfObj({
+            //     $type$: 'AssemblyPlan',
+            //     id: 'memory-storage-plan',
+            //     name: 'Memory Storage Plan'
+            // }) as SHA256IdHash<any>;
 
-            const assemblyHash = await this.nodeOneCore.storeUnversionedObject(assembly);
-            console.log('[MemoryStorage] Assembly stored:', assemblyHash);
+            // Assembly creation temporarily disabled - being migrated to new Assembly system
+            // const assembly: Assembly = {
+            //     $type$: 'CubeAssembly',
+            //     aiAssistantCall: memoryPlanId,
+            //     property: 'memory',
+            //     supply: supply.$idHash$!,
+            //     demand: demand.$idHash$!,
+            //     instanceVersion: String(memoryHash), // Version hash of Memory
+            //     created: Date.now()
+            // };
+
+            // const assemblyHash = await this.nodeOneCore.storeUnversionedObject(assembly);
+            // console.log('[MemoryStorage] Assembly stored:', assemblyHash);
+            const assemblyHash = null; // Placeholder
 
             // Step 6: implode(Memory) → write to memoryDirectory/{filename}.md
             console.log('[MemoryStorage] Writing memory file...');
@@ -592,71 +604,18 @@ export class MemoryStorageHandler {
         };
     }
 
-    /**
-     * Create Supply object for memory
-     */
-    private async createSupply(
-        keywords: string[],
-        creatorId: SHA256IdHash<any>,
-        conversationId: string,
-        metadata: string
-    ): Promise<Supply & { $idHash$?: SHA256IdHash<Supply> }> {
-        const supply: Supply = {
-            $type$: 'AssemblySupply',
-            id: `supply-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-            keywords,
-            contextLevel: 1,
-            conversationId,
-            creatorId: String(creatorId),
-            trustScore: 1.0,
-            created: Date.now(),
-            metadata: { summary: metadata },
-            isRecursive: false
-        };
+    // Supply/Demand creation methods temporarily disabled - being migrated to new Assembly system
+    // These will be replaced with calls to AssemblyPlan.createAssembly() with inline supply/demand
 
-        const supplyHash = await this.nodeOneCore.storeVersionedObject(supply);
+    // /**
+    //  * Create Supply object for memory
+    //  */
+    // private async createSupply(...) { ... }
 
-        // Get ID hash
-        const supplyIdHash = await this.nodeOneCore.calculateIdHashOfVersionedObject(supply);
-
-        return {
-            ...supply,
-            $idHash$: supplyIdHash as SHA256IdHash<Supply>
-        };
-    }
-
-    /**
-     * Create Demand object for memory
-     */
-    private async createDemand(
-        keywords: string[],
-        requesterId: SHA256IdHash<any>,
-        context: string,
-        topicRef?: string
-    ): Promise<Demand & { $idHash$?: SHA256IdHash<Demand> }> {
-        const demand: Demand = {
-            $type$: 'AssemblyDemand',
-            id: `demand-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-            keywords,
-            urgency: 5,
-            context: context.substring(0, 200), // Truncate for storage
-            criteria: topicRef ? { topicRef } : undefined,
-            requesterId: String(requesterId),
-            created: Date.now(),
-            expires: Date.now() + (365 * 24 * 60 * 60 * 1000), // 1 year
-            maxResults: 10
-        };
-
-        const demandHash = await this.nodeOneCore.storeVersionedObject(demand);
-
-        // Get ID hash
-        const demandIdHash = await this.nodeOneCore.calculateIdHashOfVersionedObject(demand);
-
-        return {
-            ...demand,
-            $idHash$: demandIdHash as SHA256IdHash<Demand>
-        };
-    }
+    // /**
+    //  * Create Demand object for memory
+    //  */
+    // private async createDemand(...) { ... }
 
     /**
      * Write memory to file using HTML export renderer

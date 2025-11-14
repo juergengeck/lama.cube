@@ -11,8 +11,11 @@ import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
 import type { IpcMainInvokeEvent } from 'electron';
-import { ConnectionPlan } from '@lama/connection.core';
+import { ConnectionPlan, type TrustPlanDependencies, type PairingEventCallbacks } from '@lama/connection.core';
 import nodeOneCore from '../../core/node-one-core.js';
+import { getAllEntries } from '@refinio/one.core/lib/reverse-map-query.js';
+import { getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
+import ProfileModel from '@refinio/one.models/lib/models/Leute/ProfileModel.js';
 
 // Singleton handler instance
 let connectionHandler: ConnectionPlan | null = null;
@@ -103,7 +106,76 @@ const storageProvider = {
 function getHandler(): ConnectionPlan {
   if (!connectionHandler) {
     const webUrl = getWebUrl();
-    connectionHandler = new ConnectionPlan(nodeOneCore, storageProvider, webUrl);
+
+    // Prepare TrustPlan dependencies for automatic trust establishment
+    const trustDeps: TrustPlanDependencies = {
+      getAllEntries,
+      getObject,
+      ProfileModel,
+      leuteModel: nodeOneCore.leuteModel
+    };
+
+    // Prepare pairing event callbacks for platform-specific UI updates
+    const pairingCallbacks: PairingEventCallbacks = {
+      async onContactCreated(contact) {
+        console.log('[Connection IPC] Contact created:', contact.displayName);
+        // Update StateManager
+        const stateManager = (await import('../../state/manager.js')).default;
+        stateManager.addContact({
+          id: contact.personId,
+          name: contact.displayName,
+          personId: contact.personId,
+          someoneId: contact.someoneId
+        });
+
+        // Notify UI
+        const { BrowserWindow } = await import('electron');
+        const windows = BrowserWindow.getAllWindows();
+        windows.forEach(window => {
+          window.webContents.send('contacts:updated', {
+            contacts: Array.from(stateManager.getState().contacts.values())
+          });
+        });
+      },
+
+      async onTopicCreated(topic) {
+        console.log('[Connection IPC] Topic created:', topic.channelId);
+        // Update StateManager
+        const stateManager = (await import('../../state/manager.js')).default;
+        stateManager.addConversation({
+          id: topic.channelId,
+          name: 'New Conversation',  // Will be updated with contact name
+          type: topic.type,
+          participants: topic.participants,
+          lastMessage: null,
+          lastMessageTime: Date.now(),
+          unreadCount: 0
+        });
+
+        // Notify UI
+        const { BrowserWindow } = await import('electron');
+        const windows = BrowserWindow.getAllWindows();
+        windows.forEach(window => {
+          window.webContents.send('conversations:updated', {
+            conversations: Array.from(stateManager.getState().conversations.values())
+          });
+        });
+      },
+
+      async onPairingComplete(details) {
+        console.log('[Connection IPC] ✅ Pairing complete:', details.type);
+      }
+    };
+
+    // ConnectionPlan now automatically handles pairing via integrated callbacks
+    connectionHandler = new ConnectionPlan(
+      nodeOneCore,
+      storageProvider,
+      webUrl,
+      undefined, // No discovery config for Electron
+      trustDeps,  // Trust dependencies - enables automatic trust after pairing
+      pairingCallbacks  // Platform-specific UI updates
+    );
   }
   return connectionHandler;
 }
@@ -236,3 +308,4 @@ export default {
   getDataStats,
   subscribeToEvents
 };
+export { connectionHandler as connectionPlan };

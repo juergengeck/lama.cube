@@ -152,9 +152,31 @@ export function createSimplePlanRegistry(deps: { leuteModel: any; channelManager
     }
   };
 
+  // mcp.auth - MCP authentication operations
+  const MCPAuthPlan = {
+    async login(email: string, password: string) {
+      // Delegate to the auth plan
+      const { default: authPlans } = await import('../ipc/plans/auth.js');
+      return await authPlans.login(null as any, { username: email, password });
+    },
+    async register(email: string, password: string) {
+      const { default: authPlans } = await import('../ipc/plans/auth.js');
+      return await authPlans.register(null as any, { username: email, password, email });
+    },
+    async logout() {
+      const { default: authPlans } = await import('../ipc/plans/auth.js');
+      return await authPlans.logout(null as any);
+    },
+    async checkAuth() {
+      const { default: authPlans } = await import('../ipc/plans/auth.js');
+      return await authPlans.checkAuth(null as any);
+    }
+  };
+
   registry.register('one.storage', OneStoragePlan);
   registry.register('one.leute', OneLeutePlan);
   registry.register('one.channels', OneChannelsPlan);
+  registry.register('mcp.auth', MCPAuthPlan);
 
   return registry;
 }

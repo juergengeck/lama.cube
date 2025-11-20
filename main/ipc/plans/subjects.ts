@@ -1,48 +1,22 @@
 /**
  * IPC Handler for Subjects
- * Thin adapter that delegates to lama.core SubjectsHandler
+ * Thin adapter that delegates to lama.core SubjectsPlan
  */
 
 import { SubjectsPlan } from '@lama/core/plans/SubjectsPlan.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import type { Subject } from '@lama/core/one-ai/types/Subject.js';
+import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
 
-// Initialize plan
+// Initialize plan (TopicAnalysisModel will be injected later)
 const subjectsPlan = new SubjectsPlan();
 
-interface CreateSubjectParams {
-  name: string;
-  createdBy: string;
-  confidence: number;
-  references: any[];
+interface GetSubjectsParams {
+  topicId: string;
 }
 
-interface AttachSubjectParams {
-  subjectName: string;
-  contentHash: string;
-  attachedBy: string;
-  confidence: number;
-  context: any;
-}
-
-interface GetForContentParams {
-  contentHash: string;
-}
-
-interface SearchParams {
-  query: string;
-  limit: number;
-}
-
-interface ResonanceParams {
-  subjectNames: string[];
-  topK: number;
-}
-
-interface ExtractParams {
-  text: string;
-  extractor: string;
-  minConfidence: number;
+interface GetSubjectByIdParams {
+  subjectIdHash: SHA256IdHash<Subject>;
 }
 
 interface IpcResponse<T = unknown> {
@@ -50,10 +24,7 @@ interface IpcResponse<T = unknown> {
   data?: T;
   error?: string;
   subject?: Subject;
-  attachment?: unknown;
   subjects?: Subject[];
-  results?: Subject[];
-  resonance?: unknown;
 }
 
 /**
@@ -61,58 +32,26 @@ interface IpcResponse<T = unknown> {
  */
 const subjectPlans = {
   /**
-   * Create or update a subject
+   * Get all subjects for a topic
    */
-  'subjects:create': async (event: IpcMainInvokeEvent, { name, createdBy, confidence, references }: CreateSubjectParams): Promise<IpcResponse> => {
-    const response = await subjectsPlan.createSubject({ name, createdBy, confidence, references });
+  'subjects:getForTopic': async (event: IpcMainInvokeEvent, { topicId }: GetSubjectsParams): Promise<IpcResponse> => {
+    const response = await subjectsPlan.getSubjects({ topicId });
+    return { success: response.success, subjects: response.subjects, error: response.error };
+  },
+
+  /**
+   * Get a specific subject by ID hash
+   */
+  'subjects:getById': async (event: IpcMainInvokeEvent, { subjectIdHash }: GetSubjectByIdParams): Promise<IpcResponse> => {
+    const response = await subjectsPlan.getSubjectById({ subjectIdHash });
     return { success: response.success, subject: response.subject, error: response.error };
   },
 
   /**
-   * Attach subject to content
-   */
-  'subjects:attach': async (event: IpcMainInvokeEvent, { subjectName, contentHash, attachedBy, confidence, context }: AttachSubjectParams): Promise<IpcResponse> => {
-    const response = await subjectsPlan.attachSubject({ subjectName, contentHash, attachedBy, confidence, context });
-    return { success: response.success, attachment: response.attachment, error: response.error };
-  },
-
-  /**
-   * Get subjects for content
-   */
-  'subjects:getForContent': async (event: IpcMainInvokeEvent, { contentHash }: GetForContentParams): Promise<IpcResponse> => {
-    const response = await subjectsPlan.getForContent({ contentHash });
-    return { success: response.success, subjects: response.subjects, error: response.error };
-  },
-
-  /**
-   * Get all subjects
+   * Get all subjects across all topics
    */
   'subjects:getAll': async (event: IpcMainInvokeEvent): Promise<IpcResponse> => {
-    const response = await subjectsPlan.getAll({});
-    return { success: response.success, subjects: response.subjects, error: response.error };
-  },
-
-  /**
-   * Search subjects
-   */
-  'subjects:search': async (event: IpcMainInvokeEvent, { query, limit }: SearchParams): Promise<IpcResponse> => {
-    const response = await subjectsPlan.search({ query, limit });
-    return { success: response.success, results: response.results, error: response.error };
-  },
-
-  /**
-   * Get subject resonance
-   */
-  'subjects:getResonance': async (event: IpcMainInvokeEvent, { subjectNames, topK }: ResonanceParams): Promise<IpcResponse> => {
-    const response = await subjectsPlan.getResonance({ subjectNames, topK });
-    return { success: response.success, resonance: response.resonance, error: response.error };
-  },
-
-  /**
-   * Extract subjects from text
-   */
-  'subjects:extract': async (event: IpcMainInvokeEvent, { text, extractor, minConfidence }: ExtractParams): Promise<IpcResponse> => {
-    const response = await subjectsPlan.extract({ text, extractor, minConfidence });
+    const response = await subjectsPlan.getAllSubjects();
     return { success: response.success, subjects: response.subjects, error: response.error };
   }
 }

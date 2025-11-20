@@ -11,7 +11,8 @@ import nodeProvisioning from '../../services/node-provisioning.js';
 import nodeOneCore from '../../core/node-one-core.js';
 import { MessageVersionManager } from '../../core/message-versioning.js';
 import { MessageAssertionManager } from '../../core/message-assertion-certificates.js';
-import { StoryFactory, AssemblyPlan } from '@refinio/api/plan-system';
+import { StoryFactory } from '@refinio/refinio.api/plan-system';
+import { AssemblyPlan } from '@assembly/core/plans/AssemblyPlan';
 import electron from 'electron';
 const { BrowserWindow } = electron;
 
@@ -46,25 +47,35 @@ async function initializeMessageManagers() {
     // Import ONE.core storage functions for AssemblyPlan
     const { storeVersionedObject, getObjectByIdHash } =
       await import('@refinio/one.core/lib/storage-versioned-objects.js');
-    const { storeUnversionedObject } =
+    const { getObject } =
       await import('@refinio/one.core/lib/storage-unversioned-objects.js');
+
+    // Create adapter for storeVersionedObject that includes versionHash
+    const storeVersionedObjectAdapter = async (obj: any) => {
+      const result = await storeVersionedObject(obj);
+      return {
+        ...result,
+        versionHash: result.hash // versionHash is the same as hash for versioned objects
+      };
+    };
 
     // Create AssemblyPlan (connects to ONE.core)
     const assemblyPlan = new AssemblyPlan({
-      storeVersionedObject,
-      storeUnversionedObject,
-      getObjectByIdHash
+      oneCore: nodeOneCore,
+      storeVersionedObject: storeVersionedObjectAdapter,
+      getObjectByIdHash,
+      getObject
     });
 
     // Create StoryFactory with AssemblyPlan
-    const storyFactory = new StoryFactory(assemblyPlan);
+    const storyFactory = new StoryFactory(assemblyPlan as any);
 
     console.log('[Chat IPC] ✅ StoryFactory created with AssemblyPlan');
 
     groupPlan = new GroupPlan(
       nodeOneCore.topicGroupManager,
       nodeOneCore,
-      storyFactory
+      storyFactory as any
     );
 
     chatPlan.setGroupPlan(groupPlan);

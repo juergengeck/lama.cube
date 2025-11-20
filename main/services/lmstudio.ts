@@ -35,7 +35,7 @@ async function getAvailableModels(): Promise<any> {
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
-    const data = await response.json()
+    const data = await response.json() as any
     return data.data || []
   } catch (error) {
     console.error('[LMStudio] Failed to get models:', error)
@@ -81,9 +81,9 @@ async function chatWithLMStudio(modelName: any, messages: any, options: LLMOptio
       throw new Error(`LM Studio API error: ${response.status} - ${errorText}`)
     }
     
-    const data = await response.json()
+    const data = await response.json() as any
     console.log('[LMStudio] Response received:', data.choices?.[0]?.message?.content?.substring(0, 100) + '...')
-    
+
     if (data.choices && data.choices.length > 0) {
       return data.choices[0].message.content
     }

@@ -45,17 +45,8 @@ export interface EnhancedMessageData {
   // AI reasoning trace (for models like DeepSeek R1)
   thinking?: string;
 
-  // Attachments with Subject info
-  attachments?: Array<{
-    id: string;
-    name: string;
-    type: 'image' | 'video' | 'audio' | 'document';
-    url: string;
-    thumbnail?: string;
-    size: number;
-    subjects: string[];
-    trustLevel: number;
-  }>;
+  // Attachments - accepts MessageAttachment[] from storage
+  attachments?: any[]; // MessageAttachment[] - using any to avoid circular dependency
 
   // Trust information
   trustLevel: number;
@@ -133,17 +124,38 @@ const TrustLevelIndicator: React.FC<{
 
 // Attachment view component
 const AttachmentView: React.FC<{
-  attachment: EnhancedMessageData['attachments'][0];
+  attachment: any; // MessageAttachment from storage
   onAttachmentClick?: (attachmentId: string) => void;
   onDownloadAttachment?: (attachmentId: string) => void;
   onHashtagClick?: (hashtag: string) => void;
   theme?: 'light' | 'dark';
   attachmentDescriptors?: Map<string, any>;
-}> = ({ attachment, onAttachmentClick, onDownloadAttachment, onHashtagClick, theme = 'dark', attachmentDescriptors }) => {
-  
+}> = ({ attachment: rawAttachment, onAttachmentClick, onDownloadAttachment, onHashtagClick, theme = 'dark', attachmentDescriptors }) => {
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  
+
+  // Normalize MessageAttachment to expected format
+  const attachment = React.useMemo(() => {
+    // Determine display type from mimeType
+    const mimeType = rawAttachment.mimeType || 'application/octet-stream';
+    let displayType: 'image' | 'video' | 'audio' | 'document' = 'document';
+    if (mimeType.startsWith('image/')) displayType = 'image';
+    else if (mimeType.startsWith('video/')) displayType = 'video';
+    else if (mimeType.startsWith('audio/')) displayType = 'audio';
+
+    return {
+      id: rawAttachment.hash || rawAttachment.id,
+      name: rawAttachment.name || 'Unknown file',
+      type: displayType,
+      size: rawAttachment.size || 0,
+      subjects: [],
+      trustLevel: 3,
+      url: '',
+      thumbnail: undefined
+    };
+  }, [rawAttachment]);
+
   // Create object URL from attachment descriptor
   React.useEffect(() => {
     if (attachment.type === 'image' && attachmentDescriptors) {
@@ -152,7 +164,7 @@ const AttachmentView: React.FC<{
         const blob = new Blob([descriptor.data], { type: descriptor.type });
         const url = URL.createObjectURL(blob);
         setImageUrl(url);
-        
+
         // Cleanup on unmount
         return () => {
           URL.revokeObjectURL(url);
@@ -254,7 +266,12 @@ const AttachmentView: React.FC<{
       
       {/* Non-image attachments */}
       {!attachment.thumbnail && (
-        <div className="attachment-icon-container">
+        <div
+          className="attachment-icon-container"
+          onClick={handleAttachmentClick}
+          style={{ cursor: 'pointer' }}
+          title="Click to download"
+        >
           <div className="attachment-icon">
             {getFileIcon(attachment.type)}
           </div>

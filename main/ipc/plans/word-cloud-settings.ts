@@ -6,7 +6,7 @@
  */
 
 import { WordCloudSettingsPlan } from '@lama/core/plans/WordCloudSettingsPlan.js';
-import { wordCloudSettingsManager } from '@lama/core/one-ai/storage/word-cloud-settings-manager.js';
+import { WordCloudSettingsManager } from '@lama/core/models/settings/WordCloudSettingsManager.js';
 import type { IpcMainInvokeEvent } from 'electron';
 
 // Default settings matching WordCloudSettingsHandler interface
@@ -23,12 +23,16 @@ const DEFAULT_SETTINGS = {
 
 // Singleton handler instance
 let wordCloudSettingsHandler: WordCloudSettingsPlan | null = null;
+let wordCloudSettingsManager: WordCloudSettingsManager | null = null;
 
 /**
  * Get handler instance (creates on first use)
  */
 function getHandler(nodeOneCore: any): WordCloudSettingsPlan {
   if (!wordCloudSettingsHandler) {
+    if (!wordCloudSettingsManager) {
+      wordCloudSettingsManager = WordCloudSettingsManager.getInstance();
+    }
     wordCloudSettingsHandler = new WordCloudSettingsPlan(
       nodeOneCore,
       wordCloudSettingsManager,

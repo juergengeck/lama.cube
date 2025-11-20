@@ -12,7 +12,8 @@
  * - AssemblyPlan + StoryFactory for automatic audit trail
  */
 
-import { AssemblyPlan, StoryFactory, type StorageFunctions } from '@refinio/api/plan-system';
+import { StoryFactory } from '@refinio/refinio.api/plan-system';
+import { AssemblyPlan } from '@assembly/core/plans/AssemblyPlan';
 import type { NodeOneCore } from './types/one-core.js';
 
 let assemblyPlan: AssemblyPlan | null = null;
@@ -30,16 +31,24 @@ export async function initializeUnifiedPlanSystem(nodeOneCore: NodeOneCore): Pro
 
     // Initialize AssemblyPlan + StoryFactory for audit trail (Phase 1-2)
     const { storeVersionedObject, getObjectByIdHash } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
-    const { storeUnversionedObject } = await import('@refinio/one.core/lib/storage-unversioned-objects.js');
+    const { getObject } = await import('@refinio/one.core/lib/storage-unversioned-objects.js');
 
-    const storageFunctions: StorageFunctions = {
-        storeVersionedObject,
-        storeUnversionedObject,
-        getObjectByIdHash
+    // Create adapter for storeVersionedObject that includes versionHash
+    const storeVersionedObjectAdapter = async (obj: any) => {
+        const result = await storeVersionedObject(obj);
+        return {
+            ...result,
+            versionHash: result.hash // versionHash is the same as hash for versioned objects
+        };
     };
 
-    assemblyPlan = new AssemblyPlan(storageFunctions);
-    storyFactory = new StoryFactory(assemblyPlan);
+    assemblyPlan = new AssemblyPlan({
+        oneCore: nodeOneCore,
+        storeVersionedObject: storeVersionedObjectAdapter,
+        getObjectByIdHash,
+        getObject
+    });
+    storyFactory = new StoryFactory(assemblyPlan as any);
 
     console.log('[UnifiedPlanSystem] ✅ AssemblyPlan + StoryFactory initialized (Phase 1-2)');
 

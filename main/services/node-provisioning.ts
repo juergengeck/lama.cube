@@ -466,7 +466,8 @@ class NodeProvisioning {
       case 'llm':
         // Initialize LLM capability - integrate with main process LLMManager
         const { default: llmManager } = await import('../services/llm-manager-singleton.js')
-        const availableModels: any[] = llmManager.getAvailableModels().map((m: any) => m.id)
+        const models = await llmManager.getAvailableModels()
+        const availableModels: any[] = models.map((m: any) => m.id)
 
         await nodeOneCore.setState('capabilities.llm', {
           enabled: true,

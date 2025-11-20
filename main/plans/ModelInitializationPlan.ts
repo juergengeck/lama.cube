@@ -147,7 +147,8 @@ export class ModelInitializationPlan {
         storeVersionedObject,
         createAccess: async (accessRequests: any[]) => {
           await createAccess(accessRequests);
-        }
+        },
+        getOwnerId: async () => ownerId
         // queryAllLLMObjects not provided - will be handled by AIAssistantHandler
       },
       undefined  // No group for now

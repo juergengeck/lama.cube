@@ -106,8 +106,8 @@ export class ProposalEngine {
         console.log(`[ProposalEngine] Comparing with past subject "${pastSubject.id}" from topic "${pastSubject.topic}" (${pastSubject.keywords?.length || 0} keywords)`);
 
         // Resolve keyword terms from ID hashes for both subjects
-        const currentKeywordTerms = await this.resolveKeywordTerms(currentSubject.keywords);
-        const pastKeywordTerms = await this.resolveKeywordTerms(pastSubject.keywords);
+        const currentKeywordTerms = await this.resolveKeywordTerms(currentSubject.keywords as SHA256IdHash<CoreKeyword>[]);
+        const pastKeywordTerms = await this.resolveKeywordTerms(pastSubject.keywords as SHA256IdHash<CoreKeyword>[]);
 
         console.log(`[ProposalEngine] Keyword terms - Current: [${currentKeywordTerms.join(', ')}], Past: [${pastKeywordTerms.join(', ')}]`);
 
@@ -320,7 +320,7 @@ export class ProposalEngine {
 
     for (const pastSubject of eligiblePastSubjects) {
       // Resolve keyword terms for past subject
-      const pastKeywordTerms = await this.resolveKeywordTerms(pastSubject.keywords);
+      const pastKeywordTerms = await this.resolveKeywordTerms(pastSubject.keywords as SHA256IdHash<CoreKeyword>[]);
 
       // Calculate Jaccard similarity between input keywords and past subject keywords
       const jaccard = this.calculateJaccardFromTerms(inputKeywords, pastKeywordTerms);

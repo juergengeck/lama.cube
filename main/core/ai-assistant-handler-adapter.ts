@@ -14,9 +14,8 @@ import { AIAssistantPlan } from '@lama/core/plans/AIAssistantPlan.js';
 import { ElectronLLMPlatform } from '../../adapters/electron-llm-platform.js';
 import { AISettingsManager } from './ai-settings-manager.js';
 import type { NodeOneCore } from '../types/one-core.js';
-import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
-import { storeUnversionedObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
-import { getIdObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
+import { storeVersionedObject, getIdObject, getObjectByIdHash } from '@refinio/one.core/lib/storage-versioned-objects.js';
+import { storeUnversionedObject, getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
 import { createDefaultKeys, hasDefaultKeys } from '@refinio/one.core/lib/keychain/keychain.js';
 import { mcpManager } from '@mcp/core';
 import electron from 'electron';
@@ -72,6 +71,9 @@ export function createAIAssistantHandler(nodeOneCore: NodeOneCore, llmManager: a
         return result.hash;
       },
       getIdObject,
+      getObject,
+      getObjectByIdHash,
+      channelManager: nodeOneCore.channelManager,
       createDefaultKeys,
       hasDefaultKeys
     }

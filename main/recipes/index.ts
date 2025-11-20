@@ -22,6 +22,9 @@ import { AvatarPreferenceRecipe } from './avatar-recipes.js'
 // LLM Recipe - represents an AI model/assistant
 import { LLMRecipe } from './LLM.js'
 
+// AI Recipe - represents AI assistant identities
+import { AIRecipe } from '@lama/core/recipes/AIRecipe.js'
+
 // Chat Memory Config - memory extraction configuration per topic
 import { ChatMemoryConfigRecipe } from './chat-memory-config.js'
 
@@ -168,6 +171,7 @@ const GlobalLLMSettingsRecipe = {
 // Note: Group recipe is already in CORE_RECIPES, don't duplicate it
 const LamaRecipes = [
     LLMRecipe,
+    AIRecipe,
     LLMSettingsRecipe,
     GlobalLLMSettingsRecipe,
     WordCloudSettingsRecipe,

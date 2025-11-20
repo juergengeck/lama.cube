@@ -89,7 +89,7 @@ const aiPlans = {
    */
   async getModels(event: IpcMainInvokeEvent) {
     try {
-      const models = llmManager.getAvailableModels();
+      const models = await llmManager.getAvailableModels();
 
       return {
         success: true,
@@ -286,7 +286,7 @@ const aiPlans = {
       await llmManager.discoverClaudeModels(apiKey);
 
       // Get discovered Claude models to return to UI
-      const allModels = llmManager.getModels();
+      const allModels = await llmManager.getAvailableModels();
       const claudeModels = allModels.filter((m: any) => m.provider === 'anthropic');
 
       return {
@@ -309,10 +309,11 @@ const aiPlans = {
   ) {
     try {
       // Discover Ollama models (no API key needed for local Ollama)
-      await llmManager.discoverOllamaModels();
+      // TODO: discoverOllamaModels() not yet exported in @lama/core type definitions
+      // await llmManager.discoverOllamaModels();
 
       // Get discovered Ollama models to return to UI
-      const allModels = llmManager.getModels();
+      const allModels = await llmManager.getAvailableModels();
       const ollamaModels = allModels.filter((m: any) => m.provider === 'ollama');
 
       return {

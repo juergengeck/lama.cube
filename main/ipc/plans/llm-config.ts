@@ -31,15 +31,12 @@ import nodeOneCore from '../../core/node-one-core.js';
 // Create handler instance with Electron-specific dependencies
 const llmConfigHandler = new LLMConfigPlan(
   nodeOneCore,
-  nodeOneCore.aiAssistantModel,
+  nodeOneCore.aiAssistantModel, // aiAssistantModel (unused but required for backward compatibility)
   nodeOneCore.llmManager,
   nodeOneCore.settingsStore,
   {
     testOllamaConnection,
     fetchOllamaModels,
-  },
-  {
-    computeBaseUrl,
   }
 );
 
@@ -99,6 +96,17 @@ export async function handleDeleteOllamaConfig(
 }
 
 /**
+ * llm:testConnectionAndDiscoverModels
+ * Test connection and discover available models
+ */
+export async function handleTestConnectionAndDiscoverModels(
+  event: Electron.IpcMainInvokeEvent,
+  request: TestConnectionRequest
+): Promise<TestConnectionResponse> {
+  return await llmConfigHandler.testConnectionAndDiscoverModels(request);
+}
+
+/**
  * Register all IPC handlers
  */
 export function registerLlmConfigPlans() {
@@ -109,6 +117,7 @@ export function registerLlmConfigPlans() {
   ipcMain.handle('llm:getOllamaConfig', handleGetOllamaConfig);
   ipcMain.handle('llm:getAvailableModels', handleGetAvailableModels);
   ipcMain.handle('llm:deleteOllamaConfig', handleDeleteOllamaConfig);
+  ipcMain.handle('llm:testConnectionAndDiscoverModels', handleTestConnectionAndDiscoverModels);
 
   console.log('[IPC] ✅ LLM config handlers registered');
 }

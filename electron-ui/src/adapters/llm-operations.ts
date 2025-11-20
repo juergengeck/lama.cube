@@ -67,6 +67,22 @@ export function createLLMConfigOperations(): LLMConfigOperations {
       }
     },
 
+    async testConnectionAndDiscoverModels(params) {
+      const response = await window.electronAPI.invoke('llm:testConnectionAndDiscoverModels', {
+        server: params.server,
+        authToken: params.authToken,
+        serviceName: params.serviceName
+      })
+      return {
+        success: response.success,
+        version: response.version,
+        error: response.error,
+        errorCode: response.errorCode,
+        models: response.models,
+        needsSetup: response.needsSetup
+      }
+    },
+
     async getAvailableModels(params) {
       const response = await window.electronAPI.invoke('llm:getAvailableModels', {
         baseUrl: params?.baseUrl,
@@ -84,7 +100,7 @@ export function createLLMConfigOperations(): LLMConfigOperations {
       const response = await window.electronAPI.invoke('llm:setOllamaConfig', {
         modelType: params.modelType,
         modelName: params.modelName,
-        baseUrl: params.baseUrl,
+        baseUrl: params.server,  // Map 'server' to 'baseUrl' for IPC
         authToken: params.authToken,
         setAsActive: params.setAsActive,
         apiKey: params.apiKey

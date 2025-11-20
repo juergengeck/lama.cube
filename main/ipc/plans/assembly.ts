@@ -27,7 +27,7 @@ export function registerAssemblyPlans() {
         return { success: false, error: 'AssemblyManager not initialized' }
       }
 
-      const manager = assemblyManagerSingleton.getManager()
+      const manager = assemblyManagerSingleton.getHandler()
       const assemblies = manager.getAssemblies()
 
       return {
@@ -54,7 +54,7 @@ export function registerAssemblyPlans() {
         return { success: false, error: 'AssemblyManager not initialized' }
       }
 
-      const manager = assemblyManagerSingleton.getManager()
+      const manager = assemblyManagerSingleton.getHandler()
       const assembly = manager.getAssembly(assemblyId)
 
       if (!assembly) {
@@ -75,7 +75,7 @@ export function registerAssemblyPlans() {
         return { success: false, error: 'AssemblyManager not initialized' }
       }
 
-      const manager = assemblyManagerSingleton.getManager()
+      const manager = assemblyManagerSingleton.getHandler()
       const supplies = manager.getActiveSupplies()
 
       return { success: true, supplies }
@@ -95,7 +95,7 @@ export function registerAssemblyPlans() {
         return { success: false, error: 'AssemblyManager not initialized' }
       }
 
-      const manager = assemblyManagerSingleton.getManager()
+      const manager = assemblyManagerSingleton.getHandler()
       const supplies = manager.getSuppliesForIdentity(identityId as SHA256IdHash<any>)
 
       return { success: true, supplies }
@@ -122,7 +122,7 @@ export function registerAssemblyPlans() {
         return { success: false, error: 'AssemblyManager not initialized' }
       }
 
-      const manager = assemblyManagerSingleton.getManager()
+      const manager = assemblyManagerSingleton.getHandler()
 
       const demand = await manager.createDemand(
         params.keywords as SHA256IdHash<any>[],
@@ -153,7 +153,7 @@ export function registerAssemblyPlans() {
         return { success: false, error: 'AssemblyManager not initialized' }
       }
 
-      const manager = assemblyManagerSingleton.getManager()
+      const manager = assemblyManagerSingleton.getHandler()
       manager.setTrustLevel(identityId as SHA256IdHash<any>, trustLevel)
 
       return { success: true }
@@ -173,7 +173,7 @@ export function registerAssemblyPlans() {
         return { success: false, error: 'AssemblyManager not initialized' }
       }
 
-      const manager = assemblyManagerSingleton.getManager()
+      const manager = assemblyManagerSingleton.getHandler()
       const trustLevel = manager.getTrustLevel(identityId as SHA256IdHash<any>)
 
       return { success: true, trustLevel }
@@ -190,7 +190,7 @@ export function registerAssemblyPlans() {
         return { success: false, error: 'AssemblyManager not initialized' }
       }
 
-      const manager = assemblyManagerSingleton.getManager()
+      const manager = assemblyManagerSingleton.getHandler()
 
       // Get all assemblies and extract trust info
       const supplies = manager.getActiveSupplies()

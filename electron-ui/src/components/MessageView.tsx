@@ -446,7 +446,7 @@ export function MessageView({
               isOwn: isCurrentUser,
               subjects: subjects,
               trustLevel: 3, // Default colleague level
-              attachments: message.attachments,
+              attachments: message.attachments, // Pass through directly - EnhancedMessageBubble will handle transformation
               topicName: message.topicName, // Pass topic name to enhanced bubble
               format: message.format || 'markdown', // Use message format if available, otherwise markdown
               thinking: message.thinking // Pass thinking trace if present

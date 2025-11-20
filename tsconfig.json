@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
-    "moduleResolution": "Node",
+    "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": false,
     "allowJs": true,
@@ -33,7 +33,8 @@
       "@core/*": ["./main/core/*"],
       "@models/*": ["./main/models/*"],
       "@refinio/one.core/*": ["./node_modules/@refinio/one.core/*"],
-      "@refinio/one.models/*": ["./node_modules/@refinio/one.models/*"]
+      "@refinio/one.models/*": ["./node_modules/@refinio/one.models/*"],
+      "@assembly/core/*": ["./node_modules/@assembly/core/*"]
     }
   },
   "include": [

@@ -11,8 +11,17 @@
  */
 
 import path from 'path';
-import { MemoryServicesPlan } from '../../memory.core/dist/initialization/MemoryServicesPlan.js';
+// TODO: Fix memory.core build errors before enabling
+// import { MemoryServicesPlan } from '@memory/core/initialization/MemoryServicesPlan.js';
 import type TopicAnalysisModel from '@lama/core/one-ai/models/TopicAnalysisModel.js';
+
+// Placeholder until memory.core builds successfully
+class MemoryServicesPlan {
+  constructor(deps: any) {}
+  async initialize(context: any): Promise<any> {
+    throw new Error('MemoryServicesPlan not yet available - memory.core has build errors');
+  }
+}
 import type ChannelManager from '@refinio/one.models/lib/models/ChannelManager.js';
 import type TopicModel from '@refinio/one.models/lib/models/Chat/TopicModel.js';
 

@@ -45,18 +45,23 @@ export default function registerKnowledgeGraphHandlers(ipcMain: any, nodeOneCore
         const topicNode: GraphNode = {
           id: `topic:${topicId}`,
           type: 'topic',
-          label: topicId.substring(0, 20) + '...',
+          label: topicId.length > 20 ? topicId.substring(0, 20) + '...' : topicId,
           keywords: [],
           metadata: { topicId }
         };
 
         // Get subjects for this topic
         const subjects = await nodeOneCore.topicAnalysisModel.getSubjects(topicId);
+
+        // Get keywords ONCE per topic (not per subject)
+        const keywords = await nodeOneCore.topicAnalysisModel.getKeywords(topicId);
         const topicKeywords: string[] = [];
 
-        for (const subject of subjects) {
-          // Get keyword terms for this topic
-          const keywords = await nodeOneCore.topicAnalysisModel.getKeywords(topicId);
+        for (let subjectIndex = 0; subjectIndex < subjects.length; subjectIndex++) {
+          const subject = subjects[subjectIndex];
+
+          // Generate stable node ID ONCE
+          const nodeId = `subject:${topicId}:${subjectIndex}`;
           const keywordTerms: string[] = [];
 
           for (const kw of keywords) {
@@ -65,7 +70,6 @@ export default function registerKnowledgeGraphHandlers(ipcMain: any, nodeOneCore
               topicKeywords.push(kw.term);
 
               // Track which nodes have this keyword
-              const nodeId = `subject:${subject.keywords?.join(',') || 'unknown'}`;
               if (!keywordToNodes.has(kw.term)) {
                 keywordToNodes.set(kw.term, []);
               }
@@ -75,7 +79,7 @@ export default function registerKnowledgeGraphHandlers(ipcMain: any, nodeOneCore
 
           // Add subject as node
           nodes.push({
-            id: `subject:${subject.keywords?.join(',') || Math.random()}`,
+            id: nodeId,
             type: 'subject',
             label: subject.description || 'Untitled Subject',
             keywords: keywordTerms,
@@ -134,10 +138,10 @@ export default function registerKnowledgeGraphHandlers(ipcMain: any, nodeOneCore
 
       console.log(`[KnowledgeGraph] Built graph with ${nodes.length} nodes, ${edges.length} edges`);
 
-      return { nodes, edges };
+      return { success: true, data: { nodes, edges } };
     } catch (error) {
       console.error('[IPC:memory:getKnowledgeGraph] Error:', error);
-      throw error;
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 

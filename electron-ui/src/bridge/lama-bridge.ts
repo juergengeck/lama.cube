@@ -42,6 +42,18 @@ export interface LamaAPI {
   // Proposals
   updateProposalConfig: (config: { minJaccard?: number }) => Promise<void>
 
+  // AI Settings
+  setResponseLength: (maxTokens: number) => Promise<void>
+  getResponseLength: () => Promise<number>
+  stopStreaming: (topicId: string) => Promise<{ success: boolean }>
+
+  // Topic Analysis
+  getSubjects: (topicId: string) => Promise<{ success: boolean; data?: { subjects: any[] }; error?: string }>
+  getKeywords: (topicId: string) => Promise<{ success: boolean; data?: { keywords: string[] }; error?: string }>
+
+  // Memory & Knowledge Graph
+  getKnowledgeGraph: () => Promise<{ success: boolean; data?: { nodes: any[]; edges: any[] }; error?: string }>
+
   // Events
   on: (event: string, callback: (...args: any[]) => void) => void
   off: (event: string, callback: (...args: any[]) => void) => void
@@ -55,6 +67,7 @@ export interface Message {
   timestamp: Date
   encrypted: boolean
   isAI?: boolean
+  isOwn?: boolean // Whether this message is from the current user (computed server-side)
   attachments?: any[]
   topicId?: string
   topicName?: string
@@ -105,6 +118,10 @@ class LamaBridge implements LamaAPI {
 
       // Contact events
       window.electronAPI.on('contact:added', createIPCHandler('contact:added'))
+
+      // Subject/keyword update events (for topic analysis)
+      window.electronAPI.on('subjects:updated', createIPCHandler('subjects:updated'))
+      window.electronAPI.on('keywords:updated', createIPCHandler('keywords:updated'))
 
       // Conversation events
       window.electronAPI.on('chat:conversationCreated', createIPCHandler('conversation:created'))
@@ -228,6 +245,7 @@ class LamaBridge implements LamaAPI {
       timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
       encrypted: false,
       isAI: msg.isAI || false,
+      isOwn: msg.isOwn || false, // Server-computed ownership flag
       topicId: conversationId,
       topicName: 'Chat',
       attachments: msg.attachments,
@@ -504,6 +522,56 @@ class LamaBridge implements LamaAPI {
     if (!result.success) {
       throw new Error(result.error || 'Failed to update proposal config')
     }
+  }
+
+  async setResponseLength(maxTokens: number): Promise<void> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('ai:setResponseLength', { maxTokens })
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to set response length')
+    }
+  }
+
+  async getResponseLength(): Promise<number> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('ai:getResponseLength')
+    if (!result.success) {
+      return 800 // Default response length
+    }
+    return result.data || 800
+  }
+
+  async stopStreaming(topicId: string): Promise<{ success: boolean }> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('ai:stopStreaming', { topicId })
+    return { success: result?.success || false }
+  }
+
+  async getSubjects(topicId: string): Promise<{ success: boolean; data?: { subjects: any[] }; error?: string }> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    return await window.electronAPI.invoke('topicAnalysis:getSubjects', { topicId, includeArchived: false })
+  }
+
+  async getKeywords(topicId: string): Promise<{ success: boolean; data?: { keywords: string[] }; error?: string }> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    return await window.electronAPI.invoke('topicAnalysis:getKeywords', { topicId })
+  }
+
+  async getKnowledgeGraph(): Promise<{ success: boolean; data?: { nodes: any[]; edges: any[] }; error?: string }> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    return await window.electronAPI.invoke('memory:getKnowledgeGraph')
   }
 }
 

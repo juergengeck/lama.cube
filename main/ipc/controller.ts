@@ -26,6 +26,7 @@ import * as topicPlans from './plans/topics.js';
 import topicAnalysisPlans from './plans/topic-analysis.js';
 import * as wordCloudSettingsPlans from './plans/word-cloud-settings.js';
 import registerMemoryPlans from './plans/memory.js';
+import registerKnowledgeGraphHandlers from './plans/knowledge-graph.js';
 import keywordDetailPlans from './plans/keyword-detail.js';
 import auditPlans from './plans/audit.js';
 import trustPlans from './plans/trust.js';
@@ -222,6 +223,8 @@ class IPCController {
     // AI/LLM plans
     this.handle('ai:chat', aiPlans.chat);
     this.handle('ai:stopStreaming', aiPlans.stopStreaming);
+    this.handle('ai:setResponseLength', aiPlans.setResponseLength);
+    this.handle('ai:getResponseLength', aiPlans.getResponseLength);
     this.handle('ai:getModels', aiPlans.getModels);
     this.handle('ai:setDefaultModel', aiPlans.setDefaultModel);
     this.handle('ai:setApiKey', aiPlans.setApiKey);
@@ -275,6 +278,9 @@ class IPCController {
     // Chat Memory plans
     registerMemoryPlans(ipcMain, nodeOneCore);
 
+    // Knowledge Graph plans
+    registerKnowledgeGraphHandlers(ipcMain, nodeOneCore);
+
     // Word Cloud Settings plans
     this.handle('wordCloudSettings:getSettings', wordCloudSettingsPlans.getWordCloudSettings);
     this.handle('wordCloudSettings:updateSettings', wordCloudSettingsPlans.updateWordCloudSettings);
@@ -291,6 +297,7 @@ class IPCController {
     this.handle('proposals:getConfig', proposalPlans['proposals:getConfig']);
     this.handle('proposals:dismiss', proposalPlans['proposals:dismiss']);
     this.handle('proposals:share', proposalPlans['proposals:share']);
+    this.handle('proposals:getDetails', proposalPlans['proposals:getDetails']);
 
     // MCP plans
     this.handle('mcp:listServers', mcpPlans.listServers);
@@ -343,6 +350,7 @@ class IPCController {
     this.handle('onecore:hasPersonName', oneCorePlans.hasPersonName);
     this.handle('onecore:setPersonName', oneCorePlans.setPersonName);
     this.handle('onecore:updateMood', oneCorePlans.updateMood);
+    this.handle('onecore:getOwnerId', oneCorePlans.getOwnerId);
 
     // Topic feedback handler
     this.handle('topics:recordFeedback', topicPlans.recordSubjectFeedback);

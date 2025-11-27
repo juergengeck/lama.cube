@@ -1,9 +1,14 @@
 /**
  * IPC handlers for chat memory operations
  * Provides toggle control and memory search for UI
+ *
+ * Uses lama.core's SubjectsPlan for subject management.
+ * The Subject type from lama.core is the source of truth.
  */
 
 import type { IpcMainInvokeEvent } from 'electron';
+import { subjectsPlan } from './subjects.js';
+import { calculateIdHashOfObj } from '@refinio/one.core/lib/util/object.js';
 
 export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
   /**
@@ -175,44 +180,53 @@ export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
 
   /**
    * Get all journal entries (subjects) sorted chronologically
+   * Uses lama.core's SubjectsPlan - the source of truth for subjects
    */
   ipcMain.handle('memory:journal:list', async (event: IpcMainInvokeEvent, params?: { limit?: number }) => {
     try {
-      if (!nodeOneCore?.subjectHandler) {
-        throw new Error('Subject Handler not initialized');
+      // Get all subjects via lama.core's SubjectsPlan
+      const response = await subjectsPlan.getAllSubjects();
+
+      if (!response.success || !response.subjects) {
+        throw new Error(response.error || 'Failed to get subjects');
       }
 
-      // Get all subject ID hashes
-      const idHashes = await nodeOneCore.subjectHandler.listSubjects();
+      // Map lama.core Subject to journal entry format
+      const entries = await Promise.all(response.subjects.map(async (subject: any) => {
+        // Calculate IdHash from keywords (Subject's ID property)
+        const idHash = await calculateIdHashOfObj(subject);
 
-      // Retrieve all subjects with details
-      const subjects = await Promise.all(
-        idHashes.map(async (idHash: any) => {
-          const subject = await nodeOneCore.subjectHandler.getSubject(idHash);
-          if (!subject) return null;
+        return {
+          idHash: idHash || '',
+          id: idHash || '',
+          name: subject.description?.split('.')[0] || 'Untitled',
+          description: subject.description || '',
+          created: 0, // No longer available on Subject
+          modified: 0, // No longer available on Subject
+          topic: subject.topics?.[0] || '', // Use first topic from topics array
+          keywords: subject.keywords || [],
+          messageCount: 0, // No longer available on Subject
+          metadata: {
+            abstractionLevel: subject.abstractionLevel || 0,
+            likes: 0, // No longer available on Subject
+            dislikes: 0 // No longer available on Subject
+          }
+        };
+      }));
 
-          return {
-            idHash,
-            id: subject.id,
-            name: subject.name,
-            description: subject.description,
-            created: subject.created,
-            modified: subject.modified,
-            metadata: subject.metadata ? Object.fromEntries(subject.metadata) : {}
-          };
-        })
-      );
-
-      // Filter out nulls and sort by created date (newest first)
-      const validSubjects = subjects.filter((s: any) => s !== null);
-      validSubjects.sort((a: any, b: any) => (b.created || 0) - (a.created || 0));
+      // Sort by ID (no created date available)
+      entries.sort((a: any, b: any) => {
+        const aId = a.idHash || '';
+        const bId = b.idHash || '';
+        return bId.localeCompare(aId);
+      });
 
       // Apply limit if specified
-      const limited = params?.limit ? validSubjects.slice(0, params.limit) : validSubjects;
+      const limited = params?.limit ? entries.slice(0, params.limit) : entries;
 
       return {
         entries: limited,
-        total: validSubjects.length
+        total: entries.length
       };
     } catch (error) {
       console.error('[IPC:memory:journal:list] Error:', error);
@@ -222,40 +236,50 @@ export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
 
   /**
    * Get a single journal entry (subject) with HTML content
+   * Uses lama.core's SubjectsPlan - the source of truth for subjects
    */
   ipcMain.handle('memory:journal:get', async (event: IpcMainInvokeEvent, params: { idHash: string }) => {
     try {
-      if (!nodeOneCore?.subjectHandler) {
-        throw new Error('Subject Handler not initialized');
+      // Get all subjects and find the one matching the idHash
+      const response = await subjectsPlan.getAllSubjects();
+
+      if (!response.success || !response.subjects) {
+        throw new Error(response.error || 'Failed to get subjects');
       }
 
-      if (!nodeOneCore?.fileStorageService) {
-        throw new Error('File Storage Service not initialized');
+      // Find subject by calculating IdHash for each and comparing
+      let foundSubject: any = null;
+      for (const subject of response.subjects) {
+        const idHash = await calculateIdHashOfObj(subject);
+        if (idHash === params.idHash) {
+          foundSubject = subject;
+          break;
+        }
       }
 
-      // Get subject details
-      const subject = await nodeOneCore.subjectHandler.getSubject(params.idHash);
-
-      if (!subject) {
+      if (!foundSubject) {
         return null;
       }
 
-      // Get the HTML file path
-      const filePath = nodeOneCore.fileStorageService.getFilePath(params.idHash, 'subjects');
-
-      // Read raw HTML for display
-      const html = await nodeOneCore.fileStorageService.readRawHtml(params.idHash, 'subjects');
-
+      // Map lama.core Subject to journal entry format
       return {
         idHash: params.idHash,
-        id: subject.id,
-        name: subject.name,
-        description: subject.description,
-        created: subject.created,
-        modified: subject.modified,
-        metadata: subject.metadata ? Object.fromEntries(subject.metadata) : {},
-        filePath,
-        html
+        id: params.idHash,
+        name: foundSubject.description?.split('.')[0] || 'Untitled',
+        description: foundSubject.description || '',
+        created: 0, // No longer available on Subject
+        modified: 0, // No longer available on Subject
+        topic: foundSubject.topics?.[0] || '', // Use first topic from topics array
+        keywords: foundSubject.keywords || [],
+        messageCount: 0, // No longer available on Subject
+        metadata: {
+          abstractionLevel: foundSubject.abstractionLevel || 0,
+          likes: 0, // No longer available on Subject
+          dislikes: 0 // No longer available on Subject
+        },
+        // HTML content not available from lama.core subjects
+        filePath: null,
+        html: null
       };
     } catch (error) {
       console.error('[IPC:memory:journal:get] Error:', error);

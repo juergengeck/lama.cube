@@ -162,6 +162,7 @@ class IPCController {
     this.handle('journal:getCallEntries', journalPlans.getCallEntries);
     this.handle('journal:getConversationHistory', journalPlans.getConversationHistory);
     this.handle('journal:getAllEntries', journalPlans.getAllEntries);
+    this.handle('journal:queryAssemblies', journalPlans.queryAssemblies);
 
     // Test handler to manually trigger message updates
     this.handle('test:triggerMessageUpdate', async (event: IpcMainInvokeEvent, { conversationId }: any) => {

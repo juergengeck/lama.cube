@@ -1,47 +1,70 @@
 /**
  * JournalView Wrapper for Electron
  *
- * Provides a journal plan adapter that uses IPC to communicate with
+ * Provides a journal adapter that uses IPC to communicate with
  * the Node.js process where the actual JournalPlan lives.
+ *
+ * NEW: Uses Assembly-based queries (Task 7: Journal-Assembly Integration)
  */
 
-import { JournalView } from '@lama/ui'
-import type { JournalEntry } from '@lama/core/plans/JournalPlan.js'
+import { AssemblyJournalView } from '@lama/ui'
+import type { AssemblyQueryOptions, AssemblyWithStory } from '@assembly/core'
 
-/**
- * IPC-based journal plan adapter
- */
-const journalPlanAdapter = {
-  async getAllEntries(params: {
-    conversationId?: string
-    type?: string[]
-    limit?: number
-  }): Promise<JournalEntry[]> {
-    if (!window.electronAPI) {
-      throw new Error('Electron API not available')
-    }
-
-    return await window.electronAPI.invoke('journal:getAllEntries', params)
-  }
+interface JournalViewWrapperProps {
+  /** Callback to set toolbar controls in App title bar */
+  onSetToolbarControls?: (controls: React.ReactNode) => void
+  /** App menu items for navigation */
+  appMenuItems?: Array<{
+    label: string
+    onClick: () => void
+    icon?: React.ReactNode
+  }>
+  /** Add space for macOS traffic lights */
+  trafficLightSpace?: boolean
 }
 
 /**
- * Electron-specific JournalView wrapper
+ * Query Assemblies via IPC (NEW - uses assembly.core JournalPlan)
  */
-export function JournalViewWrapper() {
+async function queryAssemblies(options: AssemblyQueryOptions): Promise<AssemblyWithStory[]> {
+  if (!window.electronAPI) {
+    throw new Error('Electron API not available')
+  }
+
+  const response = await window.electronAPI.invoke('journal:queryAssemblies', options)
+
+  if (!response.success) {
+    console.error('[JournalViewWrapper] Query failed:', response.error)
+    return []
+  }
+
+  return response.data || []
+}
+
+/**
+ * Electron-specific JournalView wrapper (NEW - Assembly-based)
+ */
+export function JournalViewWrapper({
+  onSetToolbarControls,
+  appMenuItems = [],
+  trafficLightSpace = false
+}: JournalViewWrapperProps) {
   return (
-    <JournalView
-      journal={journalPlanAdapter}
-      onSelectEntry={(entry) => {
-        console.log('[JournalViewWrapper] Selected entry:', entry)
+    <AssemblyJournalView
+      queryAssemblies={queryAssemblies}
+      onSetToolbarControls={onSetToolbarControls}
+      appMenuItems={appMenuItems}
+      trafficLightSpace={trafficLightSpace}
+      onSelectEntry={(item) => {
+        console.log('[JournalViewWrapper] Selected assembly:', item)
         // TODO: Navigate to entry details
       }}
-      onViewChainOfTrust={(entry) => {
-        console.log('[JournalViewWrapper] View Chain of Trust:', entry)
+      onViewChainOfTrust={(item) => {
+        console.log('[JournalViewWrapper] View Chain of Trust:', item)
         // TODO: Open Chain of Trust view
       }}
-      onViewAssembly={(entry) => {
-        console.log('[JournalViewWrapper] View Assembly:', entry)
+      onViewAssembly={(item) => {
+        console.log('[JournalViewWrapper] View Assembly:', item)
         // TODO: Open Assembly view
       }}
     />

@@ -2,7 +2,8 @@
  * Journal IPC Handlers (Thin Adapter)
  *
  * Maps Electron IPC calls to JournalPlan methods.
- * Business logic lives in ../../../lama.core/plans/JournalPlan.ts
+ * Business logic lives in ../../../lama.core/plans/JournalPlan.ts (legacy)
+ * and @assembly/core/plans/JournalPlan.ts (new Assembly-based queries)
  *
  * JournalPlan records LLM interactions and AI contact creation as Assembly objects,
  * providing a comprehensive audit trail of AI operations.
@@ -17,8 +18,10 @@ import nodeOneCore from '../../core/node-one-core.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
 import type { Person } from '@refinio/one.core/lib/recipes.js';
+import { getJournalPlan as getAssemblyJournalPlan } from '../../unified-plan-system-init.js';
+import type { AssemblyQueryOptions } from '@assembly/core';
 
-// Plan instance
+// Plan instance (legacy lama.core)
 let journalPlan: JournalPlan | null = null;
 
 /**
@@ -138,7 +141,7 @@ const journalHandlers = {
     },
 
     /**
-     * Get all journal entries with optional filters
+     * Get all journal entries with optional filters (LEGACY - uses lama.core JournalPlan)
      */
     async getAllEntries(
         event: IpcMainInvokeEvent,
@@ -155,6 +158,37 @@ const journalHandlers = {
         } catch (error: any) {
             console.error('[Journal IPC] Error getting all entries:', error);
             throw error;
+        }
+    },
+
+    /**
+     * Query Assemblies for journal display (NEW - uses assembly.core JournalPlan)
+     */
+    async queryAssemblies(
+        event: IpcMainInvokeEvent,
+        options: AssemblyQueryOptions
+    ) {
+        try {
+            const assemblyJournalPlan = getAssemblyJournalPlan();
+            if (!assemblyJournalPlan) {
+                throw new Error('Assembly JournalPlan not initialized');
+            }
+
+            const assembliesWithStories = await assemblyJournalPlan.queryAssemblies(options);
+
+            console.log(`[Journal IPC] Queried ${assembliesWithStories.length} assemblies`);
+
+            return {
+                success: true,
+                data: assembliesWithStories
+            };
+        } catch (error: any) {
+            console.error('[Journal IPC] Error querying assemblies:', error);
+            return {
+                success: false,
+                error: error.message,
+                data: []
+            };
         }
     }
 };

@@ -10,14 +10,18 @@
  * - IPC transport bridges Electron renderer to plans
  * - Same plans work through HTTP, stdio, React Native (future)
  * - AssemblyPlan + StoryFactory for automatic audit trail
+ * - AssemblyListener connects StoryFactory to Assembly creation
+ * - JournalPlan provides Assembly queries for journal display
  */
 
 import { StoryFactory } from '@refinio/refinio.api/plan-system';
-import { AssemblyPlan } from '@assembly/core/plans/AssemblyPlan';
+import { AssemblyPlan, AssemblyListener, JournalPlan } from '@assembly/core';
 import type { NodeOneCore } from './types/one-core.js';
 
 let assemblyPlan: AssemblyPlan | null = null;
 let storyFactory: StoryFactory | null = null;
+let assemblyListener: AssemblyListener | null = null;
+let journalPlan: JournalPlan | null = null;
 
 /**
  * Initialize the Unified Plan System with real ONE.core instance
@@ -33,22 +37,37 @@ export async function initializeUnifiedPlanSystem(nodeOneCore: NodeOneCore): Pro
     const { storeVersionedObject, getObjectByIdHash } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
     const { getObject } = await import('@refinio/one.core/lib/storage-unversioned-objects.js');
 
-    // Create adapter for storeVersionedObject that includes versionHash
+    // Create adapter for storeVersionedObject
+    // For AssemblyPlan: must include versionHash (which equals hash for versioned objects)
+    // For StoryFactory: only needs hash and idHash (StoryFactory ignores versionHash)
     const storeVersionedObjectAdapter = async (obj: any) => {
         const result = await storeVersionedObject(obj);
         return {
-            ...result,
+            hash: result.hash,
+            idHash: result.idHash,
             versionHash: result.hash // versionHash is the same as hash for versioned objects
         };
+    };
+
+    // Create adapter for getObjectByIdHash that returns the unwrapped object
+    const getObjectByIdHashAdapter = async (idHash: any) => {
+        const result = await getObjectByIdHash(idHash);
+        return result.obj;
+    };
+
+    // Create adapter for getObject that returns the unwrapped object
+    const getObjectAdapter = async (hash: any) => {
+        const result = await getObject(hash);
+        return result;
     };
 
     assemblyPlan = new AssemblyPlan({
         oneCore: nodeOneCore,
         storeVersionedObject: storeVersionedObjectAdapter,
-        getObjectByIdHash,
-        getObject
+        getObjectByIdHash: getObjectByIdHashAdapter,
+        getObject: getObjectAdapter
     });
-    storyFactory = new StoryFactory(assemblyPlan as any);
+    storyFactory = new StoryFactory(storeVersionedObjectAdapter);
 
     console.log('[UnifiedPlanSystem] ✅ AssemblyPlan + StoryFactory initialized (Phase 1-2)');
 
@@ -56,6 +75,36 @@ export async function initializeUnifiedPlanSystem(nodeOneCore: NodeOneCore): Pro
     await injectStoryFactoryIntoPlans(storyFactory);
 
     console.log('[UnifiedPlanSystem] ✅ Initialization complete (Phases 1-3)');
+
+    // Phase 4: Journal-Assembly Integration
+    // Create AssemblyListener to connect StoryFactory to Assembly creation
+    assemblyListener = new AssemblyListener({
+        storyFactory,
+        assemblyPlan
+    });
+
+    // Initialize the listener to start listening to Story creation events
+    assemblyListener.init();
+    console.log('[UnifiedPlanSystem] ✅ AssemblyListener initialized and listening (Phase 4)');
+
+    // Phase 5: Create JournalPlan for journal queries
+    journalPlan = new JournalPlan({
+        // getAllAssemblies: query all Assembly objects from storage
+        // TODO: Implement proper querying once Assembly objects are being created
+        // For now, return empty array as no Assemblies exist yet
+        getAllAssemblies: async () => {
+            // Future implementation will query all Assembly objects from ONE.core storage
+            // This could use ObjectEventDispatcher or a custom query mechanism
+            return [];
+        },
+        // getStory: retrieve Story by ID hash (use the adapter with type cast)
+        getStory: async (idHash) => {
+            return await getObjectByIdHashAdapter(idHash) as any;
+        }
+    });
+    console.log('[UnifiedPlanSystem] ✅ JournalPlan created for journal queries (Phase 5)');
+
+    console.log('[UnifiedPlanSystem] ✅ Full initialization complete (Phases 1-5)');
 
     return {
         storyFactory: storyFactory
@@ -114,13 +163,35 @@ export function getAssemblyPlan(): AssemblyPlan | null {
 }
 
 /**
+ * Get the initialized AssemblyListener
+ */
+export function getAssemblyListener(): AssemblyListener | null {
+    return assemblyListener;
+}
+
+/**
+ * Get the initialized JournalPlan
+ */
+export function getJournalPlan(): JournalPlan | null {
+    return journalPlan;
+}
+
+/**
  * Shutdown the plan system
  */
 export async function shutdownUnifiedPlanSystem(): Promise<void> {
     console.log('[UnifiedPlanSystem] Shutting down...');
 
+    // Cleanup AssemblyListener
+    if (assemblyListener) {
+        assemblyListener.destroy();
+        console.log('[UnifiedPlanSystem] AssemblyListener destroyed');
+    }
+
     assemblyPlan = null;
     storyFactory = null;
+    assemblyListener = null;
+    journalPlan = null;
 
     console.log('[UnifiedPlanSystem] Shutdown complete');
 }

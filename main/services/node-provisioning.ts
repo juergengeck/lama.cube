@@ -113,13 +113,13 @@ class NodeProvisioning {
         console.error('[NodeProvisioning] Failed to create profile with endpoint:', error)
       }
 
-      // Initialize Unified Plan System (if not already initialized)
+      // Initialize Module System with shared modules from lama.core (if not already initialized)
       try {
-        const { initializeUnifiedPlanSystem } = await import('../unified-plan-system-init.js')
-        await initializeUnifiedPlanSystem(nodeOneCore)
-        console.log('[NodeProvisioning] ✅ Unified Plan System initialized (Phases 1-3)')
+        const { initializeModuleRegistry } = await import('../registry/module-registry-init.js')
+        await initializeModuleRegistry(nodeOneCore)
+        console.log('[NodeProvisioning] ✅ Module Registry initialized with shared modules')
       } catch (error) {
-        console.error('[NodeProvisioning] Failed to initialize Unified Plan System:', error)
+        console.error('[NodeProvisioning] Failed to initialize Module Registry:', error)
         // Non-critical - allow app to continue
       }
 
@@ -432,13 +432,13 @@ class NodeProvisioning {
     // Skip heavy configuration during init - use minimal setup
     // Full capabilities can be enabled on-demand
 
-    // Initialize Unified Plan System
+    // Initialize Module System with shared modules from lama.core
     try {
-      const { initializeUnifiedPlanSystem } = await import('../unified-plan-system-init.js')
-      await initializeUnifiedPlanSystem(nodeOneCore)
-      console.log('[NodeProvisioning] ✅ Unified Plan System initialized (Phases 1-3)')
+      const { initializeModuleRegistry } = await import('../registry/module-registry-init.js')
+      await initializeModuleRegistry(nodeOneCore)
+      console.log('[NodeProvisioning] ✅ Module Registry initialized with shared modules')
     } catch (error) {
-      console.error('[NodeProvisioning] Failed to initialize Unified Plan System:', error)
+      console.error('[NodeProvisioning] Failed to initialize Module Registry:', error)
       // Non-critical - allow app to continue
     }
   }

@@ -18,7 +18,7 @@ import nodeOneCore from '../../core/node-one-core.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
 import type { Person } from '@refinio/one.core/lib/recipes.js';
-import { getJournalPlan as getAssemblyJournalPlan } from '../../unified-plan-system-init.js';
+import { getModuleRegistry } from '../../registry/module-registry-init.js';
 import type { AssemblyQueryOptions } from '@assembly/core';
 
 // Plan instance (legacy lama.core)
@@ -169,9 +169,17 @@ const journalHandlers = {
         options: AssemblyQueryOptions
     ) {
         try {
-            const assemblyJournalPlan = getAssemblyJournalPlan();
+            const registry = getModuleRegistry();
+            if (!registry) {
+                throw new Error('ModuleRegistry not initialized');
+            }
+
+            // Get JournalPlan from registry
+            const journalModule = (registry as any).modules?.find((m: any) => m.name === 'JournalModule');
+            const assemblyJournalPlan = journalModule?.journalPlan;
+
             if (!assemblyJournalPlan) {
-                throw new Error('Assembly JournalPlan not initialized');
+                throw new Error('JournalModule not initialized in registry');
             }
 
             const assembliesWithStories = await assemblyJournalPlan.queryAssemblies(options);

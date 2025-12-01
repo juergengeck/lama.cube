@@ -11,8 +11,7 @@ import nodeProvisioning from '../../services/node-provisioning.js';
 import nodeOneCore from '../../core/node-one-core.js';
 import { MessageVersionManager } from '../../core/message-versioning.js';
 import { MessageAssertionManager } from '../../core/message-assertion-certificates.js';
-import { StoryFactory } from '@refinio/refinio.api/plan-system';
-import { AssemblyPlan } from '@assembly/core/plans/AssemblyPlan';
+import { getModuleRegistry } from '../../registry/module-registry-init.js';
 import electron from 'electron';
 const { BrowserWindow } = electron;
 
@@ -44,33 +43,24 @@ async function initializeMessageManagers() {
   if (!groupPlan && nodeOneCore.topicGroupManager) {
     console.log('[Chat IPC] Initializing GroupPlan with TopicGroupManager and StoryFactory');
 
-    // Import ONE.core storage functions for AssemblyPlan
-    const { storeVersionedObject, getObjectByIdHash } =
-      await import('@refinio/one.core/lib/storage-versioned-objects.js');
-    const { getObject } =
-      await import('@refinio/one.core/lib/storage-unversioned-objects.js');
+    // Get the shared StoryFactory from ModuleRegistry
+    // This StoryFactory has AssemblyListener attached for Assembly creation
+    const registry = getModuleRegistry();
+    if (!registry) {
+      console.warn('[Chat IPC] ModuleRegistry not yet initialized, deferring GroupPlan creation');
+      return;
+    }
 
-    // Create adapter for storeVersionedObject that includes versionHash
-    const storeVersionedObjectAdapter = async (obj: any) => {
-      const result = await storeVersionedObject(obj);
-      return {
-        ...result,
-        versionHash: result.hash // versionHash is the same as hash for versioned objects
-      };
-    };
+    // Get JournalModule which provides StoryFactory
+    const journalModule = (registry as any).modules?.find((m: any) => m.name === 'JournalModule');
+    const storyFactory = journalModule?.storyFactory;
 
-    // Create AssemblyPlan (connects to ONE.core)
-    const assemblyPlan = new AssemblyPlan({
-      oneCore: nodeOneCore,
-      storeVersionedObject: storeVersionedObjectAdapter,
-      getObjectByIdHash,
-      getObject
-    });
+    if (!storyFactory) {
+      console.warn('[Chat IPC] StoryFactory not yet initialized, deferring GroupPlan creation');
+      return;
+    }
 
-    // Create StoryFactory with AssemblyPlan
-    const storyFactory = new StoryFactory(assemblyPlan as any);
-
-    console.log('[Chat IPC] ✅ StoryFactory created with AssemblyPlan');
+    console.log('[Chat IPC] ✅ Using shared StoryFactory from ModuleRegistry');
 
     groupPlan = new GroupPlan(
       nodeOneCore.topicGroupManager,
@@ -79,7 +69,7 @@ async function initializeMessageManagers() {
     );
 
     chatPlan.setGroupPlan(groupPlan);
-    console.log('[Chat IPC] ✅ GroupPlan initialized with StoryFactory and injected into ChatPlan');
+    console.log('[Chat IPC] ✅ GroupPlan initialized with shared StoryFactory and injected into ChatPlan');
   }
 }
 
@@ -187,37 +177,8 @@ const chatPlans = {
 
     console.log(`[Chat] 📤 Message sent successfully: ${response.success}`);
 
-    // For local AI topics, trigger AI response immediately
-    console.log(`[Chat] Checking if topic "${conversationId}" has LLM participants...`);
-    console.log(`[Chat] nodeOneCore.aiAssistantModel exists:`, !!nodeOneCore.aiAssistantModel);
-
-    if (nodeOneCore.aiAssistantModel) {
-      // Check if topic has LLM participants (not just cache)
-      const hasLLM = await nodeOneCore.aiAssistantModel.topicHasLLMParticipant(conversationId);
-      console.log(`[Chat] topicHasLLMParticipant("${conversationId}") returned:`, hasLLM);
-
-      if (response.success && hasLLM) {
-        console.log(`[Chat] 🤖 Triggering AI response for topic: ${conversationId}`);
-        setImmediate(async () => {
-          try {
-            // Get owner person ID (our own ID)
-            const ownerPersonId = nodeOneCore.ownerId;
-            if (!ownerPersonId) {
-              console.error(`[Chat] Cannot trigger AI: owner person ID not available`);
-              return;
-            }
-
-            console.log(`[Chat] Calling processMessage with topicId="${conversationId}", message="${text.substring(0, 50)}...", senderId="${ownerPersonId.substring(0, 8)}..."`);
-
-            // Pass message text (not messageId) and sender ID
-            await nodeOneCore.aiAssistantModel.processMessage(conversationId, text, ownerPersonId);
-            console.log(`[Chat] ✅ AI response triggered for topic: ${conversationId}`);
-          } catch (error) {
-            console.error(`[Chat] Failed to trigger AI response:`, error);
-          }
-        });
-      }
-    }
+    // NOTE: AI response is triggered by AIMessageListener via channelManager.onUpdated()
+    // This handles both local and remote messages uniformly - no direct trigger needed here
 
     return {
       success: response.success,

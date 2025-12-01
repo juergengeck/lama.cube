@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session } from 'electron';
+import { app, BrowserWindow, ipcMain, session, Menu, nativeImage, nativeTheme } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
@@ -196,51 +196,6 @@ function createWindow(): void {
     })
   }
   
-  // Add custom title bar with LAMA text
-  mainWindow?.webContents.on('did-finish-load', () => {
-    mainWindow?.webContents.executeJavaScript(`
-      // Add custom title bar if not already present
-      if (!document.querySelector('.electron-titlebar')) {
-        const titleBar = document.createElement('div');
-        titleBar.className = 'electron-titlebar';
-        titleBar.innerHTML = '<div class="titlebar-content"><span class="lama-logo"><span style="color: #ef4444">L</span><span style="color: #eab308">A</span><span style="color: #22c55e">M</span><span style="color: #a855f7">A</span></span></div>';
-        
-        const style = document.createElement('style');
-        style.textContent = \`
-          .electron-titlebar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 38px;
-            background: transparent;
-            -webkit-app-region: drag;
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-          }
-          .titlebar-content {
-            padding-left: 80px; /* Space for traffic lights + padding */
-            display: flex;
-            align-items: center;
-            height: 100%;
-          }
-          .lama-logo {
-            font-size: 18px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            user-select: none;
-          }
-          body {
-            padding-top: 38px; /* Push content down below title bar */
-          }
-        \`;
-        document.head.appendChild(style);
-        document.body.insertBefore(titleBar, document.body.firstChild);
-      }
-    `);
-  });
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -317,20 +272,94 @@ app.whenReady().then(async () => {
   global.lamaConfig = await loadConfig();
   console.log('[Main] Configuration loaded successfully');
 
-  // Set dock icon for macOS after app is ready
+  // Set dock icon and custom menu for macOS after app is ready
   if (process.platform === 'darwin') {
-    const dockIconPath = path.join(__dirname, 'assets', 'icons', 'icon-512.png');
-    
-    if (fs.existsSync(dockIconPath)) {
-      try {
-        app.dock.setIcon(dockIconPath);
-        console.log(`Dock icon set successfully: ${dockIconPath}`);
-      } catch (error) {
-        console.warn('Failed to set dock icon:', error instanceof Error ? error.message : String(error));
+    // Use PNG icons: lama-512.png for light mode, lamaFilled-512.png for dark mode
+    const setDockIcon = () => {
+      const isDark = nativeTheme.shouldUseDarkColors;
+      const iconName = isDark ? 'lamaFilled-512.png' : 'lama-512.png';
+      const iconPath = path.join(__dirname, 'assets', 'icons', iconName);
+
+      if (fs.existsSync(iconPath)) {
+        try {
+          const icon = nativeImage.createFromPath(iconPath);
+          app.dock.setIcon(icon);
+          console.log(`Dock icon set successfully: ${iconPath}`);
+        } catch (error) {
+          console.warn('Failed to set dock icon:', error instanceof Error ? error.message : String(error));
+        }
+      } else {
+        console.warn(`Dock icon file not found: ${iconPath}`);
       }
-    } else {
-      console.warn(`Dock icon file not found: ${dockIconPath}`);
-    }
+    };
+
+    // Set initial dock icon
+    setDockIcon();
+
+    // Update dock icon when system theme changes
+    nativeTheme.on('updated', setDockIcon);
+
+    // Create custom application menu with "LAMA" as the app name
+    const template: Electron.MenuItemConstructorOptions[] = [
+      {
+        label: 'LAMA',
+        submenu: [
+          { role: 'about', label: 'About LAMA' },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide', label: 'Hide LAMA' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit', label: 'Quit LAMA' }
+        ]
+      },
+      {
+        label: 'File',
+        submenu: [
+          { role: 'close' }
+        ]
+      },
+      {
+        label: 'Edit',
+        submenu: [
+          { role: 'undo' },
+          { role: 'redo' },
+          { type: 'separator' },
+          { role: 'cut' },
+          { role: 'copy' },
+          { role: 'paste' },
+          { role: 'selectAll' }
+        ]
+      },
+      {
+        label: 'View',
+        submenu: [
+          { role: 'reload' },
+          { role: 'forceReload' },
+          { role: 'toggleDevTools' },
+          { type: 'separator' },
+          { role: 'resetZoom' },
+          { role: 'zoomIn' },
+          { role: 'zoomOut' },
+          { type: 'separator' },
+          { role: 'togglefullscreen' }
+        ]
+      },
+      {
+        label: 'Window',
+        submenu: [
+          { role: 'minimize' },
+          { role: 'zoom' },
+          { type: 'separator' },
+          { role: 'front' }
+        ]
+      }
+    ];
+
+    const menu = Menu.buildFromTemplate(template);
+    Menu.setApplicationMenu(menu);
   }
 
   // Start Vite server first if in development

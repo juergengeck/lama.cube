@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { usePlans } from '@ui/core';
 import './AuditorBadge.css';
 
 interface AuditorBadgeProps {
@@ -36,6 +37,7 @@ export const AuditorBadge: React.FC<AuditorBadgeProps> = ({
   compact = false,
   onClick
 }) => {
+  const { audit } = usePlans();
   const [details, setDetails] = useState<AuditorDetails | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -43,13 +45,13 @@ export const AuditorBadge: React.FC<AuditorBadgeProps> = ({
     if (showDetails && !details) {
       fetchAuditorDetails();
     }
-  }, [auditorId, showDetails]);
+  }, [auditorId, showDetails, audit]);
 
   const fetchAuditorDetails = async () => {
     setLoading(true);
     try {
       // Fetch auditor details
-      const result = await window.electronAPI.invoke('audit:getAuditorDetails', {
+      const result = await audit.getAuditorDetails({
         auditorId
       });
 

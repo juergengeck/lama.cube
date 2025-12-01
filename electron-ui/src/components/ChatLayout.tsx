@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { lamaBridge } from '@/bridge/lama-bridge'
 import { ConversationList, type Conversation } from '@lama/ui'
+import { usePlans } from '@ui/core'
 import { InputDialog } from './InputDialog'
 import { UserSelectionDialog } from './UserSelectionDialog'
 import { GroupChatDialog } from './GroupChatDialog'
@@ -21,6 +22,7 @@ interface ChatLayoutProps {
 }
 
 export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
+  const { chat, ai } = usePlans()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<string | null>(selectedConversationId || null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -77,13 +79,9 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
   useEffect(() => {
     const loadConversations = async () => {
       try {
-        if (!window.electronAPI) {
-          throw new Error('Electron API not available')
-        }
-
         // Default chats are created when user selects model (in setDefaultModel)
         // Just load conversations directly
-        const result = await window.electronAPI.invoke('chat:getConversations')
+        const result = await chat.getConversations()
         if (!result.success) {
           throw new Error(result.error || 'Failed to get conversations')
         }
@@ -196,9 +194,7 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
   // Reload conversations from Node.js
   const reloadConversations = async () => {
     try {
-      if (!window.electronAPI) return
-      
-      const result = await window.electronAPI.invoke('chat:getConversations')
+      const result = await chat.getConversations()
       if (!result.success) return
       
       const conversations = result.data || []
@@ -228,12 +224,8 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
   // Create new conversation with the provided name
   const handleCreateConversation = async (chatName: string) => {
     try {
-      if (!window.electronAPI) {
-        throw new Error('Electron API not available')
-      }
-
       // Get default AI model
-      const defaultModelResult = await window.electronAPI.invoke('ai:getDefaultModel')
+      const defaultModelResult = await ai.getDefaultModel()
       if (!defaultModelResult.success) {
         throw new Error(defaultModelResult.error || 'Failed to get default AI model')
       }
@@ -242,8 +234,8 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
         throw new Error('No default AI model configured. Please select a default model in settings.')
       }
 
-      // Create conversation through IPC handler with AI model
-      const result = await window.electronAPI.invoke('chat:createConversation', {
+      // Create conversation through Plan Facade with AI model
+      const result = await chat.createConversation({
         type: 'direct',
         participants: [],
         name: chatName,
@@ -326,7 +318,8 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
 
       console.log('[ChatLayout] Adding users to conversation:', conversationToAddUsers, selectedUserIds)
 
-      const result = await window.electronAPI.invoke('chat:addParticipants', {
+      // Add participants through Plan Facade
+      const result = await chat.addParticipants({
         conversationId: conversationToAddUsers,
         participantIds: selectedUserIds
       })
@@ -399,8 +392,8 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
       })
       setSelectedConversation(tempConversationId)
 
-      // Create group conversation through IPC handler
-      const result = await window.electronAPI.invoke('chat:createConversation', {
+      // Create group conversation through Plan Facade
+      const result = await chat.createConversation({
         type: 'group',
         participants: selectedUserIds,
         name: conversationName
@@ -637,9 +630,7 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground">
             <div className="text-center">
-              <h1 className="text-6xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-6">
-                LAMA
-              </h1>
+              <img src="/assets/icons/lama_f_w.svg" alt="LAMA" className="h-32 mx-auto mb-6" />
               <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />
               <p className="text-lg mb-2">Welcome</p>
               <p className="text-sm">Select a conversation or create a new one to get started</p>

@@ -2,9 +2,25 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="icon" type="image/svg+xml" href="/assets/icons/lama_f_w.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LAMA</title>
+  <script>
+    // Theme-aware favicon: filled white for dark mode, filled black for light mode
+    (function() {
+      function updateFavicon() {
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var favicon = document.querySelector('link[rel="icon"]');
+        if (favicon) {
+          favicon.href = prefersDark ? '/assets/icons/lama_f_w.svg' : '/assets/icons/lama_f_b.svg';
+        }
+      }
+      // Update on load
+      updateFavicon();
+      // Update on theme change
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateFavicon);
+    })();
+  </script>
   <script type="module">
     // FORCE PLATFORM LOADING BEFORE REACT
     import './src/platform-loader.ts';

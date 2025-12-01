@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { usePlans } from '@ui/core';
 import './AttestationStatus.css';
 
 interface AttestationStatusProps {
@@ -42,13 +43,14 @@ export const AttestationStatus: React.FC<AttestationStatusProps> = ({
   onViewAttestations,
   refreshTrigger = 0
 }) => {
+  const { audit } = usePlans();
   const [status, setStatus] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchStatus();
-  }, [messageHash, refreshTrigger]);
+  }, [messageHash, refreshTrigger, audit]);
 
   const fetchStatus = async () => {
     if (!messageHash) return;
@@ -57,7 +59,7 @@ export const AttestationStatus: React.FC<AttestationStatusProps> = ({
     setError(null);
 
     try {
-      const result = await window.electronAPI.invoke('audit:getAttestationStatus', {
+      const result = await audit.getAttestationStatus({
         messageHash
       });
 
@@ -167,16 +169,17 @@ export const AttestationBadge: React.FC<{
   messageHash: string;
   onClick?: () => void;
 }> = ({ messageHash, onClick }) => {
+  const { audit } = usePlans();
   const [count, setCount] = useState<number>(0);
   const [isFullyAttested, setIsFullyAttested] = useState(false);
 
   useEffect(() => {
     fetchBadgeStatus();
-  }, [messageHash]);
+  }, [messageHash, audit]);
 
   const fetchBadgeStatus = async () => {
     try {
-      const result = await window.electronAPI.invoke('audit:getAttestationStatus', {
+      const result = await audit.getAttestationStatus({
         messageHash
       });
 

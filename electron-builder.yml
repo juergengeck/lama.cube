@@ -1,5 +1,5 @@
 appId: com.lama.one
-productName: lama.one
+productName: LAMA
 directories:
   output: release
   buildResources: assets

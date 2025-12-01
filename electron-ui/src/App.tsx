@@ -1,29 +1,34 @@
 import { useState, useEffect } from 'react'
-import { Button, ModelOnboarding } from '@lama/ui'
-// import { ScrollArea } from '@lama/ui'
-import { ChatLayout } from '@/components/ChatLayout'
-import { ContactsView } from '@/components/ContactsView'
+import { Button, ModelOnboarding, BridgeProvider, StatusBar, ChatLayout, MemoryView, ContactsView, MobileBottomNav } from '@lama/ui'
+import { usePlans, NavigateHomeProvider } from '@ui/core'
+import { ElectronPlansProvider } from '@/providers/ElectronPlansProvider'
 import { SettingsView } from '@/components/SettingsView'
 import { DataDashboard } from '@/components/DataDashboard'
 import { JournalViewWrapper } from '@/components/JournalViewWrapper'
-import { UnifiedDevicesView } from '@lama/ui'
+import { DevicesView } from '@lama/ui'
 import { createElectronDeviceAdapter } from '@/adapters/device-adapter'
 import { LoginDeploy } from '@lama/ui'
-import { MessageSquare, BookOpen, Users, Settings, Loader2, Smartphone, BarChart3, Wifi, WifiOff, RefreshCw } from 'lucide-react'
+import { MessageSquare, BookOpen, Users, Settings, Loader2, Smartphone, BarChart3, Brain, Menu, ChevronDown } from 'lucide-react'
 import { useLamaInit } from '@/hooks/useLamaInit'
 import { lamaBridge } from '@/bridge/lama-bridge'
 import { ipcStorage } from '@/services/ipc-storage'
 import { createLLMConfigOperations, createAIOperations, CLOUD_MODEL_OPTIONS } from '@/adapters/llm-operations'
 
-function App() {
+function AppContent() {
+  const { chat, ai } = usePlans()
   const [activeTab, setActiveTab] = useState('chats')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [selectedConversationId, setSelectedConversationId] = useState<string | undefined>(undefined)
+  const [toolbarControls, setToolbarControls] = useState<React.ReactNode>(null)
   const [hasTopics, setHasTopics] = useState<boolean | null>(null)
   const [hasDefaultModel, setHasDefaultModel] = useState<boolean | null>(null)
   const [mcpApiStatus, setMcpApiStatus] = useState<{ running: boolean; requestCount: number }>({ running: false, requestCount: 0 })
   const [mcpReconnecting, setMcpReconnecting] = useState(false)
   const [memoryScanStatus, setMemoryScanStatus] = useState<{ scanning: boolean; progress?: string }>({ scanning: false })
   const [proposalSensitivity, setProposalSensitivity] = useState<number>(0.9) // 0-1 scale where 0=no proposals, 1=all proposals
+  const [responseLengthPercent, setResponseLengthPercent] = useState<number>(0.2) // Response length: 20% default
+  const [discoveryEnabled, setDiscoveryEnabled] = useState<boolean>(false)
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768)
   const { isInitialized, isAuthenticated, isLoading, login, logout, error, initProgress } = useLamaInit()
   // NO AppModel in browser - use IPC for everything
 
@@ -43,23 +48,55 @@ function App() {
     updateConfig()
   }, [proposalSensitivity, isAuthenticated])
 
+  // Update AI response length when slider changes
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const updateResponseLength = async () => {
+      try {
+        const maxTokens = Math.round(4096 * responseLengthPercent)
+        await lamaBridge.setResponseLength(maxTokens)
+        console.log(`[App] Response length updated: ${(responseLengthPercent * 100).toFixed(0)}% = ${maxTokens} tokens`)
+      } catch (error) {
+        console.error('[App] Failed to update response length:', error)
+      }
+    }
+    updateResponseLength()
+  }, [responseLengthPercent, isAuthenticated])
+
+  // Handle discovery toggle
+  const handleDiscoveryChange = async (enabled: boolean) => {
+    if (!window.electronAPI) return
+    try {
+      if (enabled) {
+        await window.electronAPI.invoke('quicvc:startDiscovery')
+        console.log('[App] Discovery started')
+      } else {
+        await window.electronAPI.invoke('quicvc:stopDiscovery')
+        console.log('[App] Discovery stopped')
+      }
+      setDiscoveryEnabled(enabled)
+    } catch (error) {
+      console.error('[App] Failed to toggle discovery:', error)
+    }
+  }
+
   // Check if any topics exist (for onboarding detection)
   useEffect(() => {
-    if (isAuthenticated && window.electronAPI) {
-      window.electronAPI.invoke('chat:getConversations')
+    if (isAuthenticated) {
+      chat.getConversations()
         .then((result: any) => {
           const conversations = result?.conversations || []
           setHasTopics(conversations.length > 0)
         })
         .catch(() => setHasTopics(false))
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, chat])
 
   // Check if a default model has been configured
   useEffect(() => {
-    if (isAuthenticated && window.electronAPI) {
+    if (isAuthenticated) {
       console.log('[App] Checking for default model...')
-      window.electronAPI.invoke('ai:getDefaultModel')
+      ai.getDefaultModel()
         .then((response: any) => {
           console.log('[App] Default model response:', response)
           // Handle wrapped response from IPC controller
@@ -74,7 +111,7 @@ function App() {
           setHasDefaultModel(false)
         })
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, ai])
 
   // Signal UI is ready when authenticated
   useEffect(() => {
@@ -110,6 +147,15 @@ function App() {
     const interval = setInterval(checkMCPStatus, 30000); // Poll every 30 seconds (lightweight HTTP check)
     return () => clearInterval(interval);
   }, []);
+
+  // Detect mobile viewport changes
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Reconnect MCP servers
   const handleMcpReconnect = async () => {
@@ -191,7 +237,7 @@ function App() {
     const handleNavigate = (_event: any, tab: string) => {
       setActiveTab(tab)
     }
-    
+
     // Check if we're in Electron environment
     if (window.electronAPI && 'on' in window.electronAPI) {
       (window.electronAPI as any).on('navigate', handleNavigate)
@@ -203,15 +249,18 @@ function App() {
       }
     }
   }, [])
+
+  // Clear toolbar controls when tab changes
+  useEffect(() => {
+    setToolbarControls(null)
+  }, [activeTab])
   
   // Show loading screen while initializing
   if (isLoading && !isInitialized) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center max-w-md">
-          <h1 className="text-6xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-6">
-            LAMA
-          </h1>
+          <img src="/assets/icons/lama_f_w.svg" alt="LAMA" className="h-24 mx-auto mb-6" />
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
           <h2 className="text-2xl font-bold mb-2">Initializing Desktop</h2>
           {initProgress ? (
@@ -247,9 +296,7 @@ function App() {
     return <LoginDeploy
       onLogin={login}
       logo={
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-          LAMA
-        </h1>
+        <img src="/assets/icons/lama_f_w.svg" alt="LAMA" className="h-16" />
       }
       testOllamaConnection={async (baseUrl: string) => {
         const llmConfig = createLLMConfigOperations()
@@ -280,9 +327,7 @@ function App() {
       modelOptions={CLOUD_MODEL_OPTIONS}
       allowSkip={true}
       logo={
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-          LAMA
-        </h1>
+        <img src="/assets/icons/lama_f_w.svg" alt="LAMA" className="h-16" />
       }
       onComplete={async () => {
         // Model has been selected and saved to settings
@@ -298,9 +343,7 @@ function App() {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <h1 className="text-6xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-6">
-            LAMA
-          </h1>
+          <img src="/assets/icons/lama_f_w.svg" alt="LAMA" className="h-24 mx-auto mb-6" />
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
           <h2 className="text-2xl font-bold mb-2">Loading</h2>
           <p className="text-muted-foreground">Checking for existing conversations...</p>
@@ -316,6 +359,7 @@ function App() {
     { id: 'journal', label: 'Journal', icon: BookOpen },
     { id: 'contacts', label: 'Contacts', icon: Users },
     { id: 'devices', label: 'Devices', icon: Smartphone },
+    { id: 'memory', label: 'Memory', icon: Brain },
     { id: 'settings', label: null, icon: Settings },  // No label for settings, just icon
   ]
 
@@ -335,9 +379,9 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'chats':
-        return <ChatLayout selectedConversationId={selectedConversationId} />
+        return <ChatLayout selectedConversationId={selectedConversationId} onSetToolbarControls={setToolbarControls} />
       case 'journal':
-        return <JournalViewWrapper />
+        return <JournalViewWrapper onSetToolbarControls={setToolbarControls} />
       case 'contacts':
         return <ContactsView onNavigateToChat={async (topicId, contactName) => {
           // Add or update the conversation in browser localStorage (not IPC secure storage)
@@ -377,12 +421,14 @@ function App() {
           setActiveTab('chats')
         }} />
       case 'devices':
-        return <UnifiedDevicesView
+        return <DevicesView
           adapter={createElectronDeviceAdapter()}
           onNavigateToSettings={(instanceId) => {
             handleNavigate('settings', undefined, `instance-${instanceId}`)
           }}
         />
+      case 'memory':
+        return <MemoryView />
       case 'settings':
         return <SettingsView onLogout={logout} onNavigate={handleNavigate} />
       default:
@@ -390,134 +436,123 @@ function App() {
     }
   }
 
+  // Build menu items for navigation between views
+  const appMenuItems = tabs.map((tab) => ({
+    label: tab.label || 'Settings',
+    onClick: () => setActiveTab(tab.id),
+    icon: <tab.icon className="h-4 w-4" />,
+    active: tab.id === activeTab
+  }))
+
+  // Detect macOS for traffic light space
+  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+
+  // Pass menu items to views that support them
+  const renderContentWithMenu = () => {
+    switch (activeTab) {
+      case 'chats':
+        return <ChatLayout selectedConversationId={selectedConversationId} onSetToolbarControls={setToolbarControls} appMenuItems={appMenuItems} trafficLightSpace={isMac} />
+      case 'journal':
+        return <JournalViewWrapper onSetToolbarControls={setToolbarControls} appMenuItems={appMenuItems} trafficLightSpace={isMac} />
+      case 'contacts':
+        return <ContactsView onNavigateToChat={async (topicId, contactName) => {
+          const savedConversations = localStorage.getItem('lama-conversations')
+          let conversations = []
+          try {
+            if (savedConversations) {
+              conversations = JSON.parse(savedConversations)
+            }
+          } catch (e) {
+            console.error('Failed to parse saved conversations:', e)
+          }
+          const existingConv = conversations.find((c: any) => c.id === topicId)
+          if (!existingConv) {
+            const newConversation = {
+              id: topicId,
+              name: `Chat with ${contactName}`,
+              type: 'direct',
+              lastMessage: null,
+              lastMessageTime: new Date().toISOString(),
+              modelName: null
+            }
+            conversations.unshift(newConversation)
+            localStorage.setItem('lama-conversations', JSON.stringify(conversations))
+            console.log('[App] Created new conversation for contact:', contactName)
+          }
+          setSelectedConversationId(topicId)
+          setActiveTab('chats')
+        }} appMenuItems={appMenuItems} trafficLightSpace={isMac} />
+      case 'devices':
+        return <DevicesView
+          adapter={createElectronDeviceAdapter()}
+          onNavigateToSettings={(instanceId) => {
+            handleNavigate('settings', undefined, `instance-${instanceId}`)
+          }}
+          appMenuItems={appMenuItems}
+          trafficLightSpace={isMac}
+        />
+      case 'memory':
+        return <MemoryView appMenuItems={appMenuItems} trafficLightSpace={isMac} />
+      case 'settings':
+        return <SettingsView onLogout={logout} onNavigate={handleNavigate} appMenuItems={appMenuItems} trafficLightSpace={isMac} />
+      default:
+        return <ChatLayout appMenuItems={appMenuItems} trafficLightSpace={isMac} />
+    }
+  }
+
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground">
-      {/* Top Navigation Bar */}
-      <div className="border-b bg-card" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-        <div className="flex items-center justify-between px-6 py-3">
-          {/* Logo and App Name */}
-          <div className="flex items-center space-x-4">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-              LAMA
-            </h1>
-            <div className="h-6 w-px bg-border" />
-          </div>
-
-          {/* Tab Navigation */}
-          <div className="flex items-center justify-between flex-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            {/* Left side - main navigation */}
-            <div className="flex items-center space-x-2">
-              {tabs.filter(tab => tab.id !== 'settings').map((tab) => {
-                const Icon = tab.icon
-                return (
-                  <Button
-                    key={tab.id}
-                    variant={activeTab === tab.id ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setActiveTab(tab.id)}
-                    className="flex items-center space-x-2"
-                  >
-                    <Icon className="h-4 w-4" />
-                    {tab.label && <span>{tab.label}</span>}
-                  </Button>
-                )
-              })}
-            </div>
-
-            {/* Right side - settings */}
-            <div className="flex items-center space-x-2">
-              {tabs.filter(tab => tab.id === 'settings').map((tab) => {
-                const Icon = tab.icon
-                return (
-                  <Button
-                    key={tab.id}
-                    variant={activeTab === tab.id ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setActiveTab(tab.id)}
-                    className="flex items-center space-x-2"
-                  >
-                    <Icon className="h-4 w-4" />
-                    {tab.label && <span>{tab.label}</span>}
-                  </Button>
-                )
-              })}
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-hidden">
-        {renderContent()}
-      </div>
-
-      {/* Status Bar */}
-      <div className="border-t bg-card px-6 py-2">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center space-x-4">
-            <span>LAMA Desktop v1.0.0</span>
-            <span>·</span>
-            <div className="flex items-center gap-1.5">
-              {mcpApiStatus.running ? (
-                <>
-                  <Wifi className="h-3.5 w-3.5 text-green-500" />
-                  <span>MCP API: Online</span>
-                  {mcpApiStatus.requestCount > 0 && (
-                    <span className="text-muted-foreground">({mcpApiStatus.requestCount} tools)</span>
-                  )}
-                </>
-              ) : (
-                <>
-                  <WifiOff className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span>MCP API: Offline</span>
-                  <button
-                    onClick={handleMcpReconnect}
-                    disabled={mcpReconnecting}
-                    className="ml-1.5 inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-primary/10 hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Reconnect MCP servers"
-                  >
-                    <RefreshCw className={`h-3 w-3 ${mcpReconnecting ? 'animate-spin' : ''}`} />
-                    <span>{mcpReconnecting ? 'Reconnecting...' : 'Reconnect'}</span>
-                  </button>
-                </>
-              )}
-            </div>
-            {memoryScanStatus.scanning && (
-              <>
-                <span>·</span>
-                <div className="flex items-center gap-1.5">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
-                  <span>{memoryScanStatus.progress || 'Scanning memories...'}</span>
-                </div>
-              </>
-            )}
-          </div>
-          <div className="flex items-center space-x-4">
-            {/* Proposal sensitivity slider */}
-            <div className="flex items-center gap-2">
-              <span className="whitespace-nowrap">Proposals:</span>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={proposalSensitivity}
-                onChange={(e) => setProposalSensitivity(parseFloat(e.target.value))}
-                className="w-24 h-1 bg-muted rounded-lg appearance-none cursor-pointer"
-                style={{
-                  background: `linear-gradient(to right, hsl(var(--primary)) 0%, hsl(var(--primary)) ${proposalSensitivity * 100}%, hsl(var(--muted)) ${proposalSensitivity * 100}%, hsl(var(--muted)) 100%)`
-                }}
-                title="Adjust proposal sensitivity: 0% = no proposals, 100% = all proposals"
-              />
-              <span className="font-mono min-w-[3ch]">{(proposalSensitivity * 100).toFixed(0)}%</span>
-            </div>
-            <span>·</span>
-            <span>Identity: {isAuthenticated ? 'Active' : 'None'}</span>
-          </div>
-        </div>
-      </div>
+    <NavigateHomeProvider onNavigateHome={() => setActiveTab('chats')}>
+    <BridgeProvider bridge={lamaBridge}>
+      <div className="flex flex-col h-screen bg-background text-foreground">
+    {/* Main Content Area - add bottom padding on mobile for bottom nav */}
+    <div className={`flex-1 min-h-0 min-w-0 overflow-hidden ${isMobile ? 'pb-14' : ''}`}>
+      {renderContentWithMenu()}
     </div>
+
+    {/* Status Bar - hidden on mobile, shown on desktop */}
+    <div className="shrink-0 hidden md:block">
+      <StatusBar
+        version="v1.0.0"
+        mcpStatus={{
+          running: mcpApiStatus.running,
+          toolCount: mcpApiStatus.requestCount,
+          onReconnect: handleMcpReconnect,
+          reconnecting: mcpReconnecting
+        }}
+        memoryScanStatus={memoryScanStatus}
+        responseLength={{
+          value: responseLengthPercent,
+          onChange: setResponseLengthPercent
+        }}
+        proposals={{
+          value: proposalSensitivity,
+          onChange: setProposalSensitivity
+        }}
+        discovery={{
+          enabled: discoveryEnabled,
+          onChange: handleDiscoveryChange
+        }}
+        hideOnMobile={true}
+      />
+    </div>
+
+    {/* Mobile Bottom Navigation - shown only on mobile */}
+    <MobileBottomNav
+      tabs={tabs}
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+    />
+  </div>
+    </BridgeProvider>
+    </NavigateHomeProvider>
+  )
+}
+
+function App() {
+  return (
+    <ElectronPlansProvider>
+      <AppContent />
+    </ElectronPlansProvider>
   )
 }
 

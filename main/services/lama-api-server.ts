@@ -19,6 +19,7 @@ import type { Person } from '@refinio/one.core/lib/recipes.js';
 import { ContactsPlan } from '@chat/core/plans/ContactsPlan.js';
 import { MemoryTools } from './mcp/memory-tools.js';
 import { handleDiscoverPlans, handleCallPlan } from '@mcp/core';
+import { UserSettingsManager } from '../core/user-settings-manager.js';
 
 export class LamaAPIServer {
   private server: http.Server | null = null;
@@ -243,6 +244,36 @@ export class LamaAPIServer {
               break;
             case 'ai:executeTool':
               result = await aiHandlers.executeTool(mockEvent, params);
+              break;
+
+            // Settings handlers
+            case 'settings:setApiKey':
+              {
+                if (!nodeOneCore.email) {
+                  throw new Error('Not logged in - cannot access settings');
+                }
+                const settingsManager = new UserSettingsManager(
+                  nodeOneCore,
+                  nodeOneCore.email,
+                  nodeOneCore.ownerId
+                );
+                const settings = await settingsManager.setApiKey(params.provider, params.apiKey);
+                console.log('[LamaAPI] Set API key for', params.provider);
+                result = settings;
+              }
+              break;
+            case 'settings:getApiKey':
+              {
+                if (!nodeOneCore.email) {
+                  throw new Error('Not logged in - cannot access settings');
+                }
+                const settingsManager = new UserSettingsManager(
+                  nodeOneCore,
+                  nodeOneCore.email,
+                  nodeOneCore.ownerId
+                );
+                result = await settingsManager.getApiKey(params.provider);
+              }
               break;
 
             // Memory handlers - invoke via ipcMain handlers

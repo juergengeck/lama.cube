@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef, useCallback, memo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { MessageView } from './MessageView'
 import { useLamaMessages } from '@/hooks/useLamaMessages'
 import { useLamaAuth, useLamaPeers } from '@/hooks/useLama'
@@ -9,10 +8,9 @@ import { lamaBridge } from '@/bridge/lama-bridge'
 import { topicAnalysisService } from '@/services/topic-analysis-service'
 import { useChatSubjects } from '@/hooks/useChatSubjects'
 import { useChatKeywords } from '@/hooks/useChatKeywords'
-import { ChatHeader } from './chat/ChatHeader'
-import { ChatContext } from './chat/ChatContext'
+import { ChatHeader, KeywordLine, SubjectDetailPanel } from '@lama/ui'
 import { KeywordDetailPanel } from './KeywordDetail/KeywordDetailPanel'
-import { KeywordLine } from './chat/KeywordLine'
+import { usePlans } from '@ui/core'
 
 export const ChatView = memo(function ChatView({
   conversationId = 'lama',
@@ -29,6 +27,7 @@ export const ChatView = memo(function ChatView({
   hasAIParticipant?: boolean
   onAddUsers?: () => void
 }) {
+  const { ai } = usePlans()
   const { messages, loading, sendMessage, loadMessages } = useLamaMessages(conversationId)
   const { user } = useLamaAuth()
   const { subjects, subjectsJustAppeared } = useChatSubjects(conversationId)
@@ -60,7 +59,7 @@ export const ChatView = memo(function ChatView({
   const [aiStreamingContent, setAiStreamingContent] = useState('')
   const [aiThinkingContent, setAiThinkingContent] = useState('')  // For reasoning models
   const [lastAnalysisMessageCount, setLastAnalysisMessageCount] = useState(0)
-  const [showSummary, setShowSummary] = useState(false)
+  const [showSubjects, setShowSubjects] = useState(false)
   const [showSubjectDetail, setShowSubjectDetail] = useState(false)
   const [selectedSubject, setSelectedSubject] = useState<any | null>(null)
   const thinkingStartTimeRef = useRef<number | null>(null)
@@ -352,7 +351,7 @@ export const ChatView = memo(function ChatView({
   const handleStopStreaming = async () => {
     console.log('[ChatView] Stopping streaming for:', conversationId)
     try {
-      const result = await window.electronAPI.invoke('ai:stopStreaming', { topicId: conversationId })
+      const result = await ai.stopStreaming({ topicId: conversationId })
       console.log('[ChatView] Stop streaming result:', result)
       if (result.success) {
         setIsAIProcessing(false)
@@ -397,24 +396,30 @@ export const ChatView = memo(function ChatView({
     }
   }
 
+  // Memoized callbacks for ChatHeader to prevent re-renders
+  const handleToggleSubjects = useCallback(() => {
+    setShowSubjects(prev => !prev)
+  }, [])
+
+  const handleSubjectClick = useCallback((subject: any) => {
+    setSelectedSubject(subject)
+    setShowSubjectDetail(true)
+  }, [])
+
   return (
     <Card className="h-full w-full flex flex-col">
       <div ref={chatHeaderRef}>
         <ChatHeader
           conversationName={conversationName}
+          subtitle={messages.length > 0 ? messages[messages.length - 1]?.content?.substring(0, 60) + (messages[messages.length - 1]?.content?.length > 60 ? '...' : '') : `${messages.length} messages`}
           conversationId={conversationId}
           subjects={subjects}
           messageCount={messages.length}
           hasAI={hasAIParticipant}
-          showSummary={showSummary}
-          onToggleSummary={() => setShowSummary(!showSummary)}
+          showSubjects={showSubjects}
+          onToggleSubjects={handleToggleSubjects}
           onAddUsers={onAddUsers}
-          isAnalyzing={isAnalyzing}
-          onSubjectClick={(subject) => {
-            console.log('[ChatView] Subject clicked:', subject)
-            setSelectedSubject(subject)
-            setShowSubjectDetail(true)
-          }}
+          onSubjectClick={handleSubjectClick}
         />
       </div>
 
@@ -424,79 +429,15 @@ export const ChatView = memo(function ChatView({
           <KeywordLine keywords={keywords} maxLines={1} />
         )}
 
-        {/* AI Summary Panel - Shows at top when visible */}
-        {showSummary && hasAIParticipant && (
-          <div className="border-b bg-muted/30">
-            <ChatContext
-              topicId={conversationId}
-              messages={messages}
-              messageCount={messages.length}
-              className="border-0"
-            />
-          </div>
+        {/* Subject Detail Panel */}
+        {showSubjectDetail && selectedSubject && (
+          <SubjectDetailPanel
+            selectedSubject={selectedSubject}
+            allSubjects={subjects}
+            onClose={() => setShowSubjectDetail(false)}
+            topicId={conversationId}
+          />
         )}
-
-        {/* Subject Detail Panel - Shows ALL subjects with the same name */}
-        {showSubjectDetail && selectedSubject && (() => {
-          // Find all subjects with the same name as the selected one
-          const selectedName = selectedSubject.id || selectedSubject.name || 'Subject';
-          const matchingSubjects = subjects.filter(s =>
-            (s.id || s.name) === selectedName
-          );
-
-          return (
-            <div className="border-b bg-muted/30 max-h-[40vh] overflow-y-auto">
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="text-lg font-semibold">{selectedName}</h3>
-                    {matchingSubjects.length > 1 && (
-                      <span className="text-xs text-muted-foreground">
-                        {matchingSubjects.length} versions
-                      </span>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setShowSubjectDetail(false)}
-                  >
-                    ×
-                  </Button>
-                </div>
-
-                {/* List all matching subjects */}
-                <div className="space-y-3">
-                  {matchingSubjects.map((subject, idx) => (
-                    <div key={idx} className="p-3 bg-background/50 rounded border">
-                      <div className="space-y-2">
-                        <div>
-                          <span className="font-medium text-sm">Keywords:</span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {subject.keywords?.map((kw: string, kwIdx: number) => {
-                              // if (kw.length === 64 && /^[0-9a-f]+$/.test(kw)) {
-                              //   console.warn('[ChatView] Keyword is still a hash:', kw);
-                              // }
-                              return (
-                                <Badge key={kwIdx} variant="secondary" className="text-xs">
-                                  {kw}
-                                </Badge>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <div className="flex gap-4 text-xs text-muted-foreground">
-                          <span><span className="font-medium">Messages:</span> {subject.messageCount}</span>
-                          <span><span className="font-medium">Last:</span> {new Date(subject.timestamp).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
 
         {/* Messages */}
         <MessageView

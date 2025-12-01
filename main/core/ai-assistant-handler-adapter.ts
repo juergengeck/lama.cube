@@ -63,6 +63,7 @@ export function createAIAssistantHandler(nodeOneCore: NodeOneCore, llmManager: a
     assemblyManager: (nodeOneCore as any).assemblyManager,
     mcpManager: mcpManager, // For memory context in analysis
     settingsPersistence: settingsPersistence,
+    aiSettingsManager: settingsPersistence, // Same instance for both interfaces
     storageDeps: {
       storeVersionedObject,
       // Wrap storeUnversionedObject to extract just the hash

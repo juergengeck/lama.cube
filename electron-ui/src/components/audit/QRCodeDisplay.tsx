@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { usePlans } from '@ui/core';
 import './QRCodeDisplay.css';
 
 interface QRCodeDisplayProps {
@@ -25,6 +26,7 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
   attestationType = 'message',
   onScanInfo
 }) => {
+  const { audit } = usePlans();
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrText, setQrText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,7 +38,7 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
     setError(null);
 
     try {
-      const result = await window.electronAPI.invoke('audit:generateQR', {
+      const result = await audit.generateQR({
         messageHash,
         messageVersion,
         topicId,

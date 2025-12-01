@@ -6,7 +6,8 @@ import {
   Button,
   Input,
   Label,
-  Separator
+  Separator,
+  usePlans
 } from '@lama/ui';
 import {
   Brain,
@@ -64,6 +65,7 @@ const formatSize = (size: number) => {
 };
 
 export const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onNavigate }) => {
+  const { chat } = usePlans()
   // State
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
   const [ollamaStatus, setOllamaStatus] = useState<'unconfigured' | 'testing' | 'valid' | 'invalid'>('unconfigured');
@@ -212,7 +214,8 @@ export const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onNavigate }) => {
 
       const aiPersonId = contactResult.data.personId;
 
-      const result = await window.electronAPI?.invoke('chat:createConversation', {
+      // Create conversation through Plan Facade
+      const result = await chat.createConversation({
         type: 'direct',
         participants: [aiPersonId],
         name: modelName,
@@ -382,9 +385,19 @@ export const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onNavigate }) => {
                   {model.description}
                 </div>
                 <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                  {model.size !== undefined && <span>{formatSize(model.size)}</span>}
-                  {model.size !== undefined && <span>·</span>}
-                  {model.contextLength !== undefined && <span>{model.contextLength.toLocaleString()} tokens</span>}
+                  {model.modelType && <span>{model.modelType === 'local' ? 'Local' : 'API-based'}</span>}
+                  {model.server && (
+                    <>
+                      <span>·</span>
+                      <span className="truncate max-w-[200px]" title={model.server}>{model.server.replace(/^https?:\/\//, '')}</span>
+                    </>
+                  )}
+                  {model.contextLength !== undefined && (
+                    <>
+                      <span>·</span>
+                      <span>{model.contextLength.toLocaleString()} tokens</span>
+                    </>
+                  )}
                   {model.capabilities && model.capabilities.length > 0 && (
                     <>
                       <span>·</span>

@@ -97,6 +97,41 @@ export function registerContactPlans() {
     return await contactsPlan.revokeContactVC(personId);
   });
 
+  // Upload avatar image
+  ipcMain.handle('contacts:uploadAvatar', async (event: IpcMainInvokeEvent, request: { dataUrl: string }): Promise<any> => {
+    return await contactsPlan.uploadAvatar(request);
+  });
+
+  // Get profile for a contact
+  ipcMain.handle('contacts:getProfile', async (event: IpcMainInvokeEvent, request: { personId: string }): Promise<any> => {
+    return await contactsPlan.getProfile(request);
+  });
+
+  // Get all profiles for a Someone contact
+  ipcMain.handle('contacts:getProfilesForSomeone', async (event: IpcMainInvokeEvent, request: { personId: string }): Promise<any> => {
+    return await contactsPlan.getProfilesForSomeone(request);
+  });
+
+  // Update profile for a contact
+  ipcMain.handle('contacts:updateProfile', async (event: IpcMainInvokeEvent, request: any): Promise<any> => {
+    return await contactsPlan.updateProfile(request);
+  });
+
+  // Get avatar as data URL from blob hash
+  ipcMain.handle('contacts:getAvatarDataUrl', async (event: IpcMainInvokeEvent, request: { blobHash: string }): Promise<any> => {
+    return await contactsPlan.getAvatarDataUrl(request);
+  });
+
+  // Get lama avatar config for rendering client-side
+  ipcMain.handle('contacts:getLamaAvatarConfig', async (event: IpcMainInvokeEvent, request: { personId: string; name?: string }): Promise<any> => {
+    return await contactsPlan.getLamaAvatarConfig(request);
+  });
+
+  // Save lama avatar config
+  ipcMain.handle('contacts:saveLamaAvatarConfig', async (event: IpcMainInvokeEvent, request: { personId: string; name?: string; lamaConfig: any }): Promise<any> => {
+    return await contactsPlan.saveLamaAvatarConfig(request);
+  });
+
   // Listen for pending contact events and forward to renderer (Electron-specific)
   if (nodeOneCore.quicTransport?.leuteModel) {
     nodeOneCore.quicTransport.leuteModel.on('pending-contact', (data: any) => {

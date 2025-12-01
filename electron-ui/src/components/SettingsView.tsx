@@ -6,8 +6,10 @@ import {
   ScrollArea,
   Progress,
   Label,
-  Separator
+  Separator,
+  AppHeader
 } from '@lama/ui'
+import { usePlans } from '@ui/core'
 import {
   Settings, User, Shield, Globe, HardDrive,
   Save, RefreshCw, Brain, Code, Key, Database, Hash, Clock, Package, Eye, ChevronDown, ChevronRight, Copy, FileText, Monitor, Sparkles, Download, LogOut
@@ -29,6 +31,14 @@ import {
 interface SettingsViewProps {
   onLogout?: () => void
   onNavigate?: (tab: string, conversationId?: string, section?: string) => void
+  /** App menu items for navigation */
+  appMenuItems?: Array<{
+    label: string
+    onClick: () => void
+    icon?: React.ReactNode
+  }>
+  /** Add space for macOS traffic lights */
+  trafficLightSpace?: boolean
 }
 
 interface SystemObject {
@@ -41,7 +51,8 @@ interface SystemObject {
   metadata?: Record<string, any>
 }
 
-export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
+export function SettingsView({ onLogout, onNavigate, appMenuItems = [], trafficLightSpace = false }: SettingsViewProps) {
+  const { chat } = usePlans()
   // Instance-specific settings state
   const [viewingInstanceId, setViewingInstanceId] = useState<string | null>(null)
   const [viewingInstanceName, setViewingInstanceName] = useState<string>('Unknown Device')
@@ -368,8 +379,8 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
 
         if (window.electronAPI?.invoke) {
           try {
-            // Get message and conversation stats
-            const conversationsResult = await window.electronAPI.invoke('chat:getConversations')
+            // Get message and conversation stats through Plan Facade
+            const conversationsResult = await chat.getConversations()
             if (conversationsResult?.success && conversationsResult.data) {
               stats.conversations = conversationsResult.data.length
 
@@ -377,7 +388,7 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
               let totalMessages = 0
               for (const conv of conversationsResult.data) {
                 try {
-                  const messagesResult = await window.electronAPI.invoke('chat:getMessages', {
+                  const messagesResult = await chat.getMessages({
                     conversationId: conv.id
                   })
                   if (messagesResult?.success && messagesResult.messages) {
@@ -481,24 +492,21 @@ export function SettingsView({ onLogout, onNavigate }: SettingsViewProps) {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <Card className="mb-4">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Settings className="h-5 w-5 text-primary" />
-              <CardTitle>Settings</CardTitle>
-            </div>
-            {hasChanges && (
-              <Button onClick={handleSave} size="sm">
-                <Save className="h-4 w-4 mr-2" />
-                Save Changes
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-      </Card>
+    <div className="h-full flex flex-col p-4">
+      <AppHeader title="Settings" menuItems={appMenuItems} trafficLightSpace={trafficLightSpace} className="-mx-4 -mt-4 mb-4" />
+
+      {/* Save Changes Banner */}
+      {hasChanges && (
+        <Card className="mb-4 border-primary">
+          <CardContent className="p-3 flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">You have unsaved changes</span>
+            <Button onClick={handleSave} size="sm">
+              <Save className="h-4 w-4 mr-2" />
+              Save Changes
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Instance-Specific Settings Banner */}
       {(viewingInstanceId || userSettings?.instanceId) && (

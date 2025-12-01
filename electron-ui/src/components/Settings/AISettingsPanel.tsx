@@ -1,8 +1,40 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSettings } from '../../hooks/useSettings';
 
 export const AISettingsPanel: React.FC = () => {
-  const { settings, updateAI, loading, error } = useSettings();
+  const { settings, updateAI, setApiKey, getApiKey, loading, error } = useSettings();
+  const [claudeKey, setClaudeKey] = useState('');
+  const [openaiKey, setOpenaiKey] = useState('');
+  const [claudeKeyMasked, setClaudeKeyMasked] = useState(true);
+  const [openaiKeyMasked, setOpenaiKeyMasked] = useState(true);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+
+  // Load existing API keys on mount
+  useEffect(() => {
+    const loadKeys = async () => {
+      try {
+        const claude = await getApiKey('anthropic');
+        const openai = await getApiKey('openai');
+        if (claude) setClaudeKey(claude);
+        if (openai) setOpenaiKey(openai);
+      } catch (err) {
+        console.error('[AISettings] Failed to load API keys:', err);
+      }
+    };
+    loadKeys();
+  }, [getApiKey]);
+
+  const handleSaveApiKey = async (provider: string, apiKey: string) => {
+    try {
+      setSaveStatus(`Saving ${provider} key...`);
+      await setApiKey(provider, apiKey);
+      setSaveStatus(`${provider} key saved!`);
+      setTimeout(() => setSaveStatus(null), 2000);
+    } catch (err) {
+      setSaveStatus(`Failed to save ${provider} key`);
+      setTimeout(() => setSaveStatus(null), 3000);
+    }
+  };
 
   if (loading) {
     return <div className="p-4">Loading AI settings...</div>;
@@ -25,6 +57,74 @@ export const AISettingsPanel: React.FC = () => {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold">AI Settings</h2>
+
+      {/* Status message */}
+      {saveStatus && (
+        <div className="p-2 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-sm">
+          {saveStatus}
+        </div>
+      )}
+
+      {/* API Keys Section */}
+      <div className="space-y-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-800">
+        <h3 className="text-lg font-semibold">API Keys</h3>
+
+        {/* Claude API Key */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium">Claude (Anthropic) API Key</label>
+          <div className="flex space-x-2">
+            <input
+              type={claudeKeyMasked ? 'password' : 'text'}
+              value={claudeKey}
+              onChange={(e) => setClaudeKey(e.target.value)}
+              placeholder="sk-ant-..."
+              className="flex-1 p-2 border rounded font-mono text-sm"
+            />
+            <button
+              onClick={() => setClaudeKeyMasked(!claudeKeyMasked)}
+              className="px-3 py-2 border rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+              title={claudeKeyMasked ? 'Show' : 'Hide'}
+            >
+              {claudeKeyMasked ? '👁' : '🙈'}
+            </button>
+            <button
+              onClick={() => handleSaveApiKey('anthropic', claudeKey)}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Save
+            </button>
+          </div>
+          <p className="text-xs text-gray-500">Get your key at console.anthropic.com</p>
+        </div>
+
+        {/* OpenAI API Key */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium">OpenAI API Key</label>
+          <div className="flex space-x-2">
+            <input
+              type={openaiKeyMasked ? 'password' : 'text'}
+              value={openaiKey}
+              onChange={(e) => setOpenaiKey(e.target.value)}
+              placeholder="sk-..."
+              className="flex-1 p-2 border rounded font-mono text-sm"
+            />
+            <button
+              onClick={() => setOpenaiKeyMasked(!openaiKeyMasked)}
+              className="px-3 py-2 border rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+              title={openaiKeyMasked ? 'Show' : 'Hide'}
+            >
+              {openaiKeyMasked ? '👁' : '🙈'}
+            </button>
+            <button
+              onClick={() => handleSaveApiKey('openai', openaiKey)}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Save
+            </button>
+          </div>
+          <p className="text-xs text-gray-500">Get your key at platform.openai.com</p>
+        </div>
+      </div>
 
       {/* Default Provider */}
       <div className="space-y-2">

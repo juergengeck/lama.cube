@@ -192,7 +192,8 @@ export async function recordSubjectFeedback(
     }
 
     const subject = result.obj as Subject & { likes?: number; dislikes?: number };
-    console.log('[Topics IPC] Found subject:', subject.id, 'Current likes:', subject.likes, 'dislikes:', subject.dislikes);
+    const subjectIdHash = params.subjectId;  // Use the provided idHash as identifier
+    console.log('[Topics IPC] Found subject:', subjectIdHash, 'Current likes:', subject.likes, 'dislikes:', subject.dislikes);
 
     // Update feedback counters
     if (params.feedbackType === 'like') {
@@ -203,12 +204,12 @@ export async function recordSubjectFeedback(
 
     // Store updated subject
     const storeResult = await storeVersionedObject(subject);
-    console.log(`[Topics IPC] Updated subject ${subject.id} - likes: ${subject.likes}, dislikes: ${subject.dislikes}`);
+    console.log(`[Topics IPC] Updated subject ${subjectIdHash} - likes: ${subject.likes}, dislikes: ${subject.dislikes}`);
 
     return {
       success: true,
       subject: {
-        id: subject.id,
+        id: subjectIdHash,
         likes: subject.likes,
         dislikes: subject.dislikes
       } as any

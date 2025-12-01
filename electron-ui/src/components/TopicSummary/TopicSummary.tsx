@@ -11,6 +11,7 @@ import { RefreshCw, History, ChevronDown, ChevronUp, Loader2, Sparkles } from 'l
 import { KeywordCloud } from './KeywordCloud.js';
 import { KeywordDetailPanel } from '../KeywordDetail/KeywordDetailPanel.js';
 import type { Summary, GetSummaryResponse } from '../../types/topic-analysis.js';
+import { usePlans } from '@ui/core';
 
 interface Message {
   id?: string;
@@ -34,6 +35,7 @@ export const TopicSummary: React.FC<TopicSummaryProps> = ({
   className = '',
   messages = []
 }) => {
+  const plans = usePlans();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [history, setHistory] = useState<Summary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -59,18 +61,21 @@ export const TopicSummary: React.FC<TopicSummaryProps> = ({
 
   const loadSummary = async (version?: number) => {
     console.log('[TopicSummary] 📚 Loading summary for topic:', topicId, version ? `(version ${version})` : '(current)');
+
+    if (!plans.topicAnalysis) {
+      setError('Topic analysis plan not available');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const response: GetSummaryResponse = await window.electronAPI.invoke(
-        'topicAnalysis:getSummary',
-        {
-          topicId,
-          version,
-          includeHistory: showHistory
-        }
-      );
+      const response: GetSummaryResponse = await plans.topicAnalysis.getSummary({
+        topicId,
+        version,
+        includeHistory: showHistory
+      });
 
       if (response.success && response.data) {
         console.log('[TopicSummary] ✅ Summary loaded:', {
@@ -97,23 +102,26 @@ export const TopicSummary: React.FC<TopicSummaryProps> = ({
 
   const analyzeMessages = async (forceReanalysis: boolean = false) => {
     console.log('[TopicSummary] 🤖 Analyzing messages for topic:', topicId);
+
+    if (!plans.topicAnalysis) {
+      setError('Topic analysis plan not available');
+      return;
+    }
+
     setAnalyzing(true);
     setError(null);
 
     try {
-      const response = await window.electronAPI.invoke(
-        'topicAnalysis:analyzeMessages',
-        {
-          topicId,
-          messages: messages.map(m => ({
-            id: m.id,
-            content: m.content || m.text,
-            sender: m.sender || m.author,
-            timestamp: m.timestamp || Date.now()
-          })),
-          forceReanalysis
-        }
-      );
+      const response = await plans.topicAnalysis.analyzeMessages({
+        topicId,
+        messages: messages.map(m => ({
+          id: m.id,
+          content: m.content || m.text,
+          sender: m.sender || m.author,
+          timestamp: m.timestamp || Date.now()
+        })),
+        forceReanalysis
+      });
 
       if (response.success) {
         console.log('[TopicSummary] ✅ Analysis complete:', {

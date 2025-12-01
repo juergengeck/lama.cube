@@ -7,7 +7,6 @@
  */
 
 import type { IpcMainInvokeEvent } from 'electron';
-import { subjectsPlan } from './subjects.js';
 import { calculateIdHashOfObj } from '@refinio/one.core/lib/util/object.js';
 
 export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
@@ -180,45 +179,79 @@ export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
 
   /**
    * Get all journal entries (subjects) sorted chronologically
-   * Uses lama.core's SubjectsPlan - the source of truth for subjects
+   * Uses nodeOneCore.topicAnalysisModel directly
    */
   ipcMain.handle('memory:journal:list', async (event: IpcMainInvokeEvent, params?: { limit?: number }) => {
     try {
-      // Get all subjects via lama.core's SubjectsPlan
-      const response = await subjectsPlan.getAllSubjects();
-
-      if (!response.success || !response.subjects) {
-        throw new Error(response.error || 'Failed to get subjects');
+      // Get all subjects directly from TopicAnalysisModel
+      if (!nodeOneCore?.topicAnalysisModel) {
+        throw new Error('TopicAnalysisModel not initialized');
       }
 
-      // Map lama.core Subject to journal entry format
-      const entries = await Promise.all(response.subjects.map(async (subject: any) => {
+      const topics = await nodeOneCore.topicAnalysisModel.getAllTopics();
+      const allSubjects: any[] = [];
+
+      // Build a map of keyword IdHash -> term for resolving keyword references
+      const keywordTermMap = new Map<string, string>();
+
+      for (const topicId of topics) {
+        const subjects = await nodeOneCore.topicAnalysisModel.getSubjects(topicId);
+        // Attach topicId to each subject for later reference
+        for (const subject of subjects) {
+          subject._sourceTopicId = topicId;
+        }
+        allSubjects.push(...subjects);
+
+        // Get keywords for this topic and build the term map
+        const keywords = await nodeOneCore.topicAnalysisModel.getKeywords(topicId);
+        for (const keyword of keywords) {
+          // Keyword.term is the ID property, calculate its IdHash
+          const keywordIdHash = await calculateIdHashOfObj(keyword);
+          if (keywordIdHash && keyword.term) {
+            keywordTermMap.set(keywordIdHash, keyword.term);
+          }
+        }
+      }
+
+      // Map subjects to journal entry format
+      const entries = await Promise.all(allSubjects.map(async (subject: any) => {
         // Calculate IdHash from keywords (Subject's ID property)
         const idHash = await calculateIdHashOfObj(subject);
+
+        // Resolve keyword IdHashes to actual term strings
+        const keywordTerms: string[] = [];
+        if (subject.keywords && Array.isArray(subject.keywords)) {
+          for (const keywordIdHash of subject.keywords) {
+            const term = keywordTermMap.get(keywordIdHash);
+            if (term) {
+              keywordTerms.push(term);
+            }
+          }
+        }
 
         return {
           idHash: idHash || '',
           id: idHash || '',
           name: subject.description?.split('.')[0] || 'Untitled',
           description: subject.description || '',
-          created: 0, // No longer available on Subject
-          modified: 0, // No longer available on Subject
-          topic: subject.topics?.[0] || '', // Use first topic from topics array
-          keywords: subject.keywords || [],
-          messageCount: 0, // No longer available on Subject
+          created: subject.createdAt || 0,
+          modified: subject.lastSeenAt || 0,
+          topic: subject._sourceTopicId || subject.topics?.[0] || '',
+          keywords: keywordTerms,
+          messageCount: subject.messageCount || 0,
           metadata: {
             abstractionLevel: subject.abstractionLevel || 0,
-            likes: 0, // No longer available on Subject
-            dislikes: 0 // No longer available on Subject
+            likes: 0,
+            dislikes: 0
           }
         };
       }));
 
-      // Sort by ID (no created date available)
+      // Sort by most recent first (lastSeenAt or created)
       entries.sort((a: any, b: any) => {
-        const aId = a.idHash || '';
-        const bId = b.idHash || '';
-        return bId.localeCompare(aId);
+        const aTime = a.modified || a.created || 0;
+        const bTime = b.modified || b.created || 0;
+        return bTime - aTime;
       });
 
       // Apply limit if specified
@@ -236,20 +269,25 @@ export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
 
   /**
    * Get a single journal entry (subject) with HTML content
-   * Uses lama.core's SubjectsPlan - the source of truth for subjects
+   * Uses nodeOneCore.topicAnalysisModel directly
    */
   ipcMain.handle('memory:journal:get', async (event: IpcMainInvokeEvent, params: { idHash: string }) => {
     try {
-      // Get all subjects and find the one matching the idHash
-      const response = await subjectsPlan.getAllSubjects();
+      // Get all subjects directly from TopicAnalysisModel
+      if (!nodeOneCore?.topicAnalysisModel) {
+        throw new Error('TopicAnalysisModel not initialized');
+      }
 
-      if (!response.success || !response.subjects) {
-        throw new Error(response.error || 'Failed to get subjects');
+      const topics = await nodeOneCore.topicAnalysisModel.getAllTopics();
+      const allSubjects: any[] = [];
+      for (const topicId of topics) {
+        const subjects = await nodeOneCore.topicAnalysisModel.getSubjects(topicId);
+        allSubjects.push(...subjects);
       }
 
       // Find subject by calculating IdHash for each and comparing
       let foundSubject: any = null;
-      for (const subject of response.subjects) {
+      for (const subject of allSubjects) {
         const idHash = await calculateIdHashOfObj(subject);
         if (idHash === params.idHash) {
           foundSubject = subject;

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.js';
 import { Button } from '../ui/button.js';
 import { Badge } from '../ui/badge.js';
 import { GitBranch, Clock, ChevronRight, Eye, EyeOff, FileText } from 'lucide-react';
+import { usePlans } from '@ui/core';
 import type { Summary, GetSummaryResponse } from '../../types/topic-analysis.js';
 
 interface SummaryHistoryProps {
@@ -23,6 +24,7 @@ export const SummaryHistory: React.FC<SummaryHistoryProps> = ({
   onVersionSelect,
   className = ''
 }) => {
+  const { topicAnalysis } = usePlans();
   const [history, setHistory] = useState<Summary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,20 +34,17 @@ export const SummaryHistory: React.FC<SummaryHistoryProps> = ({
 
   useEffect(() => {
     loadHistory();
-  }, [topicId]);
+  }, [topicId, topicAnalysis]);
 
   const loadHistory = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const response: GetSummaryResponse = await window.electronAPI.invoke(
-        'topicAnalysis:getSummary',
-        {
-          topicId,
-          includeHistory: true
-        }
-      );
+      const response: GetSummaryResponse = await topicAnalysis.getSummary({
+        topicId,
+        includeHistory: true
+      });
 
       if (response.success && response.data) {
         setHistory(response.data.history || []);

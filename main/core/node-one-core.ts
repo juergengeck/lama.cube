@@ -729,23 +729,12 @@ class NodeOneCore implements INodeOneCore {
       this.topicAnalysisModel = new TopicAnalysisModel(this.channelManager, this.topicModel)
       await this.topicAnalysisModel.init()
       console.log('[NodeOneCore] ✅ Topic Analysis Model initialized')
+
     }
 
-    // TEMP: Memory initialization disabled - MemoryServicesPlan not exported from memory.core
-    // Use MemoryInitializationPlan to initialize memory services
-    // const memoryServices = await this.memoryInitPlan.execute({
-    //   channelManager: this.channelManager,
-    //   topicModel: this.topicModel,
-    //   topicAnalysisModel: this.topicAnalysisModel,
-    //   nodeOneCore: this,
-    //   llmManager
-    // })
-
-    // // Assign memory services to instance
-    // this.memoryStorageHandler = memoryServices.memoryStoragePlan
-    // this.fileStorageService = memoryServices.fileStorageService
-    // this.subjectHandler = memoryServices.subjectPlan
-    // this.chatMemoryHandler = memoryServices.chatMemoryPlan
+    // NOTE: Memory journal IPC (memory:journal:list, memory:journal:get) now uses
+    // lama.core's SubjectsPlan directly. The Subject type from lama.core is the source of truth.
+    // See: main/ipc/plans/memory.ts for the IPC handlers.
 
     // Use AIDiscoveryPlan to discover Claude models and initialize AI
     this.sendProgressUpdate('ai-discovery', 105, 'Discovering AI models...');

@@ -91,8 +91,8 @@ export class ProposalEngine {
     // Fetch or use provided past subjects
     const pastSubjects = allSubjects || (await this.fetchAllSubjects());
 
-    // Filter out subjects from same topic
-    const eligiblePastSubjects = pastSubjects.filter((s) => s.topic !== topicId);
+    // Filter out subjects from same topic (check if topicId is in the topics array)
+    const eligiblePastSubjects = pastSubjects.filter((s) => !s.topics?.includes(topicId));
 
     // Generate proposals for each current subject
     const proposals: Proposal[] = [];
@@ -100,10 +100,13 @@ export class ProposalEngine {
     console.log(`[ProposalEngine] Starting with ${currentSubjectObjects.length} current subjects, ${eligiblePastSubjects.length} eligible past subjects, minJaccard: ${config.minJaccard}`);
 
     for (const currentSubject of currentSubjectObjects) {
-      console.log(`[ProposalEngine] Current subject "${currentSubject.id}" has ${currentSubject.keywords?.length || 0} keywords`);
+      const currentSubjectName = currentSubject.description || 'Unknown Subject';
+      console.log(`[ProposalEngine] Current subject "${currentSubjectName}" has ${currentSubject.keywords?.length || 0} keywords`);
 
       for (const pastSubject of eligiblePastSubjects) {
-        console.log(`[ProposalEngine] Comparing with past subject "${pastSubject.id}" from topic "${pastSubject.topic}" (${pastSubject.keywords?.length || 0} keywords)`);
+        const pastSubjectName = pastSubject.description || 'Unknown Subject';
+        const pastSubjectTopic = pastSubject.topics?.[0] || '';
+        console.log(`[ProposalEngine] Comparing with past subject "${pastSubjectName}" from topic "${pastSubjectTopic}" (${pastSubject.keywords?.length || 0} keywords)`);
 
         // Resolve keyword terms from ID hashes for both subjects
         const currentKeywordTerms = await this.resolveKeywordTerms(currentSubject.keywords as SHA256IdHash<CoreKeyword>[]);
@@ -124,8 +127,8 @@ export class ProposalEngine {
           continue;
         }
 
-        // Calculate recency boost
-        const pastCreatedAt = pastSubject.timeRanges?.[0]?.start || 0;
+        // Calculate recency boost (no timeRanges on Subject, use 0 = no recency boost)
+        const pastCreatedAt = Date.now(); // Subject doesn't track creation time
         const age = Date.now() - pastCreatedAt;
         const recencyBoost = Math.max(0, 1 - age / config.recencyWindow);
 
@@ -149,14 +152,14 @@ export class ProposalEngine {
           currentSubject: currentSubjectIdHash,
           matchedKeywords,
           relevanceScore,
-          sourceTopicId: pastSubject.topic,
-          pastSubjectName: pastSubject.id || 'Unknown Subject',
+          sourceTopicId: pastSubjectTopic,
+          pastSubjectName: pastSubjectName,
           pastSubjectDescription: pastSubject.description, // Include LLM-generated description
           createdAt: pastCreatedAt,
         };
 
         proposals.push(proposal);
-        console.log(`[ProposalEngine] ✅ Generated proposal: "${pastSubject.id}" -> "${currentSubject.id}" (score: ${proposal.relevanceScore.toFixed(3)}, keywords: ${matchedKeywords.length})`);
+        console.log(`[ProposalEngine] ✅ Generated proposal: "${pastSubjectName}" -> "${currentSubjectName}" (score: ${proposal.relevanceScore.toFixed(3)}, keywords: ${matchedKeywords.length})`);
       }
     }
 
@@ -313,12 +316,15 @@ export class ProposalEngine {
 
     // Fetch all subjects (excluding current topic)
     const allSubjects = await this.fetchAllSubjects();
-    const eligiblePastSubjects = allSubjects.filter((s) => s.topic !== topicId);
+    const eligiblePastSubjects = allSubjects.filter((s) => !s.topics?.includes(topicId));
 
     // Match input keywords against past subjects
     const proposals: Proposal[] = [];
 
     for (const pastSubject of eligiblePastSubjects) {
+      const pastSubjectName = pastSubject.description || 'Unknown Subject';
+      const pastSubjectTopic = pastSubject.topics?.[0] || '';
+
       // Resolve keyword terms for past subject
       const pastKeywordTerms = await this.resolveKeywordTerms(pastSubject.keywords as SHA256IdHash<CoreKeyword>[]);
 
@@ -329,8 +335,8 @@ export class ProposalEngine {
         continue;
       }
 
-      // Calculate recency boost
-      const pastCreatedAt = pastSubject.timeRanges?.[0]?.start || 0;
+      // Calculate recency boost (no timeRanges on Subject, use 0 = no recency boost)
+      const pastCreatedAt = Date.now(); // Subject doesn't track creation time
       const age = Date.now() - pastCreatedAt;
       const recencyBoost = Math.max(0, 1 - age / config.recencyWindow);
 
@@ -349,14 +355,14 @@ export class ProposalEngine {
         currentSubject: pastSubjectIdHash, // Use same hash for input-based proposals
         matchedKeywords,
         relevanceScore,
-        sourceTopicId: pastSubject.topic,
-        pastSubjectName: pastSubject.id || 'Unknown Subject',
+        sourceTopicId: pastSubjectTopic,
+        pastSubjectName: pastSubjectName,
         pastSubjectDescription: pastSubject.description, // Include LLM-generated description
         createdAt: pastCreatedAt,
       };
 
       proposals.push(proposal);
-      console.log(`[ProposalEngine] Input match: "${pastSubject.id}" (score: ${relevanceScore.toFixed(3)}, keywords: ${matchedKeywords.join(', ')})`);
+      console.log(`[ProposalEngine] Input match: "${pastSubjectName}" (score: ${relevanceScore.toFixed(3)}, keywords: ${matchedKeywords.join(', ')})`);
     }
 
     // Sort by relevance and limit to maxProposals

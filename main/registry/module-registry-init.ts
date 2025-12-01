@@ -8,6 +8,7 @@
 import { ModuleRegistry } from '@refinio/refinio.api/plan-system';
 import {
   CoreModule,
+  AIModule,
   ChatModule,
   TrustModule,
   ConnectionModule,
@@ -77,6 +78,9 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   // Register shared modules from lama.core
   console.log('[ModuleRegistryInit] Registering CoreModule...');
   moduleRegistry.register(new CoreModule(commServerUrl));
+
+  console.log('[ModuleRegistryInit] Registering AIModule...');
+  moduleRegistry.register(new AIModule(llmPlatform, llmConfigAdapter));
 
   console.log('[ModuleRegistryInit] Registering ChatModule...');
   moduleRegistry.register(new ChatModule());

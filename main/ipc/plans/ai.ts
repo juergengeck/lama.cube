@@ -39,8 +39,17 @@ const aiPlans = {
       topicId?: string;
     }
   ) {
+    console.log('[AI IPC] ========== CHAT REQUEST ==========');
+    console.log('[AI IPC] Received chat request');
+    console.log('[AI IPC]   modelId:', modelId);
+    console.log('[AI IPC]   stream:', stream);
+    console.log('[AI IPC]   topicId:', topicId);
+    console.log('[AI IPC]   messages:', messages?.length || 0);
+    console.log('[AI IPC] ==========================================');
+
     // Delegate to llmManager for chat operations
     if (!modelId) {
+      console.log('[AI IPC] ❌ No model ID provided');
       return { success: false, error: 'Model ID is required' };
     }
 
@@ -48,6 +57,7 @@ const aiPlans = {
       // Build options object
       const options: any = {
         onStream: stream ? (chunk: string) => {
+          console.log('[AI IPC] 📤 Streaming chunk (length:', chunk.length, ')');
           event.sender.send('ai:stream', { chunk, topicId });
         } : undefined
       };
@@ -61,6 +71,7 @@ const aiPlans = {
           if (apiKey) {
             options.apiKey = apiKey;
           } else {
+            console.log('[AI IPC] ❌ Claude API key not configured');
             return { success: false, error: 'Claude API key not configured. Please add your Anthropic API key in settings.' };
           }
         } catch (error: any) {
@@ -69,7 +80,9 @@ const aiPlans = {
         }
       }
 
+      console.log('[AI IPC] 🚀 Calling llmManager.chat()...');
       const response = await llmManager.chat(messages, modelId, options);
+      console.log('[AI IPC] ✅ Got response from llmManager (length:', typeof response === 'string' ? response.length : 'not a string', ')');
 
       return {
         success: true,
@@ -80,6 +93,8 @@ const aiPlans = {
         }
       };
     } catch (error: any) {
+      console.log('[AI IPC] ❌ Chat error:', error.message);
+      console.log('[AI IPC] ❌ Error stack:', error.stack);
       return { success: false, error: error.message };
     }
   },
@@ -243,7 +258,7 @@ const aiPlans = {
     try {
       // Get from AIAssistantHandler which loads from AISettingsManager
       if (nodeOneCore.aiAssistantModel?.getDefaultModel) {
-        const model = nodeOneCore.aiAssistantModel.getDefaultModel();
+        const model = await nodeOneCore.aiAssistantModel.getDefaultModel();
         if (model) {
           // Model can be string or object with id property
           const modelId = typeof model === 'string' ? model : model.id;
@@ -452,6 +467,38 @@ const aiPlans = {
       return { success: true, cancelled };
     } catch (error: any) {
       console.error('[AI IPC] stopStreaming error:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Set AI response length (in tokens)
+   */
+  async setResponseLength(
+    event: IpcMainInvokeEvent,
+    { maxTokens }: { maxTokens: number }
+  ) {
+    try {
+      const handler = getAIHandler();
+      await handler.setResponseLength(maxTokens);
+      console.log(`[AI IPC] Response length set to ${maxTokens} tokens`);
+      return { success: true };
+    } catch (error: any) {
+      console.error('[AI IPC] setResponseLength error:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Get AI response length (in tokens)
+   */
+  async getResponseLength(event: IpcMainInvokeEvent) {
+    try {
+      const handler = getAIHandler();
+      const maxTokens = await handler.getResponseLength();
+      return { success: true, data: maxTokens };
+    } catch (error: any) {
+      console.error('[AI IPC] getResponseLength error:', error);
       return { success: false, error: error.message };
     }
   },

@@ -5,9 +5,8 @@ import { Loader2, ArrowDown } from 'lucide-react'
 import { type Message, lamaBridge } from '@/bridge/lama-bridge'
 import './MessageView.css'
 
-// Import enhanced components
-import { EnhancedMessageInput, type EnhancedAttachment } from './chat/EnhancedMessageInput'
-import { EnhancedMessageBubble, type EnhancedMessageData } from './chat/EnhancedMessageBubble'
+// Import enhanced components from shared UI package
+import { EnhancedMessageInput, type EnhancedAttachment, EnhancedMessageBubble, type EnhancedMessageData } from '@lama/ui'
 
 // Import attachment system
 import { attachmentService } from '@/services/attachments/AttachmentService'
@@ -561,14 +560,14 @@ export function MessageView({
             <ProposalCarousel
               proposals={proposals}
               currentIndex={currentIndex}
+              topicId={topicId || ''}
               onNext={nextProposal}
               onPrevious={previousProposal}
-              onShare={async (proposalId, pastSubjectIdHash) => {
+              onShare={async (proposalId, pastSubjectIdHash, _attachment, displayText) => {
                 const result = await shareProposal(proposalId, pastSubjectIdHash, false)
-                if (result.success && result.sharedContent) {
-                  // Pre-fill input with description (if available) or keywords as fallback
-                  const contextMessage = result.sharedContent.description || result.sharedContent.keywords.join(', ')
-                  setInputPrefillText(contextMessage)
+                if (result.success) {
+                  // Use the display text from the expanded card selection
+                  setInputPrefillText(displayText)
                   // Dismiss the proposal after sharing
                   dismissProposal(proposalId)
                 }

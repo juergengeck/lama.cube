@@ -24,6 +24,11 @@
     --input: 240 3.7% 15.9%;
     --ring: 201 96% 73%;
     --radius: 0.5rem;
+
+    /* Subject/topic colors (fuchsia/magenta) */
+    --subject: 292 91% 73%;
+    --subject-foreground: 292 91% 25%;
+    --subject-muted: 292 91% 90%;
   }
 }
 

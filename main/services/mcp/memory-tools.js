@@ -11,7 +11,7 @@
  * memory.core/plans/MemoryPlan. See chat.core/plans/ChatPlan for correct pattern.
  */
 
-import { MemoryPlan } from '../../../../../memory.core/dist/plans/MemoryPlan.js';
+import { MemoryPlan } from '../../../../../memory.core/dist/memory.core/src/plans/MemoryPlan.js';
 
 export class MemoryTools {
   constructor(nodeOneCore) {

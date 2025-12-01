@@ -9,6 +9,7 @@ import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Merge, Archive, MessageSquare, Clock } from 'lucide-react';
 import type { Subject, GetSubjectsResponse } from '../../types/topic-analysis.js';
+import { usePlans } from '@ui/core';
 
 interface SubjectListProps {
   topicId: string;
@@ -25,6 +26,7 @@ export const SubjectList: React.FC<SubjectListProps> = ({
   showArchived = false,
   className = ''
 }) => {
+  const plans = usePlans();
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,17 +57,20 @@ export const SubjectList: React.FC<SubjectListProps> = ({
 
   const loadSubjects = async () => {
     console.log('[SubjectList] 🔍 Loading subjects for topic:', topicId, showArchived ? '(including archived)' : '');
+
+    if (!plans.topicAnalysis) {
+      setError('Topic analysis plan not available');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const response: GetSubjectsResponse = await window.electronAPI.invoke(
-        'topicAnalysis:getSubjects',
-        {
-          topicId,
-          includeArchived: showArchived
-        }
-      );
+      const response: GetSubjectsResponse = await plans.topicAnalysis.getSubjects({
+        topicId,
+        includeArchived: showArchived
+      });
 
       if (response.success && response.data) {
         console.log('[SubjectList] ✅ Subjects loaded:', {

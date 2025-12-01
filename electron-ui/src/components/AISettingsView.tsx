@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { lamaBridge } from '@/bridge/lama-bridge'
+import { usePlans } from '@ui/core'
 import { Brain, Download, CheckCircle, Circle, Cpu, Zap, MessageSquare, Code, Key, AlertTriangle } from 'lucide-react'
 
 interface ModelInfo {
@@ -22,6 +23,7 @@ interface ModelInfo {
 }
 
 export function AISettingsView() {
+  const { chat } = usePlans()
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({})
@@ -98,8 +100,8 @@ export function AISettingsView() {
 
       console.log(`[AISettingsView] Found AI contact:`, aiContact.personId)
 
-      // Create a direct conversation with this AI contact
-      const result = await window.electronAPI?.invoke('chat:createConversation', {
+      // Create conversation through Plan Facade
+      const result = await chat.createConversation({
         type: 'direct',
         participants: [aiContact.personId],
         name: modelName,

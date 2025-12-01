@@ -49,6 +49,13 @@ export function createElectronDeviceAdapter(): DevicePlatformAdapter {
       return await window.electronAPI.invoke('invitation:create')
     },
 
+    async acceptInvitation(invitationUrl: string) {
+      if (!window.electronAPI) {
+        return { success: false, error: 'Electron API not available' }
+      }
+      return await window.electronAPI.invoke('connection:acceptInvitation', invitationUrl)
+    },
+
     async getDiscoveredDevices() {
       if (!window.electronAPI) {
         return { success: false }

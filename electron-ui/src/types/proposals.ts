@@ -84,3 +84,69 @@ export interface ShareProposalResponse {
   sharedContent: SharedContent;
   response?: ProposalInteractionResponse;
 }
+
+/**
+ * Traceable item with hash for lookup
+ */
+export interface TrackedKeyword {
+  hash: string;  // SHA256IdHash for lookup
+  value: string;
+}
+
+export interface TrackedMessage {
+  hash: string;  // SHA256IdHash<Message>
+  conversationHash: string;  // Topic/conversation ID
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: string;
+}
+
+export interface TrackedMemory {
+  hash: string;  // SHA256IdHash<Memory>
+  content: string;
+  timestamp?: string;
+}
+
+export interface TrackedSummary {
+  hash: string;  // SHA256IdHash<Summary>
+  text: string;
+}
+
+/**
+ * Structured context attachment for sharing proposals
+ * All items include hashes for traceability
+ */
+export interface SharedContextAttachment {
+  type: 'shared-context';
+
+  subject?: {
+    hash: string;  // SHA256IdHash<Subject>
+    name: string;
+    description?: string;
+  };
+
+  keywords?: TrackedKeyword[];
+  messages?: TrackedMessage[];
+  memories?: TrackedMemory[];
+  summary?: TrackedSummary;
+}
+
+/**
+ * Expanded proposal details (fetched on demand)
+ */
+export interface ProposalDetails {
+  subject: {
+    hash: string;
+    name: string;
+    description?: string;
+  };
+  keywords: TrackedKeyword[];
+  messages: TrackedMessage[];
+  memories: TrackedMemory[];
+  summary?: TrackedSummary;
+}
+
+export interface GetProposalDetailsResponse {
+  success: boolean;
+  details: ProposalDetails;
+}

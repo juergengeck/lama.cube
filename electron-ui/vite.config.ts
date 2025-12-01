@@ -15,7 +15,8 @@ export default defineConfig({
       '@components': path.resolve(__dirname, './src/components'),
       '@lib': path.resolve(__dirname, './src/lib'),
       '@lama/core': path.resolve(__dirname, '../../lama.core'),
-      '@lama/ui': path.resolve(__dirname, '../../lama.ui/src')
+      '@lama/ui': path.resolve(__dirname, '../../lama.ui/src'),
+      '@ui/core': path.resolve(__dirname, '../../ui.core/src')
     }
   },
   define: {

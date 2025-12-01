@@ -47,6 +47,7 @@ const topicAnalysisHandlers = {
       forceReanalysis?: boolean;
     }
   ) {
+    ensureModelsInitialized();
     return await topicAnalysisHandler.analyzeMessages({
       topicId,
       messages,

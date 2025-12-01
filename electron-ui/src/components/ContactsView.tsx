@@ -1,13 +1,12 @@
-import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { useState, useEffect, useMemo } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Users, UserPlus, Search, Circle, Bot, MessageSquare, Download, CheckCircle, User, Edit } from 'lucide-react'
+import { Users, UserPlus, Search, Bot, User, Edit } from 'lucide-react'
 import { useLama } from '@/hooks/useLama'
-import { ProfileDialog } from './ProfileDialog'
+import { usePlans, ProfileEditor, ContactCard, type TimelinePath } from '@lama/ui'
 
 interface ContactsViewProps {
   onNavigateToChat?: (topicId: string, contactName: string) => void
@@ -15,15 +14,18 @@ interface ContactsViewProps {
 
 export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
   const { bridge } = useLama()
+  const plans = usePlans()
   const [contacts, setContacts] = useState<any[]>([])
   const [ownerContact, setOwnerContact] = useState<any | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [creatingTopic, setCreatingTopic] = useState<string | null>(null)
   const [loadingModel, setLoadingModel] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [profileDialogOpen, setProfileDialogOpen] = useState(false)
-  const [profileDialogRequired, setProfileDialogRequired] = useState(false)
+  const [ownerProfileOpen, setOwnerProfileOpen] = useState(false)
+  const [ownerProfileRequired, setOwnerProfileRequired] = useState(false)
   const [defaultModel, setDefaultModel] = useState<string | null>(null)
+  const [selectedContact, setSelectedContact] = useState<any | null>(null)
+  const [contactProfileOpen, setContactProfileOpen] = useState(false)
 
   useEffect(() => {
     loadContacts()
@@ -62,7 +64,7 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
     return () => {
       window.removeEventListener('contacts:updated', handleContactsUpdated)
     }
-  }, [bridge])
+  }, [plans.contacts, bridge])
 
   const loadDefaultModel = async () => {
     if (!bridge) return
@@ -78,34 +80,43 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
   }
 
   const loadContacts = async () => {
-    if (!bridge) return
+    if (!plans.contacts) return
 
     setLoading(true)
     try {
-      // Get real contacts from AppModel
-      const allContacts = await bridge.getContacts()
-      console.log('[ContactsView] Loaded contacts:', allContacts)
+      // Get contacts with trust information using platform-agnostic plan
+      const result = await plans.contacts.getContactsWithTrust()
+
+      if (!result.success || !result.contacts) {
+        console.error('[ContactsView] Failed to load contacts:', result.error)
+        setContacts([])
+        setOwnerContact(null)
+        return
+      }
+
+      const allContacts = result.contacts
+      console.log('[ContactsView] Loaded contacts with trust:', allContacts)
       console.log('[ContactsView] Contact count:', allContacts?.length)
-      allContacts?.forEach((c, i) => {
-        console.log(`[ContactsView]   Contact ${i}: ${c.name || c.displayName} (${c.id?.substring(0, 8)}...) status=${c.status}`)
+      allContacts?.forEach((c: any, i: number) => {
+        console.log(`[ContactsView]   Contact ${i}: ${c.name || c.displayName} (${c.id?.substring(0, 8)}...) trust=${c.trustLevel}`)
       })
 
-      // Separate owner from other contacts
-      const owner = (allContacts || []).find(c => c.status === 'owner')
-      const nonOwnerContacts = (allContacts || []).filter(c => c.status !== 'owner')
+      // Separate owner (self) from other contacts
+      const owner = allContacts.find((c: any) => c.trustLevel === 'self' || c.status === 'owner')
+      const nonOwnerContacts = allContacts.filter((c: any) => c.trustLevel !== 'self' && c.status !== 'owner')
 
       setOwnerContact(owner || null)
 
       // Enrich AI contacts with model information
       const enrichedContacts = await Promise.all(
-        nonOwnerContacts.map(async (contact) => {
-          if (contact.isAI) {
+        nonOwnerContacts.map(async (contact: any) => {
+          if (contact.isAI && bridge) {
             try {
               // Get all models
               const models = await bridge.getAvailableModels()
 
               // Find the model for this AI contact by matching the contact name to model ID
-              const contactModel = models.find(m =>
+              const contactModel = models.find((m: any) =>
                 m.id === contact.name ||
                 m.name === contact.name ||
                 contact.name?.includes(m.id) ||
@@ -145,6 +156,20 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
 
     return matchesSearch
   })
+
+  // Convert contact trust paths to TimelinePath format for ContactCard
+  const getTrustPaths = useMemo(() => (contact: any): TimelinePath[] => {
+    if (!contact.trustPaths || contact.trustPaths.length === 0) return []
+    return contact.trustPaths.map((path: any, idx: number) => ({
+      id: `path-${idx}`,
+      nodes: path.nodes?.map((node: any, nodeIdx: number) => ({
+        id: `node-${nodeIdx}`,
+        label: node.name || node.label || 'Unknown',
+        timestamp: node.timestamp ? new Date(node.timestamp) : undefined
+      })) || [],
+      selected: idx === 0
+    }))
+  }, [])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -218,19 +243,19 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
 
   const handleAddContact = async () => {
     try {
-      if (!window.electronAPI) {
-        alert('Electron API not available')
+      if (!plans.contacts) {
+        alert('Contacts plan not available')
         return
       }
 
       // Check if user has a PersonName set
-      const nameCheck = await window.electronAPI.invoke('onecore:hasPersonName')
+      const nameCheck = await plans.contacts.hasPersonName()
 
       if (!nameCheck.success || !nameCheck.hasName) {
         // No name set - show dialog as required
         console.log('[ContactsView] No PersonName set, showing required dialog')
-        setProfileDialogRequired(true)
-        setProfileDialogOpen(true)
+        setOwnerProfileRequired(true)
+        setOwnerProfileOpen(true)
         return
       }
 
@@ -244,8 +269,13 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
 
   const createInvitation = async () => {
     try {
-      // Use 'invitation:create' from devices handler (has better error handling)
-      const result = await window.electronAPI.invoke('invitation:create')
+      if (!plans.contacts) {
+        alert('Contacts plan not available')
+        return
+      }
+
+      // Use createInvitation from contacts plan
+      const result = await plans.contacts.createInvitation()
 
       if (result.success && result.invitation) {
         // Copy invitation URL to clipboard
@@ -265,14 +295,34 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
     loadContacts()
 
     // If this was required for adding a contact, proceed with invitation
-    if (profileDialogRequired) {
-      setProfileDialogRequired(false)
+    if (ownerProfileRequired) {
+      setOwnerProfileRequired(false)
       createInvitation()
     }
   }
 
+  const handleContactClick = (contact: any) => {
+    console.log('[ContactsView] Contact clicked:', contact)
+    setSelectedContact(contact)
+    setContactProfileOpen(true)
+  }
+
+  const handleBlockContact = async (contact: any) => {
+    if (!plans.contacts) return
+    try {
+      const result = await plans.contacts.blockContact(contact.personId || contact.id, 'User blocked')
+      if (result.success) {
+        loadContacts() // Refresh the list
+      } else {
+        console.error('[ContactsView] Failed to block contact:', result.error)
+      }
+    } catch (error: any) {
+      console.error('[ContactsView] Failed to block contact:', error)
+    }
+  }
+
   return (
-    <div className="h-full flex flex-col space-y-4">
+    <div className="h-full w-full flex flex-col space-y-4 p-4">
       {/* My Profile Card */}
       {ownerContact && (
         <Card>
@@ -286,8 +336,8 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setProfileDialogRequired(false)
-                  setProfileDialogOpen(true)
+                  setOwnerProfileRequired(false)
+                  setOwnerProfileOpen(true)
                 }}
               >
                 <Edit className="h-4 w-4 mr-2" />
@@ -313,7 +363,7 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
 
       {/* Search and Add Contact */}
       <Card>
-        <CardHeader>
+        <CardHeader className="sm:block hidden">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Users className="h-5 w-5 text-primary" />
@@ -325,6 +375,13 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
             </Button>
           </div>
         </CardHeader>
+        {/* Mobile: just the Add Contact button */}
+        <div className="sm:hidden flex justify-end p-3 border-b">
+          <Button size="sm" onClick={handleAddContact}>
+            <UserPlus className="h-4 w-4 mr-2" />
+            Add Contact
+          </Button>
+        </div>
         <CardContent>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -368,110 +425,17 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
                 </div>
               ) : (
                 filteredContacts.map((contact) => (
-                  <Card key={contact.id} className="hover:bg-accent transition-colors cursor-pointer">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <Avatar>
-                            <AvatarFallback className={contact.isAI ? 'bg-purple-100 dark:bg-purple-900' : ''}>
-                              {contact.isAI ? (
-                                <Bot className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                              ) : (
-                                (contact.displayName || contact.name || 'UN').substring(0, 2).toUpperCase()
-                              )}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center space-x-2">
-                              <span className="font-medium truncate">{contact.displayName || contact.name || 'Unknown'}</span>
-                              <Badge 
-                                variant={contact.isAI ? "secondary" : "outline"} 
-                                className="text-xs flex-shrink-0"
-                              >
-                                {contact.isAI ? 'AI' : 'P2P'}
-                              </Badge>
-                            </div>
-                            <div className="flex items-center space-x-2 mt-1">
-                              <Circle className={`h-2 w-2 fill-current ${
-                                contact.isAI
-                                  ? (contact.modelInfo?.isLoaded ? 'text-green-500' : 'text-yellow-500')
-                                  : getStatusColor(contact.status)
-                              }`} />
-                              <span className="text-xs text-muted-foreground truncate">
-                                {contact.isAI
-                                  ? (contact.modelInfo?.isLoaded ? 'Ready' : 'Not Loaded')
-                                  : getStatusLabel(contact.status)}
-                              </span>
-                              {contact.lastSeen && !contact.isAI && (
-                                <span className="text-xs text-muted-foreground">
-                                  · Last seen {new Date(contact.lastSeen).toLocaleTimeString()}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          {/* Debug logging for button rendering */}
-                          {contact.isAI && (() => {
-                            console.log(`[ContactsView] Rendering buttons for ${contact.name}:`, {
-                              isAI: contact.isAI,
-                              hasModelInfo: !!contact.modelInfo,
-                              modelType: contact.modelInfo?.modelType,
-                              isLoaded: contact.modelInfo?.isLoaded
-                            })
-                            return null
-                          })()}
-
-                          {/* For AI contacts with local models that aren't loaded, show Load button */}
-                          {contact.isAI && contact.modelInfo?.modelType === 'local' && !contact.modelInfo?.isLoaded && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleLoadModel(contact)
-                              }}
-                              disabled={loadingModel === contact.id}
-                            >
-                              {loadingModel === contact.id ? (
-                                <>
-                                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary mr-1" />
-                                  Loading...
-                                </>
-                              ) : (
-                                <>
-                                  <Download className="h-3 w-3 mr-1" />
-                                  Load Model
-                                </>
-                              )}
-                            </Button>
-                          )}
-                          {/* For loaded models or remote API models, show Ready badge */}
-                          {contact.isAI && (contact.modelInfo?.isLoaded || contact.modelInfo?.modelType === 'remote') && (
-                            <Badge variant="secondary" className="text-xs">
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Ready
-                            </Badge>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleMessageClick(contact)}
-                            disabled={creatingTopic === contact.id}
-                          >
-                            {creatingTopic === contact.id ? (
-                              <>Creating chat...</>
-                            ) : (
-                              <>
-                                <MessageSquare className="h-4 w-4 mr-1" />
-                                Message
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <ContactCard
+                    key={contact.id}
+                    id={contact.id}
+                    name={contact.displayName || contact.name || 'Unknown'}
+                    identityHash={contact.personId || contact.id}
+                    trustPaths={getTrustPaths(contact)}
+                    onSelect={() => handleContactClick(contact)}
+                    onSendMessage={() => handleMessageClick(contact)}
+                    onBlock={contact.status !== 'owner' && !contact.isAI ? () => handleBlockContact(contact) : undefined}
+                    onViewProperties={() => handleContactClick(contact)}
+                  />
                 ))
               )}
             </div>
@@ -479,14 +443,27 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
         </CardContent>
       </Card>
 
-      {/* Profile Dialog */}
-      <ProfileDialog
-        open={profileDialogOpen}
-        onOpenChange={setProfileDialogOpen}
+      {/* Owner Profile Editor */}
+      <ProfileEditor
+        open={ownerProfileOpen}
+        onOpenChange={setOwnerProfileOpen}
+        contactId={ownerContact?.personId || ownerContact?.id}
         currentName={ownerContact?.displayName || ownerContact?.name || ''}
-        required={profileDialogRequired}
+        mode="edit"
+        required={ownerProfileRequired}
         onSave={handleProfileSaved}
       />
+
+      {/* Contact Profile Viewer */}
+      {selectedContact && (
+        <ProfileEditor
+          open={contactProfileOpen}
+          onOpenChange={setContactProfileOpen}
+          contactId={selectedContact.personId || selectedContact.id}
+          currentName={selectedContact.displayName || selectedContact.name}
+          mode="view"
+        />
+      )}
     </div>
   )
 }

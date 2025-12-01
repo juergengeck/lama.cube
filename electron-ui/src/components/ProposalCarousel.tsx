@@ -8,21 +8,23 @@
 
 import React from 'react';
 import { useSwipeable } from 'react-swipeable';
-import { ProposalCard } from './ProposalCard';
-import type { Proposal } from '../types/proposals';
+import { ExpandableProposalCard } from './ExpandableProposalCard';
+import type { Proposal, SharedContextAttachment } from '../types/proposals';
 
 interface ProposalCarouselProps {
   proposals: Proposal[];
   currentIndex: number;
+  topicId: string;
   onNext: () => void;
   onPrevious: () => void;
-  onShare: (proposalId: string, pastSubjectIdHash: string) => Promise<void>;
+  onShare: (proposalId: string, pastSubjectIdHash: string, attachment: SharedContextAttachment, displayText: string) => Promise<void>;
   onDismiss: (proposalId: string, pastSubjectIdHash: string) => Promise<void>;
 }
 
 export const ProposalCarousel: React.FC<ProposalCarouselProps> = ({
   proposals,
   currentIndex,
+  topicId,
   onNext,
   onPrevious,
   onShare,
@@ -42,8 +44,8 @@ export const ProposalCarousel: React.FC<ProposalCarouselProps> = ({
     return null;
   }
 
-  const handleShare = async () => {
-    await onShare(currentProposal.id, currentProposal.pastSubject);
+  const handleShare = async (attachment: SharedContextAttachment, displayText: string) => {
+    await onShare(currentProposal.id, currentProposal.pastSubject, attachment, displayText);
   };
 
   const handleDismiss = async () => {
@@ -52,8 +54,9 @@ export const ProposalCarousel: React.FC<ProposalCarouselProps> = ({
 
   return (
     <div className="proposal-carousel" {...handlers}>
-      <ProposalCard
+      <ExpandableProposalCard
         proposal={currentProposal}
+        topicId={topicId}
         onShare={handleShare}
         onDismiss={handleDismiss}
       />

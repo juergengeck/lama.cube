@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { User, Search, Loader2, Users, Bot } from 'lucide-react'
+import { usePlans } from '@ui/core'
 
 interface Contact {
   id: string
@@ -28,6 +29,7 @@ export function GroupChatDialog({
   onOpenChange,
   onSubmit
 }: GroupChatDialogProps) {
+  const { contacts: contactsPlan } = usePlans()
   const [contacts, setContacts] = useState<Contact[]>([])
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -67,11 +69,7 @@ export function GroupChatDialog({
   const loadContacts = async () => {
     setLoading(true)
     try {
-      if (!window.electronAPI) {
-        throw new Error('Electron API not available')
-      }
-
-      const result = await window.electronAPI.invoke('contacts:list')
+      const result = await contactsPlan.getContacts()
       if (!result.success) {
         throw new Error(result.error || 'Failed to load contacts')
       }

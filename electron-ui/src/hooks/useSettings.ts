@@ -59,6 +59,8 @@ interface UseSettingsResult {
     updateProposals: (updates: Partial<ProposalSettings>) => Promise<UserSettings>;
     setDefaultModel: (modelId: string | null) => Promise<UserSettings>;
     setTheme: (theme: 'dark' | 'light') => Promise<UserSettings>;
+    setApiKey: (provider: string, apiKey: string) => Promise<void>;
+    getApiKey: (provider: string) => Promise<string | undefined>;
     reload: () => Promise<void>;
 }
 
@@ -177,6 +179,31 @@ export function useSettings(): UseSettingsResult {
     }, []);
 
     /**
+     * Set API key for a provider (Claude, OpenAI, etc.)
+     */
+    const setApiKey = useCallback(async (provider: string, apiKey: string): Promise<void> => {
+        try {
+            await window.electronAPI.invoke('settings:setApiKey', { provider, apiKey });
+            console.log(`[useSettings] Set API key for ${provider}`);
+        } catch (err) {
+            console.error('[useSettings] Failed to set API key:', err);
+            throw err;
+        }
+    }, []);
+
+    /**
+     * Get API key for a provider
+     */
+    const getApiKey = useCallback(async (provider: string): Promise<string | undefined> => {
+        try {
+            return await window.electronAPI.invoke('settings:getApiKey', { provider });
+        } catch (err) {
+            console.error('[useSettings] Failed to get API key:', err);
+            throw err;
+        }
+    }, []);
+
+    /**
      * Reload settings from main process (force refresh)
      */
     const reload = useCallback(async () => {
@@ -197,6 +224,8 @@ export function useSettings(): UseSettingsResult {
         updateProposals,
         setDefaultModel,
         setTheme,
+        setApiKey,
+        getApiKey,
         reload
     };
 }

@@ -314,6 +314,27 @@ const oneCoreHandlers = {
     const personId = await me.mainIdentity();
     await getProfileService().setPersonName(personId, params.name);
     return { success: true, data: { name: params.name } };
+  },
+
+  /**
+   * Get owner ID (main identity of current user)
+   */
+  async getOwnerId(event: IpcMainInvokeEvent) {
+    if (!nodeOneCore.leuteModel) {
+      throw new Error('NodeOneCore not initialized - leuteModel is null');
+    }
+
+    try {
+      const me = await nodeOneCore.leuteModel.me();
+      const ownerId = await me.mainIdentity();
+      return { success: true, ownerId };
+    } catch (error) {
+      console.error('[OneCoreHandler] getOwnerId error:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
   }
 };
 

@@ -20,10 +20,13 @@ import { AvatarPreferenceRecipe } from './avatar-recipes.js'
 // import { FeedForwardRecipes } from './feed-forward-recipes.js'
 
 // LLM Recipe - represents an AI model/assistant
-import { LLMRecipe } from './LLM.js'
+import { LLMRecipe } from '@lama/core/recipes/LLMRecipe.js'
 
 // AI Recipe - represents AI assistant identities
 import { AIRecipe } from '@lama/core/recipes/AIRecipe.js'
+
+// AISettings Recipe - AI assistant application settings per instance
+import { AISettingsRecipe } from '@lama/core/recipes/AISettingsRecipe.js'
 
 // Chat Memory Config - memory extraction configuration per topic
 import { ChatMemoryConfigRecipe } from './chat-memory-config.js'
@@ -43,7 +46,7 @@ import {
     DimensionRecipe,
     DimensionValueRecipe,
     QueryResultRecipe
-} from '@cube/cube.core'
+} from '@cube/core'
 
 const LLMSettingsRecipe = {
     $type$: 'Recipe' as const,
@@ -172,6 +175,7 @@ const GlobalLLMSettingsRecipe = {
 const LamaRecipes = [
     LLMRecipe,
     AIRecipe,
+    AISettingsRecipe,
     LLMSettingsRecipe,
     GlobalLLMSettingsRecipe,
     WordCloudSettingsRecipe,

@@ -178,6 +178,24 @@ async function getForInput(
 }
 
 /**
+ * Get detailed content for a proposal (on-demand)
+ * Handler: proposals:getDetails
+ */
+async function getDetails(
+  event: IpcMainInvokeEvent,
+  {
+    pastSubjectIdHash,
+    topicId,
+  }: {
+    pastSubjectIdHash: string;
+    topicId: string;
+  }
+) {
+  const handler = getProposalsHandler();
+  return await handler.getDetails({ pastSubjectIdHash: pastSubjectIdHash as any, topicId });
+}
+
+/**
  * Export proposal plans
  */
 export const proposalPlans = {
@@ -187,4 +205,5 @@ export const proposalPlans = {
   'proposals:dismiss': dismiss,
   'proposals:share': share,
   'proposals:getForInput': getForInput,
+  'proposals:getDetails': getDetails,
 };

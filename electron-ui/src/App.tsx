@@ -549,14 +549,14 @@ function AppContent() {
           reconnecting: mcpReconnecting
         }}
         memoryScanStatus={memoryScanStatus}
-        responseLength={{
+        responseLength={activeTab === 'chats' ? {
           value: responseLengthPercent,
           onChange: setResponseLengthPercent
-        }}
-        proposals={{
+        } : undefined}
+        proposals={activeTab === 'chats' ? {
           value: proposalSensitivity,
           onChange: setProposalSensitivity
-        }}
+        } : undefined}
         discovery={{
           enabled: discoveryEnabled,
           onChange: handleDiscoveryChange

@@ -169,20 +169,29 @@ const journalHandlers = {
         options: AssemblyQueryOptions
     ) {
         try {
+            // Get JournalPlan from JournalModule (via registry)
+            // JournalModule is registered in module-registry-init.ts and supplies JournalPlan
+            const { JournalModule } = await import('@lama/core/modules');
             const registry = getModuleRegistry();
             if (!registry) {
                 throw new Error('ModuleRegistry not initialized');
             }
 
-            // Get JournalPlan from registry
-            const journalModule = (registry as any).modules?.find((m: any) => m.name === 'JournalModule');
-            const assemblyJournalPlan = journalModule?.journalPlan;
+            // JournalModule exposes journalPlan publicly after init
+            // The module instance is accessible via the registry's internal modules array
+            // We need to get it via the supply mechanism or find it directly
+            const registryAny = registry as any;
+            const journalModule = registryAny.modules?.find((m: any) => m.name === 'JournalModule');
 
-            if (!assemblyJournalPlan) {
-                throw new Error('JournalModule not initialized in registry');
+            if (!journalModule || !journalModule.journalPlan) {
+                console.warn('[Journal IPC] JournalModule not initialized yet, returning empty results');
+                return {
+                    success: true,
+                    data: []
+                };
             }
 
-            const assembliesWithStories = await assemblyJournalPlan.queryAssemblies(options);
+            const assembliesWithStories = await journalModule.journalPlan.queryAssemblies(options);
 
             console.log(`[Journal IPC] Queried ${assembliesWithStories.length} assemblies`);
 

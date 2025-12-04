@@ -18,7 +18,7 @@ import { KeywordDetailPanel } from './KeywordDetail/KeywordDetailPanel'
 
 // Import proposal carousel
 import { ProposalCarousel } from './ProposalCarousel'
-import { useProposals } from '@/hooks/useProposals'
+import { useProposals } from '@lama/ui'
 
 interface MessageViewProps {
   messages: Message[]

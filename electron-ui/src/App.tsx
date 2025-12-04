@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Button, ModelOnboarding, BridgeProvider, StatusBar, ChatLayout, MemoryView, ContactsView, MobileBottomNav } from '@lama/ui'
+import { Button, ModelOnboarding, BridgeProvider, ChatLayout, MemoryView, ContactsView, MobileBottomNav } from '@lama/ui'
+import { StatusBar } from '@/components/StatusBar'
 import { usePlans, NavigateHomeProvider } from '@ui/core'
 import { ElectronPlansProvider } from '@/providers/ElectronPlansProvider'
 import { SettingsView } from '@/components/SettingsView'
@@ -379,7 +380,14 @@ function AppContent() {
   const renderContent = () => {
     switch (activeTab) {
       case 'chats':
-        return <ChatLayout selectedConversationId={selectedConversationId} onSetToolbarControls={setToolbarControls} />
+        return <ChatLayout
+          selectedConversationId={selectedConversationId}
+          onSetToolbarControls={setToolbarControls}
+          onParticipantClick={(participantId) => {
+            console.log('[App] Participant clicked:', participantId)
+            setActiveTab('contacts')
+          }}
+        />
       case 'journal':
         return <JournalViewWrapper onSetToolbarControls={setToolbarControls} />
       case 'contacts':
@@ -432,7 +440,12 @@ function AppContent() {
       case 'settings':
         return <SettingsView onLogout={logout} onNavigate={handleNavigate} />
       default:
-        return <ChatLayout />
+        return <ChatLayout
+          onParticipantClick={(participantId) => {
+            console.log('[App] Participant clicked:', participantId)
+            setActiveTab('contacts')
+          }}
+        />
     }
   }
 
@@ -451,7 +464,16 @@ function AppContent() {
   const renderContentWithMenu = () => {
     switch (activeTab) {
       case 'chats':
-        return <ChatLayout selectedConversationId={selectedConversationId} onSetToolbarControls={setToolbarControls} appMenuItems={appMenuItems} trafficLightSpace={isMac} />
+        return <ChatLayout
+          selectedConversationId={selectedConversationId}
+          onSetToolbarControls={setToolbarControls}
+          appMenuItems={appMenuItems}
+          trafficLightSpace={isMac}
+          onParticipantClick={(participantId) => {
+            console.log('[App] Participant clicked:', participantId)
+            setActiveTab('contacts')
+          }}
+        />
       case 'journal':
         return <JournalViewWrapper onSetToolbarControls={setToolbarControls} appMenuItems={appMenuItems} trafficLightSpace={isMac} />
       case 'contacts':
@@ -496,7 +518,14 @@ function AppContent() {
       case 'settings':
         return <SettingsView onLogout={logout} onNavigate={handleNavigate} appMenuItems={appMenuItems} trafficLightSpace={isMac} />
       default:
-        return <ChatLayout appMenuItems={appMenuItems} trafficLightSpace={isMac} />
+        return <ChatLayout
+          appMenuItems={appMenuItems}
+          trafficLightSpace={isMac}
+          onParticipantClick={(participantId) => {
+            console.log('[App] Participant clicked:', participantId)
+            setActiveTab('contacts')
+          }}
+        />
     }
   }
 
@@ -510,7 +539,7 @@ function AppContent() {
     </div>
 
     {/* Status Bar - hidden on mobile, shown on desktop */}
-    <div className="shrink-0 hidden md:block">
+    <div className="shrink-0 hidden md:block" style={{ WebkitAppRegion: 'no-drag' } as any}>
       <StatusBar
         version="v1.0.0"
         mcpStatus={{

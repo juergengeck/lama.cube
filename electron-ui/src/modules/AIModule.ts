@@ -268,15 +268,16 @@ export class AIModule implements Module {
       (this.aiAssistantPlan.taskManager as any).topicAnalysisModel = this.deps.topicAnalysisModel;
     }
 
+    // CRITICAL: Wire up StoryFactory BEFORE init() so AI contact creation is tracked in journal
+    // AIManager.createAI() is called during init() and needs StoryFactory to create Assemblies
+    const storyFactory = new StoryFactory(storeVersionedObject);
+    await this.aiAssistantPlan.setStoryFactory(storyFactory);
+    console.log('[AIModule] StoryFactory wired to AIAssistantPlan');
+
     // CRITICAL: Initialize AIAssistantPlan now that all dependencies are injected
     console.log('[AIModule] Initializing AIAssistantPlan...');
     await this.aiAssistantPlan.init();
     console.log('[AIModule] AIAssistantPlan initialized');
-
-    // Wire up StoryFactory for Assembly tracking (AI contact creation visible in journal)
-    const storyFactory = new StoryFactory(storeVersionedObject);
-    await this.aiAssistantPlan.setStoryFactory(storyFactory);
-    console.log('[AIModule] StoryFactory wired to AIAssistantPlan');
 
     // CRITICAL: Set aiAssistantModel on oneCore so LLMConfigPlan can access it dynamically
     // LLMConfigPlan accesses it via this.nodeOneCore.aiAssistantModel

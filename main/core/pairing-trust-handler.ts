@@ -3,6 +3,8 @@
  *
  * Handles trust establishment and profile sharing after successful pairing.
  * Based on one.leute's LeuteAccessRightsManager.trustPairingKeys implementation.
+ *
+ * Integrates with CAPlan for journal/audit trail visibility when certificates are issued.
  */
 
 import { getAllEntries } from '@refinio/one.core/lib/reverse-map-query.js'
@@ -11,6 +13,7 @@ import ProfileModel from '@refinio/one.models/lib/models/Leute/ProfileModel.js'
 import { createAccess } from '@refinio/one.core/lib/access.js'
 import { SET_ACCESS_MODE } from '@refinio/one.core/lib/storage-base-common.js'
 import { wait } from '@refinio/one.core/lib/util/promise.js'
+import type { CAPlan } from '@trust/core/plans/CAPlan.js'
 
 /**
  * Trust the keys of a newly paired remote peer.
@@ -23,6 +26,7 @@ import { wait } from '@refinio/one.core/lib/util/promise.js'
  * @param {string} remotePersonId - Remote person ID
  * @param {string} remoteInstanceId - Remote instance ID
  * @param {string} token - Pairing token
+ * @param {CAPlan} caPlan - Optional CAPlan for journal/audit trail (creates Story entries)
  */
 export async function trustPairingKeys(
   trust: any,
@@ -31,7 +35,8 @@ export async function trustPairingKeys(
   localInstanceId: any,
   remotePersonId: any,
   remoteInstanceId: any,
-  token: any
+  token: any,
+  caPlan?: CAPlan
 ) {
   console.log('[PairingTrust] 🔑 Starting key trust establishment for:', remotePersonId?.substring(0, 8))
 
@@ -87,6 +92,30 @@ export async function trustPairingKeys(
 
         // Refresh trust caches to apply the new certificate
         await trust.refreshCaches()
+
+        // Issue CA device certificate for journal visibility (if CAPlan available)
+        if (caPlan) {
+          try {
+            console.log('[PairingTrust] 📜 Issuing CA device certificate for journal...')
+            const caResult = await caPlan.issueDeviceCertificate({
+              subject: remotePersonId,
+              subjectPublicKey: key.publicSignKey,
+              trustLevel: 'full',
+              trustReason: 'Device pairing completed successfully',
+              verificationMethod: 'pairing-protocol'
+            })
+            // Handle union type: ExecutionResult has storyId, plain response has certificateId
+            const resultId = 'storyId' in caResult && caResult.storyId
+              ? caResult.storyId.toString().substring(0, 8)
+              : ('result' in caResult && caResult.result
+                ? caResult.result.certificateId.substring(0, 8)
+                : (caResult as any).certificateId?.substring(0, 8) || 'unknown')
+            console.log('[PairingTrust] ✅ CA certificate issued:', resultId)
+          } catch (caError) {
+            console.warn('[PairingTrust] ⚠️ Failed to issue CA certificate (non-fatal):', (caError as Error).message)
+            // Non-fatal - trust is still established via TrustKeysCertificate
+          }
+        }
 
         console.log('[PairingTrust] ✅ Key trust established successfully for:', remotePersonId?.substring(0, 8))
         return { success: true, profileHash: profile.loadedVersion }
@@ -170,6 +199,7 @@ export async function shareMainProfileWithPeer(leuteModel: any, remotePersonId: 
  * @param {string} params.remotePersonId - Remote person ID
  * @param {string} params.remoteInstanceId - Remote instance ID
  * @param {string} params.token - Pairing token
+ * @param {CAPlan} params.caPlan - Optional CAPlan for journal/audit trail
  */
 export async function completePairingTrust(params: any): Promise<any> {
   const {
@@ -180,7 +210,8 @@ export async function completePairingTrust(params: any): Promise<any> {
     localInstanceId,
     remotePersonId,
     remoteInstanceId,
-    token
+    token,
+    caPlan
   } = params
 
   console.log('[PairingTrust] 🤝 Completing trust establishment for pairing')
@@ -191,7 +222,7 @@ export async function completePairingTrust(params: any): Promise<any> {
   })
 
   try {
-    // Step 1: Trust the remote peer's keys
+    // Step 1: Trust the remote peer's keys (with optional CA certificate for journal)
     const trustResult = await trustPairingKeys(
       trust,
       initiatedLocally,
@@ -199,7 +230,8 @@ export async function completePairingTrust(params: any): Promise<any> {
       localInstanceId,
       remotePersonId,
       remoteInstanceId,
-      token
+      token,
+      caPlan
     )
 
     if (!trustResult.success) {

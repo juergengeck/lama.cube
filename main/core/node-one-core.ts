@@ -26,9 +26,13 @@ import { ModelInitializationPlan } from '../plans/ModelInitializationPlan.js';
 // CHUM handlers removed - CHUM is handled automatically by ConnectionsModel in one.core
 // TEMP: MemoryInitializationPlan disabled - MemoryServicesPlan not exported from memory.core
 // import { MemoryInitializationPlan } from '../plans/MemoryInitializationPlan.js';
-import { AIDiscoveryPlan } from '../plans/AIDiscoveryPlan.js';
-import { MessageListenersPlan } from '../plans/MessageListenersPlan.js';
+// LEGACY REMOVED: AIDiscoveryPlan and MessageListenersPlan - now handled by ModuleRegistry/AIModule
+// import { AIDiscoveryPlan } from '../plans/AIDiscoveryPlan.js';
+// import { MessageListenersPlan } from '../plans/MessageListenersPlan.js';
 import { MCPInitializationPlan } from '../plans/MCPInitializationPlan.js';
+import { getModuleRegistry } from '../registry/module-registry-init.js';
+import { CAPlan } from '@trust/core/plans/CAPlan.js';
+import { CAModel } from '@trust/core/models/CAModel.js';
 
 // Import ONE.core model classes at the top as singletons
 // These will be instantiated after platform loading but importing them
@@ -87,8 +91,7 @@ class NodeOneCore implements INodeOneCore {
   // CHUM handlers removed - handled automatically by ConnectionsModel
   // TEMP: MemoryInitializationPlan disabled
   // private memoryInitPlan: MemoryInitializationPlan;
-  private aiDiscoveryPlan: AIDiscoveryPlan;
-  private messageListenersPlan: MessageListenersPlan;
+  // LEGACY REMOVED: aiDiscoveryPlan and messageListenersPlan - now handled by ModuleRegistry/AIModule
   private mcpInitPlan: MCPInitializationPlan;
   // Required properties from interface
   initialized: boolean
@@ -116,6 +119,7 @@ class NodeOneCore implements INodeOneCore {
   userSettingsManager?: any  // UserSettingsManager for user preferences
   assemblyManager?: any  // AssemblyManager for knowledge assembly infrastructure
   knowledgeAssembly?: any  // KnowledgeAssembly for knowledge extraction
+  caPlan?: CAPlan  // Certificate Authority Plan for device certificates with journal visibility
 
   // Additional properties
   oneAuth: SingleUserNoAuth
@@ -167,8 +171,7 @@ class NodeOneCore implements INodeOneCore {
     // CHUM handlers removed - ConnectionsModel handles CHUM automatically
     // TEMP: MemoryInitializationPlan disabled
     // this.memoryInitPlan = new MemoryInitializationPlan();
-    this.aiDiscoveryPlan = new AIDiscoveryPlan();
-    this.messageListenersPlan = new MessageListenersPlan();
+    // LEGACY REMOVED: aiDiscoveryPlan and messageListenersPlan - now handled by ModuleRegistry/AIModule
     this.mcpInitPlan = new MCPInitializationPlan();
   }
 
@@ -185,6 +188,55 @@ class NodeOneCore implements INodeOneCore {
         percent,
         message
       });
+    }
+  }
+
+  /**
+   * Get or initialize the CAPlan for device certificate operations
+   * Lazily initializes with StoryFactory from JournalModule for journal visibility
+   */
+  async getCAPlan(): Promise<CAPlan | undefined> {
+    // Return cached if already initialized
+    if (this.caPlan) {
+      return this.caPlan;
+    }
+
+    // Try to get StoryFactory from JournalModule
+    const registry = getModuleRegistry();
+    if (!registry) {
+      console.warn('[NodeOneCore] ModuleRegistry not initialized, cannot create CAPlan');
+      return undefined;
+    }
+
+    const journalModule = (registry as any).modules?.find((m: any) => m.name === 'JournalModule');
+    const storyFactory = journalModule?.storyFactory;
+
+    if (!storyFactory) {
+      console.warn('[NodeOneCore] StoryFactory not available, creating CAPlan without journal support');
+    }
+
+    try {
+      // Create CAModel (requires leuteModel.trust for certificate operations)
+      if (!this.leuteModel?.trust) {
+        console.warn('[NodeOneCore] Cannot create CAPlan - trust manager not available');
+        return undefined;
+      }
+
+      const caModel = new CAModel(this.leuteModel.trust);
+      this.caPlan = new CAPlan(caModel);
+
+      // Set up StoryFactory if available (enables journal entries)
+      if (storyFactory) {
+        await this.caPlan.setStoryFactory(storyFactory);
+        console.log('[NodeOneCore] ✅ CAPlan initialized with StoryFactory for journal visibility');
+      } else {
+        console.log('[NodeOneCore] CAPlan initialized without StoryFactory');
+      }
+
+      return this.caPlan;
+    } catch (error) {
+      console.error('[NodeOneCore] Failed to initialize CAPlan:', (error as Error).message);
+      return undefined;
     }
   }
 
@@ -414,6 +466,9 @@ class NodeOneCore implements INodeOneCore {
             console.log('[NodeOneCore] 🔐 Step 1: Establishing trust with remote peer...')
             const { completePairingTrust } = await import('./pairing-trust-handler.js')
 
+            // Get CAPlan for device certificate issuance with journal visibility
+            const caPlan = await this.getCAPlan()
+
             const trustResult = await completePairingTrust({
               trust: this.leuteModel.trust,
               leuteModel: this.leuteModel,
@@ -422,7 +477,8 @@ class NodeOneCore implements INodeOneCore {
               localInstanceId,
               remotePersonId,
               remoteInstanceId,
-              token
+              token,
+              caPlan
             })
 
             if (trustResult.success) {
@@ -707,47 +763,28 @@ class NodeOneCore implements INodeOneCore {
   }
 
   /**
-   * Set up message sync - listen for user messages, process with AI, respond
+   * Set up message sync - DEPRECATED
+   *
+   * AI initialization and message listeners are now handled by ModuleRegistry/AIModule.
+   * This method is kept for backwards compatibility but only initializes non-AI services.
+   *
+   * @deprecated Use ModuleRegistry with AIModule instead
    */
   async setupMessageSync(): Promise<any> {
-    console.log('[NodeOneCore] Setting up event-based message sync using Plans...')
+    console.log('[NodeOneCore] setupMessageSync() called (DEPRECATED - AI now handled by ModuleRegistry)')
 
     if (!this.channelManager) {
-      console.warn('[NodeOneCore] ChannelManager not available for message sync')
+      console.warn('[NodeOneCore] ChannelManager not available')
       return
     }
 
-    // Send progress update
-    this.sendProgressUpdate('ai-discovery', 102, 'Initializing LLM manager...');
-
-    // Get LLM manager singleton
-    const { default: llmManager } = await import('../services/llm-manager-singleton.js')
-
-    // Initialize Topic Analysis Model for keyword/subject extraction
+    // Initialize Topic Analysis Model for keyword/subject extraction (still needed)
     if (!this.topicAnalysisModel) {
       this.sendProgressUpdate('ai-discovery', 103, 'Setting up topic analysis...');
       this.topicAnalysisModel = new TopicAnalysisModel(this.channelManager, this.topicModel)
       await this.topicAnalysisModel.init()
       console.log('[NodeOneCore] ✅ Topic Analysis Model initialized')
-
     }
-
-    // NOTE: Memory journal IPC (memory:journal:list, memory:journal:get) now uses
-    // lama.core's SubjectsPlan directly. The Subject type from lama.core is the source of truth.
-    // See: main/ipc/plans/memory.ts for the IPC handlers.
-
-    // Use AIDiscoveryPlan to discover Claude models and initialize AI
-    this.sendProgressUpdate('ai-discovery', 105, 'Discovering AI models...');
-    const aiServices = await this.aiDiscoveryPlan.execute({
-      nodeOneCore: this,
-      llmManager,
-      email: this.email,
-      channelManager: this.channelManager
-    })
-
-    // Assign AI services to instance
-    this.userSettingsManager = aiServices.userSettingsManager
-    this.aiAssistantModel = aiServices.aiAssistantModel
 
     // Use MCPInitializationPlan to initialize MCP services (LAZY - non-blocking)
     // MCP servers connect in background, app continues without waiting
@@ -764,22 +801,12 @@ class NodeOneCore implements INodeOneCore {
       nodeOneCore: this
     })
 
-    // Use MessageListenersPlan to create and start listeners
-    this.sendProgressUpdate('listeners', 108, 'Setting up message listeners...');
-    const listeners = await this.messageListenersPlan.execute({
-      channelManager: this.channelManager,
-      topicModel: this.topicModel,
-      llmManager,
-      aiAssistantModel: this.aiAssistantModel,
-      ownerId: this.ownerId
-    })
+    // NOTE: AI discovery, AIAssistantPlan, and message listeners are now initialized
+    // via ModuleRegistry in node-provisioning.ts after initializeModuleRegistry()
+    // The AIModule.init() sets up all AI services, and AIModule.startMessageListener()
+    // creates the AIMessageListener with the correctly initialized AIAssistantPlan
 
-    // Assign listeners to instance
-    this.aiMessageListener = listeners.aiMessageListener
-    this.peerMessageListener = listeners.peerMessageListener
-
-    this.sendProgressUpdate('complete', 110, 'Initialization complete');
-    console.log('[NodeOneCore] ✅ Event-based message sync set up using Plans')
+    console.log('[NodeOneCore] ✅ setupMessageSync() complete (MCP only - AI handled by ModuleRegistry)')
   }
   
   /**

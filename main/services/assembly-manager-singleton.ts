@@ -63,10 +63,10 @@ class AssemblyManagerSingleton {
   /**
    * Create Assembly for a chat topic
    *
-   * Called when a new chat is created. Uses direct assembly creation
-   * (no Plan required) for simple chat tracking.
+   * Called when a new chat is created. Uses entity-centric assembly creation
+   * where the topic is the entity being tracked.
    *
-   * @param topicId - Chat topic ID hash
+   * @param topicId - Chat topic ID hash (used as entity)
    * @param topicName - Chat topic name
    * @returns Assembly ID hash
    */
@@ -81,20 +81,37 @@ class AssemblyManagerSingleton {
 
       const myIdentityId = nodeOneCore.ownerId
 
-      // Use assembly.core's direct chat assembly creation
-      const result = await this.assemblyPlan.createChatAssembly(
-        topicId,
-        topicName,
-        topicId, // Use topicId as instanceVersion for now
-        myIdentityId
-      )
-
-      console.log(`[AssemblyManager] Assembly created:`, {
-        assemblyId: result.assemblyIdHash,
-        storyId: result.storyIdHash
+      // First create a Plan for chat tracking
+      const planResult = await this.assemblyPlan.createPlan({
+        id: 'ChatPlan',
+        name: 'ChatPlan',
+        demandPatterns: [],
+        supplyPatterns: [],
+        domain: 'chat'
       })
 
-      return result.assemblyIdHash
+      // Then create a Story documenting the chat creation
+      const storyResult = await this.assemblyPlan.createStory({
+        id: `ChatPlan.createChat(topicId:${topicId})`,
+        title: `Create Chat: ${topicName}`,
+        plan: planResult.idHash,
+        product: topicId as unknown as SHA256Hash<any>, // The topic is the product
+        instanceVersion: topicId as string,
+        owner: myIdentityId
+      })
+
+      // Create Assembly with entity=topicId (tracks the topic over time)
+      const assemblyResult = await this.assemblyPlan.createAssembly({
+        entity: topicId,  // The topic is the entity being tracked
+        storyRef: storyResult.idHash
+      })
+
+      console.log(`[AssemblyManager] Assembly created:`, {
+        assemblyId: assemblyResult.idHash,
+        storyId: storyResult.idHash
+      })
+
+      return assemblyResult.idHash
     } catch (error) {
       console.error('[AssemblyManager] Failed to create chat Assembly:', error)
       throw error

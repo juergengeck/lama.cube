@@ -3,23 +3,22 @@
  *
  * Minimal implementation following ONE principles:
  * - Plan objects contain method and parameters
- * - Plans are evaluated and results stored in Story objects
+ * - Plans are evaluated and results captured in ExecutionResult
  *
  * This is a temporary inline version until we fully migrate to refinio.api package.
  */
 
-export interface StoryResult<T = any> {
-  success: boolean;
+/**
+ * Execution Result - Plan + Product
+ * On error, execute() throws - no error property needed.
+ */
+export interface ExecutionResult<T = any> {
   plan: {
     plan: string;
     method: string;
     params: any;
   };
-  data?: T;
-  error?: {
-    code: string;
-    message: string;
-  };
+  product: T;
   timestamp: number;
   executionTime?: number;
 }
@@ -31,56 +30,30 @@ export class SimplePlanRegistry {
     this.plans.set(name, plan);
   }
 
-  async execute<T = any>(planName: string, methodName: string, params?: any): Promise<StoryResult<T>> {
+  async execute<T = any>(planName: string, methodName: string, params?: any): Promise<ExecutionResult<T>> {
     const startTime = Date.now();
     const planTransaction = { plan: planName, method: methodName, params };
 
-    try {
-      const plan = this.plans.get(planName);
-      if (!plan) {
-        return {
-          success: false,
-          plan: planTransaction,
-          error: { code: 'PLAN_NOT_FOUND', message: `Plan '${planName}' not found` },
-          timestamp: Date.now(),
-          executionTime: Date.now() - startTime
-        };
-      }
-
-      const method = plan[methodName];
-      if (typeof method !== 'function') {
-        return {
-          success: false,
-          plan: planTransaction,
-          error: { code: 'METHOD_NOT_FOUND', message: `Method '${methodName}' not found` },
-          timestamp: Date.now(),
-          executionTime: Date.now() - startTime
-        };
-      }
-
-      const result = Array.isArray(params)
-        ? await method.apply(plan, params)
-        : await method.call(plan, params);
-
-      return {
-        success: true,
-        plan: planTransaction,
-        data: result,
-        timestamp: Date.now(),
-        executionTime: Date.now() - startTime
-      };
-    } catch (error) {
-      return {
-        success: false,
-        plan: planTransaction,
-        error: {
-          code: 'EXECUTION_ERROR',
-          message: error instanceof Error ? error.message : String(error)
-        },
-        timestamp: Date.now(),
-        executionTime: Date.now() - startTime
-      };
+    const plan = this.plans.get(planName);
+    if (!plan) {
+      throw new Error(`Plan '${planName}' not found`);
     }
+
+    const method = plan[methodName];
+    if (typeof method !== 'function') {
+      throw new Error(`Method '${methodName}' not found on plan '${planName}'`);
+    }
+
+    const result = Array.isArray(params)
+      ? await method.apply(plan, params)
+      : await method.call(plan, params);
+
+    return {
+      plan: planTransaction,
+      product: result,
+      timestamp: Date.now(),
+      executionTime: Date.now() - startTime
+    };
   }
 
   listPlans(): string[] {
@@ -92,11 +65,8 @@ export class SimplePlanRegistry {
     return new Proxy({} as any, {
       get(_target, methodName: string) {
         return async (...args: any[]) => {
-          const story = await registry.execute(planName, methodName, args);
-          if (!story.success) {
-            throw new Error(story.error?.message || 'Unknown error');
-          }
-          return story.data;
+          const result = await registry.execute(planName, methodName, args);
+          return result.product;
         };
       }
     }) as T;

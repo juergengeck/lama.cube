@@ -6,6 +6,7 @@
  */
 
 import { ModuleRegistry } from '@refinio/refinio.api/plan-system';
+import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
 import {
   CoreModule,
   AIModule,
@@ -22,6 +23,9 @@ import type { NodeOneCore } from '../types/one-core.js';
 
 // Singleton registry instance
 let moduleRegistry: ModuleRegistry | null = null;
+
+// Store AIModule instance for later access (e.g., to start message listener)
+let aiModuleInstance: AIModule | null = null;
 
 /**
  * Initialize ModuleRegistry with shared modules from lama.core
@@ -80,7 +84,8 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   moduleRegistry.register(new CoreModule(commServerUrl));
 
   console.log('[ModuleRegistryInit] Registering AIModule...');
-  moduleRegistry.register(new AIModule(llmPlatform, llmConfigAdapter));
+  aiModuleInstance = new AIModule(llmPlatform, llmConfigAdapter);
+  moduleRegistry.register(aiModuleInstance);
 
   console.log('[ModuleRegistryInit] Registering ChatModule...');
   moduleRegistry.register(new ChatModule());
@@ -111,6 +116,11 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
     console.warn('[ModuleRegistryInit] Warning: Unsatisfied demands:', unsatisfied.map(d => d.targetType));
   }
 
+  // Create StoryFactory and auto-supply to all modules that demand it
+  // This must be done before initAll() so JournalModule, AIModule, ChatModule receive it
+  console.log('[ModuleRegistryInit] Setting up StoryFactory...');
+  moduleRegistry.setStorageFunction(storeVersionedObject);
+
   // Initialize all modules
   console.log('[ModuleRegistryInit] Initializing all modules...');
   await moduleRegistry.initAll();
@@ -127,6 +137,13 @@ export function getModuleRegistry(): ModuleRegistry | null {
 }
 
 /**
+ * Get the AIModule instance (for starting message listener after init)
+ */
+export function getAIModule(): AIModule | null {
+  return aiModuleInstance;
+}
+
+/**
  * Shutdown the module registry
  */
 export async function shutdownModuleRegistry(): Promise<void> {
@@ -134,6 +151,7 @@ export async function shutdownModuleRegistry(): Promise<void> {
     console.log('[ModuleRegistryInit] Shutting down module registry...');
     await moduleRegistry.shutdownAll();
     moduleRegistry = null;
+    aiModuleInstance = null;
     console.log('[ModuleRegistryInit] Module registry shutdown complete');
   }
 }

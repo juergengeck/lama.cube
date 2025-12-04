@@ -362,25 +362,11 @@ class NodeProvisioning {
 
     console.log('[NodeProvisioning] Node.js ONE.core initialized with ID:', result.ownerId)
 
-    // Set up message sync - initializes AI assistant model and message listeners
-    const tBeforeMessageSync = performance.now();
-    console.log('[NodeProvisioning] ⏱️ Starting setupMessageSync at +${(tBeforeMessageSync - t0).toFixed(1)}ms');
-
-    // Send progress update to UI
-    onProgress('ai-discovery', 105, 'Discovering AI models...');
-
-    try {
-      await nodeOneCore.setupMessageSync()
-      const tAfterMessageSync = performance.now();
-      console.log('[NodeProvisioning] ⏱️ setupMessageSync completed after', (tAfterMessageSync - tBeforeMessageSync).toFixed(1), 'ms');
-      console.log('[NodeProvisioning] Message sync initialized - AI assistant ready')
-
-      // Final progress update
-      onProgress('complete', 110, 'AI assistant ready');
-    } catch (error) {
-      console.error('[NodeProvisioning] Failed to setup message sync:', error)
-      throw error // This is critical - fail provisioning if AI setup fails
-    }
+    // NOTE: Legacy setupMessageSync() removed - AI initialization now handled by ModuleRegistry
+    // The AIModule.init() sets up all AI services, and startMessageListener() is called
+    // after ModuleRegistry initialization (see below)
+    console.log('[NodeProvisioning] AI initialization will be handled by ModuleRegistry');
+    onProgress('ai-discovery', 105, 'AI initialization delegated to ModuleRegistry...');
 
     // Initialize memory tools with NodeOneCore reference
     const tBeforeMCP = performance.now();
@@ -434,9 +420,21 @@ class NodeProvisioning {
 
     // Initialize Module System with shared modules from lama.core
     try {
-      const { initializeModuleRegistry } = await import('../registry/module-registry-init.js')
+      const { initializeModuleRegistry, getAIModule } = await import('../registry/module-registry-init.js')
       await initializeModuleRegistry(nodeOneCore)
       console.log('[NodeProvisioning] ✅ Module Registry initialized with shared modules')
+
+      // Start AI message listener after ModuleRegistry init
+      // This ensures we use the correct AIAssistantPlan instance with registered topics
+      const aiModule = getAIModule()
+      if (aiModule) {
+        console.log('[NodeProvisioning] Starting AI message listener...')
+        await aiModule.startMessageListener(nodeOneCore.ownerId)
+        console.log('[NodeProvisioning] ✅ AI message listener started')
+        onProgress('complete', 110, 'AI assistant ready');
+      } else {
+        console.warn('[NodeProvisioning] AIModule not available - message listener not started')
+      }
     } catch (error) {
       console.error('[NodeProvisioning] Failed to initialize Module Registry:', error)
       // Non-critical - allow app to continue

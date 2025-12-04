@@ -34,7 +34,8 @@
       "@models/*": ["./main/models/*"],
       "@refinio/one.core/*": ["./node_modules/@refinio/one.core/*"],
       "@refinio/one.models/*": ["./node_modules/@refinio/one.models/*"],
-      "@assembly/core/*": ["./node_modules/@assembly/core/*"]
+      "@assembly/core/*": ["./node_modules/@assembly/core/*"],
+      "@trust/core/*": ["./node_modules/@trust/core/*"]
     }
   },
   "include": [

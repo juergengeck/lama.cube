@@ -512,18 +512,28 @@ export function SettingsView({ onLogout, onNavigate, appMenuItems = [], trafficL
       {(viewingInstanceId || userSettings?.instanceId) && (
         <Card className="mb-4 bg-blue-500/10 border-blue-500">
           <CardContent className="p-4">
-            <div className="flex items-start justify-between">
-              <div className="flex items-start space-x-3">
-                <Monitor className="h-5 w-5 text-blue-500 mt-0.5" />
-                <div>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start space-x-3 min-w-0 flex-1">
+                <Monitor className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
                   <div className="font-semibold text-blue-500">
                     {viewingInstanceId ? `Viewing Settings for: ${viewingInstanceName}` : 'Current Instance Settings'}
                   </div>
                   <div className="text-sm text-muted-foreground mt-1">
                     {viewingInstanceId ? (
-                      <span>Instance ID: <code className="text-xs bg-muted px-1 py-0.5 rounded">{viewingInstanceId}</code></span>
+                      <span className="flex items-center gap-1 flex-wrap">
+                        <span>Instance ID:</span>
+                        <code className="text-xs bg-muted px-1 py-0.5 rounded break-all">
+                          {viewingInstanceId}
+                        </code>
+                      </span>
                     ) : userSettings?.instanceId ? (
-                      <span>Your Settings Instance: <code className="text-xs bg-muted px-1 py-0.5 rounded">{userSettings.instanceId.substring(0, 20)}...</code></span>
+                      <span className="flex items-center gap-1 flex-wrap">
+                        <span>Instance ID:</span>
+                        <code className="text-xs bg-muted px-1 py-0.5 rounded break-all">
+                          {userSettings.instanceId}
+                        </code>
+                      </span>
                     ) : null}
                   </div>
                   {userSettings?.instanceId && !viewingInstanceId && (
@@ -537,6 +547,7 @@ export function SettingsView({ onLogout, onNavigate, appMenuItems = [], trafficL
                 <Button
                   variant="ghost"
                   size="sm"
+                  className="flex-shrink-0"
                   onClick={() => {
                     setViewingInstanceId(null)
                     setViewingInstanceName('Unknown Device')

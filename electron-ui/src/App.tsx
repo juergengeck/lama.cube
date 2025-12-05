@@ -369,7 +369,7 @@ function AppContent() {
     if (conversationId) {
       setSelectedConversationId(conversationId)
     }
-    
+
     // Store navigation context for settings
     if (tab === 'settings' && section) {
       // We'll pass this to SettingsView
@@ -427,7 +427,8 @@ function AppContent() {
           // Navigate to chat
           setSelectedConversationId(topicId)
           setActiveTab('chats')
-        }} />
+        }}
+        />
       case 'devices':
         return <DevicesView
           adapter={createElectronDeviceAdapter()}
@@ -503,7 +504,10 @@ function AppContent() {
           }
           setSelectedConversationId(topicId)
           setActiveTab('chats')
-        }} appMenuItems={appMenuItems} trafficLightSpace={isMac} />
+        }}
+          appMenuItems={appMenuItems}
+          trafficLightSpace={isMac}
+        />
       case 'devices':
         return <DevicesView
           adapter={createElectronDeviceAdapter()}

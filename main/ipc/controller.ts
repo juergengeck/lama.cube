@@ -189,6 +189,8 @@ class IPCController {
     this.handle('connection:getConnectionStatus', connectionPlans.getConnectionStatus);
     this.handle('connection:createPairingInvitation', connectionPlans.createPairingInvitation);
     this.handle('connection:acceptPairingInvitation', connectionPlans.acceptPairingInvitation);
+    this.handle('connection:createWebRTCInvitation', connectionPlans.createWebRTCInvitation);
+    this.handle('connection:acceptWebRTCInvitation', connectionPlans.acceptWebRTCInvitation);
     this.handle('connection:getDataStats', connectionPlans.getDataStats);
 
     // Group chat plans (certificate-based group chat establishment)

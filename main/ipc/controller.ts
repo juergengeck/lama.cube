@@ -39,6 +39,7 @@ import mcpPlans from './plans/mcp.js';
 import createUserSettingsPlans from './plans/user-settings.js';
 // import { registerAssemblyPlans } from './plans/assembly.js'; // Disabled - migrating to assembly.core
 import { registerDirectAssemblyPlans } from './plans/assembly-direct.js';
+import * as transportPlans from './plans/transport.js';
 
 // Node error type
 interface NodeError extends Error {
@@ -98,6 +99,9 @@ class IPCController {
 
     // Register all plans
     this.registerPlans();
+
+    // Initialize transport plan
+    transportPlans.initTransportPlan();
 
     // Auto-initialize QuicVC discovery (waits for nodeOneCore)
     void autoInitializeDiscovery();
@@ -379,6 +383,12 @@ class IPCController {
 
     // Assembly plans (Direct creation using assembly.core)
     registerDirectAssemblyPlans();
+
+    // Transport plans
+    this.handle('transport:createWebRTCInvite', transportPlans.createWebRTCInvite);
+    this.handle('transport:completeWebRTCInvite', transportPlans.completeWebRTCInvite);
+    this.handle('transport:acceptWebRTCInvite', transportPlans.acceptWebRTCInvite);
+    this.handle('transport:cancelWebRTCInvite', transportPlans.cancelWebRTCInvite);
 
     // Note: app:clearData is handled in lama-electron-shadcn.js
 

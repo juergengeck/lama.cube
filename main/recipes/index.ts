@@ -41,14 +41,7 @@ import { UserSettingsRecipe } from './user-settings-recipe.js'
 import { AssemblyCoreRecipes } from '@assembly/core'
 
 // Cube.core recipes - CubeObject, Dimension, DimensionValue, QueryResult, DimensionState
-import {
-    CubeObjectRecipe,
-    DimensionRecipe,
-    DimensionValueRecipe,
-    QueryResultRecipe,
-    DimensionStateRecipe,
-    DimensionStateReferenceRecipe
-} from '@cube/core'
+import { CubeCoreRecipes } from '@cube/core'
 
 const LLMSettingsRecipe = {
     $type$: 'Recipe' as const,
@@ -199,12 +192,7 @@ const LamaRecipes = [
     // Assembly.core recipes (Demand/Supply/Assembly/Plan/Story)
     ...AssemblyCoreRecipes,
     // Cube.core recipes
-    CubeObjectRecipe,
-    DimensionRecipe,
-    DimensionValueRecipe,
-    QueryResultRecipe,
-    DimensionStateRecipe,
-    DimensionStateReferenceRecipe
+    ...CubeCoreRecipes
 ]
 
 export { LamaRecipes }

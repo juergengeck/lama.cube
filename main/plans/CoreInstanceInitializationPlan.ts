@@ -10,7 +10,7 @@
  * - Store credentials for reuse
  */
 
-import type { Recipe } from '@refinio/one.core/lib/recipes.js';
+import type { Recipe, Instance } from '@refinio/one.core/lib/recipes.js';
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
 import type { Person } from '@refinio/one.core/lib/recipes.js';
 
@@ -22,6 +22,7 @@ export interface CoreInitContext {
 
 export interface CoreInitResult {
   ownerId: SHA256IdHash<Person>;
+  instanceId: SHA256IdHash<Instance>;
   email: string;
   instanceName: string;
 }
@@ -61,8 +62,8 @@ export class CoreInstanceInitializationPlan {
     // Step 9: Store credentials if new instance
     await this.storeCredentials(credentials, modules.SettingsStore);
 
-    // Step 10: Get owner ID
-    const result = await this.getOwnerInfo(credentials, modules.getInstanceOwnerIdHash);
+    // Step 10: Get owner and instance IDs
+    const result = await this.getOwnerInfo(credentials, modules.getInstanceOwnerIdHash, modules.getInstanceIdHash);
 
     console.log('[CoreInstanceInitializationPlan] ✅ ONE.core instance initialized');
     return result;
@@ -89,7 +90,7 @@ export class CoreInstanceInitializationPlan {
   private async importCoreModules() {
     console.log('[CoreInstanceInitializationPlan] Importing ONE.core modules...');
 
-    const { closeInstance, initInstance, getInstanceOwnerIdHash } = await import('@refinio/one.core/lib/instance.js');
+    const { closeInstance, initInstance, getInstanceOwnerIdHash, getInstanceIdHash } = await import('@refinio/one.core/lib/instance.js');
     const { SettingsStore } = await import('@refinio/one.core/lib/system/settings-store.js');
     const { setBaseDirOrName } = await import('@refinio/one.core/lib/system/storage-base.js');
 
@@ -97,6 +98,7 @@ export class CoreInstanceInitializationPlan {
       closeInstance,
       initInstance,
       getInstanceOwnerIdHash,
+      getInstanceIdHash,
       SettingsStore,
       setBaseDirOrName
     };
@@ -205,18 +207,24 @@ export class CoreInstanceInitializationPlan {
     }
   }
 
-  private async getOwnerInfo(credentials: any, getInstanceOwnerIdHash: any): Promise<CoreInitResult> {
-    console.log('[CoreInstanceInitializationPlan] Getting owner ID...');
+  private async getOwnerInfo(credentials: any, getInstanceOwnerIdHash: any, getInstanceIdHash: any): Promise<CoreInitResult> {
+    console.log('[CoreInstanceInitializationPlan] Getting owner and instance IDs...');
 
     const ownerId = getInstanceOwnerIdHash();
     if (!ownerId) {
       throw new Error('Failed to get instance owner ID after initialization');
     }
 
-    console.log('[CoreInstanceInitializationPlan] ✅ Owner ID retrieved');
+    const instanceId = getInstanceIdHash();
+    if (!instanceId) {
+      throw new Error('Failed to get instance ID after initialization');
+    }
+
+    console.log('[CoreInstanceInitializationPlan] ✅ Owner ID and Instance ID retrieved');
 
     return {
       ownerId,
+      instanceId,
       email: credentials.email,
       instanceName: credentials.instanceName
     };

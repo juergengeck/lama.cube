@@ -9,8 +9,8 @@
  * providing a comprehensive audit trail of AI operations.
  */
 
-import { JournalPlan } from '@lama/core/plans/JournalPlan.js';
 import type { LLMCallMetadata } from '@lama/core/plans/JournalPlan.js';
+import { JournalPlan } from '@lama/core/plans/JournalPlan.js';
 import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
 import { getInstanceIdHash } from '@refinio/one.core/lib/instance.js';
 import { calculateIdHashOfObj } from '@refinio/one.core/lib/util/object.js';
@@ -169,27 +169,34 @@ const journalHandlers = {
         options: AssemblyQueryOptions
     ) {
         try {
-            // Get JournalPlan from JournalModule (via registry)
-            // JournalModule is registered in module-registry-init.ts and supplies JournalPlan
-            const { JournalModule } = await import('@lama/core/modules');
+            // Get JournalModule from registry using getModule()
             const registry = getModuleRegistry();
             if (!registry) {
                 throw new Error('ModuleRegistry not initialized');
             }
 
-            // JournalModule exposes journalPlan publicly after init
-            // The module instance is accessible via the registry's internal modules array
-            // We need to get it via the supply mechanism or find it directly
-            const registryAny = registry as any;
-            const journalModule = registryAny.modules?.find((m: any) => m.name === 'JournalModule');
+            // Get JournalModule using the new getModule() method
+            const journalModule = registry.getModule<any>('JournalModule');
 
-            if (!journalModule || !journalModule.journalPlan) {
-                console.warn('[Journal IPC] JournalModule not initialized yet, returning empty results');
+            if (!journalModule) {
+                console.warn('[Journal IPC] JournalModule not found in registry');
                 return {
                     success: true,
                     data: []
                 };
             }
+
+            if (!journalModule.journalPlan) {
+                console.warn('[Journal IPC] JournalModule.journalPlan not initialized yet');
+                return {
+                    success: true,
+                    data: []
+                };
+            }
+
+            // Log AssemblyDimension stats for debugging
+            const stats = journalModule.assemblyDimension?.getStats?.();
+            console.log(`[Journal IPC] AssemblyDimension stats:`, stats);
 
             const assembliesWithStories = await journalModule.journalPlan.queryAssemblies(options);
 

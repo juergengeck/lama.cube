@@ -227,33 +227,34 @@ const AssemblyRecipe = {
     name: 'Assembly',
     rule: [
         {
-            // What capability is offered - THIS IS THE ID
-            itemprop: 'supply',
+            // Entity reference - ID property (any ID object type)
+            // Assembly is uniquely identified by which entity it tracks
+            itemprop: 'entity',
             itemtype: {
                 type: 'referenceToId',
-                allowedTypes: new Set(['Supply'])
+                allowedTypes: new Set(['*']) // Accept any ID object
             },
             isId: true
         },
         {
-            // SPECIFIC VERSION of the instance (version hash, not ID hash)
-            itemprop: 'instance',
-            itemtype: {
-                type: 'referenceToObj',
-                allowedTypes: new Set(['Instance'])
-            }
-        },
-        {
-            // What constraints must be satisfied
-            itemprop: 'demand',
+            // Story reference - what changed in this version
+            // NOT the ID - can change between versions
+            itemprop: 'storyRef',
             itemtype: {
                 type: 'referenceToId',
-                allowedTypes: new Set(['Demand'])
+                allowedTypes: new Set(['Story'])
             }
         },
         {
+            // When this assembly version was created
             itemprop: 'created',
             itemtype: { type: 'integer' }
+        },
+        {
+            // Optional display title (overrides Story.title for display)
+            itemprop: 'title',
+            itemtype: { type: 'string' },
+            optional: true
         }
     ]
 };

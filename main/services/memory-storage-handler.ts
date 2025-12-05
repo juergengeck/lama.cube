@@ -185,7 +185,7 @@ export class MemoryStorageHandler {
                         for (const attachmentHash of message.attachments) {
                             const assembly = await this.nodeOneCore.loadObject(attachmentHash);
 
-                            if (assembly && assembly.$type$ === 'CubeAssembly') {
+                            if (assembly && assembly.$type$ === 'Assembly') {
                                 // Extract memory content from message text
                                 const messageText = message.text || '';
 

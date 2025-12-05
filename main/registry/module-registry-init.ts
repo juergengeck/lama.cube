@@ -18,6 +18,7 @@ import {
   JournalModule,
   DeviceModule
 } from '@lama/core/modules';
+import { InstancePlan } from '@lama/core/plans/InstancePlan.js';
 import { ElectronLLMPlatform, createElectronLLMConfigAdapter } from '../adapters/electron-llm-platform.js';
 import type { NodeOneCore } from '../types/one-core.js';
 
@@ -125,6 +126,29 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   console.log('[ModuleRegistryInit] Initializing all modules...');
   await moduleRegistry.initAll();
   console.log('[ModuleRegistryInit] ✅ All modules initialized successfully');
+
+  // Create retroactive Assemblies for Instance and Owner (bootstrap problem: created before StoryFactory)
+  // Now that StoryFactory is ready, record instance creation in journal
+  try {
+    const storyFactory = moduleRegistry.getStoryFactory();
+    if (storyFactory && nodeOneCore.ownerId && nodeOneCore.instanceId && nodeOneCore.instanceName) {
+      const instancePlan = new InstancePlan({
+        storyFactory,
+        ownerId: nodeOneCore.ownerId,
+        instanceId: nodeOneCore.instanceId,
+        instanceName: nodeOneCore.instanceName
+      });
+      await instancePlan.init();
+      await instancePlan.recordInstanceCreation();
+      console.log('[ModuleRegistryInit] ✅ Instance and Owner assemblies created in journal');
+    } else {
+      console.warn('[ModuleRegistryInit] Cannot record instance creation - missing StoryFactory or nodeOneCore info');
+      console.warn('[ModuleRegistryInit] ownerId:', !!nodeOneCore.ownerId, 'instanceId:', !!nodeOneCore.instanceId, 'instanceName:', !!nodeOneCore.instanceName);
+    }
+  } catch (error) {
+    console.error('[ModuleRegistryInit] Failed to record instance creation:', error);
+    // Non-critical - continue without instance assembly
+  }
 
   return moduleRegistry;
 }

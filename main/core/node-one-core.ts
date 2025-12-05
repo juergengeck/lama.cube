@@ -412,11 +412,13 @@ class NodeOneCore implements INodeOneCore {
 
     // Assign result to instance
     this.ownerId = result.ownerId
+    this.instanceId = result.instanceId
     this.email = result.email
     this.instanceName = result.instanceName
 
     console.log('[NodeOneCore] ✅ ONE.core instance initialized using Plan')
     console.log('[NodeOneCore] Owner ID:', this.ownerId)
+    console.log('[NodeOneCore] Instance ID:', this.instanceId)
     console.log('[NodeOneCore] Instance name:', this.instanceName)
   }
 
@@ -1275,6 +1277,14 @@ class NodeOneCore implements INodeOneCore {
    */
   async shutdown(): Promise<any> {
     console.log('[NodeOneCore] Shutting down...')
+
+    // Shutdown ModuleRegistry first (saves dimension state)
+    try {
+      const { shutdownModuleRegistry } = await import('../registry/module-registry-init.js')
+      await shutdownModuleRegistry()
+    } catch (e) {
+      console.warn('[NodeOneCore] ModuleRegistry shutdown error:', e)
+    }
 
     // Stop message listeners
     if (this.aiMessageListener) {

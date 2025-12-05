@@ -63,7 +63,6 @@ export class ConnectionModule implements Module {
 
   constructor(
     private oneCore: any, // ONE.core instance (for ConnectionPlan)
-    private commServerUrl: string,
     private webUrl: string
   ) {}
 
@@ -106,6 +105,7 @@ export class ConnectionModule implements Module {
     // Connection plan (platform-agnostic from connection.core)
     // Now automatically handles trust establishment via integrated TrustPlan
     // and fires callbacks for platform-specific UI updates
+    // Note: WebRTC transport is now handled by transport.core/transport.node
     this.connectionPlan = new ConnectionPlan(
       this.oneCore,
       undefined,     // No storage provider for browser
@@ -113,9 +113,7 @@ export class ConnectionModule implements Module {
       undefined,     // No discovery config for browser
       trustDeps,     // Trust dependencies - enables automatic trust after pairing
       pairingCallbacks,  // Platform-specific UI updates
-      this.deps.trustPlan,    // trust.core TrustPlan for automatic trust level assignment
-      undefined,     // No storyFactory
-      this.commServerUrl  // CommServer URL for WebRTC signaling
+      this.deps.trustPlan    // trust.core TrustPlan for automatic trust level assignment
     );
 
     // Group chat plan dependencies (platform-agnostic from connection.core)

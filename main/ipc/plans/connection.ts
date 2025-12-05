@@ -211,25 +211,6 @@ async function acceptPairingInvitation(event: IpcMainInvokeEvent, invitationUrl:
 }
 
 /**
- * Create a WebRTC pairing invitation
- * Delegates to ConnectionPlan.createWebRTCInvitation
- */
-async function createWebRTCInvitation(event: IpcMainInvokeEvent, params?: any) {
-  const handler = getHandler();
-  const webUrl = getWebUrl();
-  return await handler.createWebRTCInvitation({ ...params, webUrl });
-}
-
-/**
- * Accept a WebRTC pairing invitation
- * Delegates to ConnectionPlan.acceptWebRTCInvitation
- */
-async function acceptWebRTCInvitation(event: IpcMainInvokeEvent, params: { invitationUrl: string }) {
-  const handler = getHandler();
-  return await handler.acceptWebRTCInvitation(params);
-}
-
-/**
  * Get connection status
  * Delegates to one.models ConnectionsModel
  */
@@ -323,8 +304,6 @@ export default {
   getInstances,
   createPairingInvitation,
   acceptPairingInvitation,
-  createWebRTCInvitation,
-  acceptWebRTCInvitation,
   getConnectionStatus,
   getDataStats,
   subscribeToEvents

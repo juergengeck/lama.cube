@@ -97,7 +97,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // File operations
   fileExists: (filePath) => ipcRenderer.invoke('file:exists', filePath),
   getFileSize: (filePath) => ipcRenderer.invoke('file:size', filePath),
-  
+
+  // Transport APIs
+  transport: {
+    createWebRTCInvite: (params) => ipcRenderer.invoke('transport:createWebRTCInvite', params),
+    completeWebRTCInvite: (params) => ipcRenderer.invoke('transport:completeWebRTCInvite', params),
+    acceptWebRTCInvite: (params) => ipcRenderer.invoke('transport:acceptWebRTCInvite', params),
+    cancelWebRTCInvite: (params) => ipcRenderer.invoke('transport:cancelWebRTCInvite', params),
+  },
+
   // Navigation from menu
   on: (channel, callback) => {
     const validChannels = [

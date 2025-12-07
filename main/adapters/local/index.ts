@@ -7,16 +7,22 @@
 
 export { ONNXEmbeddingProvider } from './ONNXEmbeddingProvider.js';
 export { OllamaEmbeddingProvider } from './OllamaEmbeddingProvider.js';
+export { ONNXWhisperProvider } from './ONNXWhisperProvider.js';
 
 // Re-export types from @local/core for convenience
 export type {
   LocalEmbeddingProvider,
+  LocalWhisperProvider,
   LocalInferenceProvider,
   ModelId,
   ModelStatus,
   ModelLoadProgress,
   EmbeddingModel,
-  ModelInfo
+  ModelInfo,
+  TranscribeOptions,
+  TranscribeResult,
+  TranscribeSegment,
+  TranscribeChunk
 } from '@local/core';
 
 export { MODELS, getBundledModels, getDownloadableModels } from '@local/core';

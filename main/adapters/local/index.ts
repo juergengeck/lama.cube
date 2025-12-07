@@ -6,6 +6,7 @@
  */
 
 export { ONNXEmbeddingProvider } from './ONNXEmbeddingProvider.js';
+export { OllamaEmbeddingProvider } from './OllamaEmbeddingProvider.js';
 
 // Re-export types from @local/core for convenience
 export type {

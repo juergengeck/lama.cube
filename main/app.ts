@@ -24,6 +24,7 @@ import ipcController from './ipc/controller.js';
 import llmManager from './services/llm-manager-singleton.js';
 import attachmentService from './services/attachment-service.js';
 import assemblyManagerSingleton from './services/assembly-manager-singleton.js';
+import { getInferenceManager } from './core/inference-manager.js';
 
 class MainApplication {
   public mainWindow: any;
@@ -61,6 +62,19 @@ class MainApplication {
       } catch (error) {
         console.warn('[MainApp] LLM Manager initialization failed (non-critical):', error)
         // Continue without LLM - can be initialized later
+      }
+
+      // Initialize Inference Manager for local embeddings
+      try {
+        const inferenceManager = getInferenceManager()
+        inferenceManager.onProgress = (progress) => {
+          console.log(`[MainApp] Inference loading: ${progress.stage} ${progress.percent}%`)
+        }
+        await inferenceManager.init({ preferLocal: true })
+        console.log('[MainApp] Inference Manager initialized with local ONNX embeddings')
+      } catch (error) {
+        console.warn('[MainApp] Inference Manager initialization failed (non-critical):', error)
+        // Continue without inference - can be initialized later
       }
 
       // Set up state change listeners
@@ -157,6 +171,16 @@ class MainApplication {
 
   async shutdown(): Promise<any> {
     console.log('[MainApp] Shutting down...')
+
+    // Shutdown Inference Manager
+    try {
+      const inferenceManager = getInferenceManager()
+      if (inferenceManager.initialized) {
+        await inferenceManager.shutdown()
+      }
+    } catch (error) {
+      console.error('[MainApp] Error shutting down Inference Manager:', error)
+    }
 
     // Shutdown LLM Manager
     try {

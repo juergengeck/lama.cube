@@ -6,6 +6,7 @@
  */
 
 import { ONNXEmbeddingProvider } from '../adapters/local/ONNXEmbeddingProvider.js';
+import { OllamaEmbeddingProvider } from '../adapters/local/OllamaEmbeddingProvider.js';
 import type {
   LocalEmbeddingProvider,
   ModelId,
@@ -88,11 +89,11 @@ export class InferenceManager {
       await this.embeddingProvider.load();
       console.log('[InferenceManager] ONNX embedding provider loaded');
     } else {
-      // Future: Use OllamaLocalProvider
-      // For now, just use ONNX as fallback
-      console.log('[InferenceManager] Ollama not yet implemented, using ONNX fallback');
-      const modelId = config.embeddingModel || 'nomic-embed-text-v1.5-q4';
-      this.embeddingProvider = new ONNXEmbeddingProvider(modelId);
+      // Use Ollama for embeddings (requires Ollama running)
+      const ollamaModel = 'nomic-embed-text'; // Ollama model name
+      console.log(`[InferenceManager] Using Ollama model: ${ollamaModel}`);
+
+      this.embeddingProvider = new OllamaEmbeddingProvider(ollamaModel);
 
       if (this.onProgress) {
         this.embeddingProvider.onProgress = this.onProgress;
@@ -102,6 +103,7 @@ export class InferenceManager {
       }
 
       await this.embeddingProvider.load();
+      console.log('[InferenceManager] Ollama embedding provider loaded');
     }
 
     this._initialized = true;

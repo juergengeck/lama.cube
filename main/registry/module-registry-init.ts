@@ -5,8 +5,9 @@
  * Replaces unified-plan-system-init.ts with ModuleRegistry pattern
  */
 
-import { ModuleRegistry } from '@refinio/refinio.api/plan-system';
+import { ModuleRegistry } from '@refinio/api/plan-system';
 import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
+import { ExportPlan } from '@lama/core/plans/ExportPlan.js';
 import {
   CoreModule,
   AIModule,
@@ -80,6 +81,11 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
     moduleRegistry.supply('Settings', (nodeOneCore as any).settingsStore);
   }
 
+  // Supply ExportPlan (required by ChatModule)
+  // ExportPlan from lama.core is self-contained (uses one.core implode directly)
+  const exportPlan = new ExportPlan();
+  moduleRegistry.supply('ExportPlan', exportPlan);
+
   // Register shared modules from lama.core
   console.log('[ModuleRegistryInit] Registering CoreModule...');
   moduleRegistry.register(new CoreModule(commServerUrl));
@@ -129,18 +135,50 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
 
   // Create retroactive Assemblies for Instance and Owner (bootstrap problem: created before StoryFactory)
   // Now that StoryFactory is ready, record instance creation in journal
+  // ONLY if assemblies don't already exist (idempotent)
   try {
     const storyFactory = moduleRegistry.getStoryFactory();
     if (storyFactory && nodeOneCore.ownerId && nodeOneCore.instanceId && nodeOneCore.instanceName) {
-      const instancePlan = new InstancePlan({
-        storyFactory,
-        ownerId: nodeOneCore.ownerId,
-        instanceId: nodeOneCore.instanceId,
-        instanceName: nodeOneCore.instanceName
-      });
-      await instancePlan.init();
-      await instancePlan.recordInstanceCreation();
-      console.log('[ModuleRegistryInit] ✅ Instance and Owner assemblies created in journal');
+      // Check if assemblies already exist for Instance and Owner
+      const journalModule = moduleRegistry.getModule<JournalModule>('JournalModule');
+      const assemblyDimension = journalModule?.assemblyDimension;
+
+      let hasInstanceAssembly = false;
+      let hasOwnerAssembly = false;
+
+      if (assemblyDimension) {
+        // Query for existing assemblies by entity
+        const existingAssemblies = assemblyDimension.query({
+          entities: [nodeOneCore.instanceId, nodeOneCore.ownerId]
+        });
+
+        for (const indexed of existingAssemblies) {
+          const entityStr = indexed.assembly.entity?.toString();
+          if (entityStr === nodeOneCore.instanceId.toString()) {
+            hasInstanceAssembly = true;
+          }
+          if (entityStr === nodeOneCore.ownerId.toString()) {
+            hasOwnerAssembly = true;
+          }
+        }
+
+        console.log(`[ModuleRegistryInit] Existing assemblies - Instance: ${hasInstanceAssembly}, Owner: ${hasOwnerAssembly}`);
+      }
+
+      // Only create if they don't already exist
+      if (!hasInstanceAssembly || !hasOwnerAssembly) {
+        const instancePlan = new InstancePlan({
+          storyFactory,
+          ownerId: nodeOneCore.ownerId,
+          instanceId: nodeOneCore.instanceId,
+          instanceName: nodeOneCore.instanceName
+        });
+        await instancePlan.init();
+        await instancePlan.recordInstanceCreation();
+        console.log('[ModuleRegistryInit] ✅ Instance and Owner assemblies created in journal');
+      } else {
+        console.log('[ModuleRegistryInit] ✅ Instance and Owner assemblies already exist - skipping creation');
+      }
     } else {
       console.warn('[ModuleRegistryInit] Cannot record instance creation - missing StoryFactory or nodeOneCore info');
       console.warn('[ModuleRegistryInit] ownerId:', !!nodeOneCore.ownerId, 'instanceId:', !!nodeOneCore.instanceId, 'instanceName:', !!nodeOneCore.instanceName);

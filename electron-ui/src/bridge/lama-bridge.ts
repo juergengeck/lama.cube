@@ -111,10 +111,21 @@ class LamaBridge implements LamaAPI {
       }
 
       // Register all IPC event listeners
-      // AI streaming events
+      // AI streaming events (legacy names)
       window.electronAPI.on('message:thinking', createIPCHandler('message:thinking'))
       window.electronAPI.on('message:stream', createIPCHandler('message:stream'))
       window.electronAPI.on('message:updated', createIPCHandler('message:updated'))
+
+      // LLM events (from ElectronLLMPlatform) - forward as-is without translation
+      window.electronAPI.on('llm:message-update', createIPCHandler('llm:message-update'))
+      window.electronAPI.on('llm:thinking-update', createIPCHandler('llm:thinking-update'))
+      window.electronAPI.on('llm:thinking-status', createIPCHandler('llm:thinking-status'))
+      window.electronAPI.on('llm:stream-chunk', createIPCHandler('llm:stream-chunk'))
+      window.electronAPI.on('llm:progress', createIPCHandler('llm:progress'))
+      window.electronAPI.on('llm:error', (data: any) => {
+        console.error('[LamaBridge] LLM error:', data)
+        this.emit('llm:error', data)
+      })
 
       // Contact events
       window.electronAPI.on('contact:added', createIPCHandler('contact:added'))
@@ -429,12 +440,17 @@ class LamaBridge implements LamaAPI {
     }
   }
   
-  on(event: string, callback: (...args: any[]) => void): void {
+  on(event: string, callback: (...args: any[]) => void): () => void {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, new Set())
     }
     this.eventListeners.get(event)!.add(callback)
     // console.log(`[LamaBridge] ON: Added listener for ${event}, total listeners: ${this.eventListeners.get(event)!.size}`)
+
+    // Return cleanup function
+    return () => {
+      this.off(event, callback)
+    }
   }
 
   off(event: string, callback: (...args: any[]) => void): void {

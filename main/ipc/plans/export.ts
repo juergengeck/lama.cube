@@ -11,7 +11,7 @@ const { dialog, app, Notification } = electron;
 import fs from 'fs/promises';
 import path from 'path';
 import type { IpcMainInvokeEvent } from 'electron';
-import { ExportPlan } from '@chat/core/plans/ExportPlan.js';
+import { ExportPlan } from '@lama/core/plans/ExportPlan.js';
 
 interface FileFilter {
   name: string;
@@ -75,20 +75,12 @@ interface ExportResult {
 let exportHandler: ExportPlan | null = null;
 
 /**
- * Get handler instance (creates on first use with services)
+ * Get handler instance (creates on first use)
+ * ExportPlan from lama.core is self-contained (no dependencies needed)
  */
-async function getHandler(): Promise<ExportPlan> {
+function getHandler(): ExportPlan {
   if (!exportHandler) {
-    // Import services
-    const implodeWrapper = await import('../../services/html-export/implode-wrapper.js');
-    const formatter = await import('../../services/html-export/formatter.js');
-    const htmlTemplate = await import('../../services/html-export/html-template.js');
-
-    exportHandler = new ExportPlan(
-      implodeWrapper,
-      formatter.default,
-      htmlTemplate.default
-    );
+    exportHandler = new ExportPlan();
   }
   return exportHandler;
 }
@@ -193,8 +185,8 @@ async function exportMessage(event: IpcMainInvokeEvent, { format, content, metad
     console.log('[Export] exportMessage called:', { format, contentLength: content.length });
 
     // Get handler and prepare export data
-    const handler = await getHandler();
-    const result = await handler.exportMessage({ format, content, metadata });
+    const handler = getHandler();
+    const result = handler.exportMessage({ format, content, metadata });
 
     if (!result.success) {
       return {
@@ -221,16 +213,29 @@ async function exportMessage(event: IpcMainInvokeEvent, { format, content, metad
 /**
  * Export conversation as HTML with microdata markup
  * Uses ONE.core's implode() function to embed referenced objects
+ *
+ * NOTE: The new lama.core ExportPlan uses hash-based export (exportCollection).
+ * This endpoint needs to retrieve message hashes from the topic first,
+ * then call exportCollection. For now, returns not-implemented until
+ * topic retrieval is integrated here.
  */
 async function exportHtmlWithMicrodata(event: IpcMainInvokeEvent, { topicId, format, options = {} }: ExportHtmlMicrodataParams): Promise<ExportResult> {
   try {
     console.log('[Export] exportHtmlWithMicrodata called:', { topicId, format, options });
 
-    // Delegate to handler for export logic
-    const handler = await getHandler();
-    const result = await handler.exportHtmlWithMicrodata({ topicId, format, options });
+    // TODO: Implement topic-based export
+    // 1. Retrieve message hashes from topicId using TopicModel
+    // 2. Call handler.exportCollection({ hashes, options, metadata })
+    // 3. Return the HTML result
+    //
+    // For now, return not-implemented as the old implementation also had
+    // a placeholder message retriever.
 
-    return result;
+    console.log('[Export] exportHtmlWithMicrodata: Not yet implemented with new hash-based ExportPlan');
+    return {
+      success: false,
+      error: 'HTML microdata export not yet implemented. Use exportCollection with message hashes directly.'
+    };
   } catch (error) {
     console.error('[Export] Error exporting HTML with microdata:', error);
     return {

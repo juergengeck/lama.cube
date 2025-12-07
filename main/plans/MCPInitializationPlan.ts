@@ -126,7 +126,7 @@ export class MCPInitializationPlan {
   private async registerNodeOneCore(nodeOneCore: any): Promise<any> {
     console.log('[MCPInitializationPlan] Registering memory tools with MCP Manager...');
 
-    const { mcpManager } = await import('@mcp/core');
+    const { mcpManager } = await import('@mcp/core/local');
     mcpManager.setNodeOneCore(nodeOneCore);
 
     console.log('[MCPInitializationPlan] ✅ Memory tools registered');

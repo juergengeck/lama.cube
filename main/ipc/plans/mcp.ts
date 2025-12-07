@@ -4,7 +4,7 @@
  */
 
 import { IpcMainInvokeEvent } from 'electron';
-import { mcpManager } from '@mcp/core';
+import { mcpManager } from '@mcp/core/local';
 
 interface MCPServer {
   name: string;

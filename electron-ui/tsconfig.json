@@ -27,7 +27,8 @@
       "@components/*": ["./src/components/*"],
       "@lib/*": ["./src/lib/*"],
       "@lama/ui": ["../../lama.ui/src"],
-      "@lama/ui/*": ["../../lama.ui/src/*"]
+      "@lama/ui/*": ["../../lama.ui/src/*"],
+      "@lama/core/modules": ["../../lama.core/dist/lama.core/modules/index.js"]
     }
   },
   "include": [

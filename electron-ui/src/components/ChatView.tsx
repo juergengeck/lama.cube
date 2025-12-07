@@ -144,20 +144,20 @@ export const ChatView = memo(function ChatView({
   useEffect(() => {
     if (!window.electronAPI) return
     
-    // Handle thinking indicator (used for all AI messages including welcome)
-    const handleThinking = (data: any) => {
-      console.log(`[ChatView] 📨 handleThinking received:`, {
-        eventConversationId: data.conversationId,
+    // Handle llm:progress - shows thinking indicator (topicId, progress)
+    const handleProgress = (data: any) => {
+      console.log(`[ChatView] 📨 llm:progress received:`, {
+        topicId: data.topicId,
         currentConversationId: conversationId,
-        matches: data.conversationId === conversationId
+        matches: data.topicId === conversationId
       })
 
-      if (data.conversationId === conversationId) {
+      if (data.topicId === conversationId) {
         const startTime = Date.now()
         thinkingStartTimeRef.current = startTime
         streamingStartTimeRef.current = null
         lastLogTimeRef.current = 0
-        setThinkingStatus(data.status || '')
+        setThinkingStatus('processing')
         console.log(`[Progress] T+0ms AI thinking started | conversation: ${conversationId}`)
         setIsAIProcessing(true)
         setIsAIStreaming(false)  // Don't show stop button until streaming actually starts
@@ -167,100 +167,97 @@ export const ChatView = memo(function ChatView({
       }
     }
 
-    // Handle thinking status updates (new event for intermediate states)
+    // Handle llm:thinking-status - intermediate status updates (topicId, status)
     const handleThinkingStatus = (data: any) => {
-      if (data.conversationId === conversationId && thinkingStartTimeRef.current) {
+      if (data.topicId === conversationId && thinkingStartTimeRef.current) {
         const elapsed = Date.now() - thinkingStartTimeRef.current
         setThinkingStatus(data.status || '')
         console.log(`[Progress] T+${elapsed}ms ${data.status}`)
       }
     }
 
-    // Handle thinking stream (for reasoning models)
-    const handleThinkingStream = (data: any) => {
-      console.log(`[ThinkingStream] 🧠 RAW EVENT RECEIVED:`, {
-        eventConversationId: data.conversationId,
+    // Handle llm:thinking-update - thinking stream for reasoning models (topicId, messageId, thinkingContent)
+    const handleThinkingUpdate = (data: any) => {
+      console.log(`[ThinkingStream] 🧠 llm:thinking-update received:`, {
+        topicId: data.topicId,
         currentConversationId: conversationId,
-        matches: data.conversationId === conversationId,
-        thinkingLength: data.thinking?.length || 0,
+        matches: data.topicId === conversationId,
+        thinkingLength: data.thinkingContent?.length || 0,
         messageId: data.messageId
       })
-      if (data.conversationId === conversationId) {
-        console.log(`[ThinkingStream] 🧠 Setting aiThinkingContent (${data.thinking?.length || 0} chars)`)
-        setAiThinkingContent(data.thinking || '')
+      if (data.topicId === conversationId) {
+        console.log(`[ThinkingStream] 🧠 Setting aiThinkingContent (${data.thinkingContent?.length || 0} chars)`)
+        setAiThinkingContent(data.thinkingContent || '')
       }
     }
 
-    // Handle streaming chunks
-    const handleStream = (data: any) => {
-      if (data.conversationId === conversationId) {
-        const now = Date.now()
-        const contentLength = (data.partial || '').length
+    // Handle llm:message-update - streaming content and completion (topicId, messageId, content, status, modelId, modelName)
+    const handleMessageUpdate = (data: any) => {
+      if (data.topicId === conversationId) {
+        // Extract content (handles both string and { response: string } formats)
+        const content = typeof data.content === 'string'
+          ? data.content
+          : data.content?.response || ''
 
-        // Log FIRST CHUNK only once
-        if (!streamingStartTimeRef.current) {
-          streamingStartTimeRef.current = now
-          const thinkingElapsed = thinkingStartTimeRef.current ? now - thinkingStartTimeRef.current : 0
-          console.log(`[Progress] T+${thinkingElapsed}ms FIRST CHUNK | Thinking took ${thinkingElapsed}ms`)
-        }
+        if (data.status === 'complete') {
+          // Message complete
+          const totalElapsed = thinkingStartTimeRef.current ? Date.now() - thinkingStartTimeRef.current : 0
+          console.log(`[Progress] T+${totalElapsed}ms COMPLETE | Total response time: ${totalElapsed}ms`)
+          setIsAIProcessing(false)
+          setIsAIStreaming(false)  // Clear streaming state - hide stop button
+          setAiThinkingContent('')  // Clear thinking when complete
+          thinkingStartTimeRef.current = null
+          streamingStartTimeRef.current = null
+          lastLogTimeRef.current = 0
+          setThinkingStatus('')
+          onProcessingChange?.(false) // Update parent state
 
-        setIsAIProcessing(false)  // Stop showing "thinking" indicator
-        setIsAIStreaming(true)     // Keep streaming state (and stop button) visible
-        setAiStreamingContent(data.partial || '')
-      }
-    }
+          // Reload messages from storage to display the final persisted message
+          console.log(`[Progress] Reloading messages from storage...`)
+          const currentMessageCount = messages.length
+          loadMessages().then(() => {
+            if (messages.length > currentMessageCount) {
+              console.log(`[Progress] New message found in storage, clearing streaming content`)
+              setAiStreamingContent('')
+            } else {
+              console.log(`[Progress] No new messages yet, keeping streaming content visible`)
+              setTimeout(() => {
+                loadMessages().then(() => {
+                  console.log(`[Progress] Second attempt - clearing streaming content`)
+                  setAiStreamingContent('')
+                })
+              }, 100)
+            }
+          })
+        } else {
+          // Streaming update
+          const now = Date.now()
 
-    // Handle message complete
-    const handleComplete = (data: any) => {
-      if (data.conversationId === conversationId) {
-        const totalElapsed = thinkingStartTimeRef.current ? Date.now() - thinkingStartTimeRef.current : 0
-        console.log(`[Progress] T+${totalElapsed}ms COMPLETE | Total response time: ${totalElapsed}ms`)
-        setIsAIProcessing(false)
-        setIsAIStreaming(false)  // Clear streaming state - hide stop button
-        setAiThinkingContent('')  // Clear thinking when complete
-        thinkingStartTimeRef.current = null
-        streamingStartTimeRef.current = null
-        lastLogTimeRef.current = 0
-        setThinkingStatus('')
-        onProcessingChange?.(false) // Update parent state
-
-        // Reload messages from storage to display the final persisted message
-        // Keep aiStreamingContent displayed until reload completes to avoid flicker
-        console.log(`[Progress] Reloading messages from storage...`)
-        const currentMessageCount = messages.length
-        loadMessages().then(() => {
-          // Only clear streaming content if we actually got new messages
-          // This prevents the message from disappearing if storage hasn't been updated yet
-          if (messages.length > currentMessageCount) {
-            console.log(`[Progress] New message found in storage, clearing streaming content`)
-            setAiStreamingContent('')
-          } else {
-            console.log(`[Progress] No new messages yet, keeping streaming content visible`)
-            // Try again after a short delay to catch late-persisted messages
-            setTimeout(() => {
-              loadMessages().then(() => {
-                console.log(`[Progress] Second attempt - clearing streaming content`)
-                setAiStreamingContent('')
-              })
-            }, 100)
+          // Log FIRST CHUNK only once
+          if (!streamingStartTimeRef.current) {
+            streamingStartTimeRef.current = now
+            const thinkingElapsed = thinkingStartTimeRef.current ? now - thinkingStartTimeRef.current : 0
+            console.log(`[Progress] T+${thinkingElapsed}ms FIRST CHUNK | Thinking took ${thinkingElapsed}ms`)
           }
-        })
+
+          setIsAIProcessing(false)  // Stop showing "thinking" indicator
+          setIsAIStreaming(true)     // Keep streaming state (and stop button) visible
+          setAiStreamingContent(content)
+        }
       }
     }
 
-    // Subscribe to streaming events via lamaBridge
-    const unsubThinking = lamaBridge.on('message:thinking', handleThinking)
-    const unsubThinkingStatus = lamaBridge.on('message:thinkingStatus', handleThinkingStatus)
-    const unsubThinkingStream = lamaBridge.on('message:thinkingStream', handleThinkingStream)
-    const unsubStream = lamaBridge.on('message:stream', handleStream)
-    const unsubComplete = lamaBridge.on('message:updated', handleComplete)
+    // Subscribe to LLM events directly via lamaBridge
+    const unsubProgress = lamaBridge.on('llm:progress', handleProgress)
+    const unsubThinkingStatus = lamaBridge.on('llm:thinking-status', handleThinkingStatus)
+    const unsubThinkingUpdate = lamaBridge.on('llm:thinking-update', handleThinkingUpdate)
+    const unsubMessageUpdate = lamaBridge.on('llm:message-update', handleMessageUpdate)
 
     return () => {
-      if (unsubThinking) unsubThinking()
+      if (unsubProgress) unsubProgress()
       if (unsubThinkingStatus) unsubThinkingStatus()
-      if (unsubThinkingStream) unsubThinkingStream()
-      if (unsubStream) unsubStream()
-      if (unsubComplete) unsubComplete()
+      if (unsubThinkingUpdate) unsubThinkingUpdate()
+      if (unsubMessageUpdate) unsubMessageUpdate()
     }
   }, [conversationId])
   

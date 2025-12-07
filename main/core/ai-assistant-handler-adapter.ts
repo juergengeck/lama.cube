@@ -17,7 +17,7 @@ import type { NodeOneCore } from '../types/one-core.js';
 import { storeVersionedObject, getIdObject, getObjectByIdHash } from '@refinio/one.core/lib/storage-versioned-objects.js';
 import { storeUnversionedObject, getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
 import { createDefaultKeys, hasDefaultKeys } from '@refinio/one.core/lib/keychain/keychain.js';
-import { mcpManager } from '@mcp/core';
+import { mcpManager } from '@mcp/core/local';
 import electron from 'electron';
 const { BrowserWindow } = electron;
 

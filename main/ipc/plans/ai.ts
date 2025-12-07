@@ -7,7 +7,7 @@
 
 import nodeOneCore from '../../core/node-one-core.js';
 import llmManager from '../../services/llm-manager-singleton.js';
-import { mcpManager } from '@mcp/core';
+import { mcpManager } from '@mcp/core/local';
 import type { IpcMainInvokeEvent } from 'electron';
 import electron from 'electron';
 const { BrowserWindow } = electron;

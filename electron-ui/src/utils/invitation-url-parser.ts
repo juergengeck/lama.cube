@@ -11,6 +11,7 @@
 
 // NO ONE.CORE IMPORTS IN BROWSER - Use simple types instead
 export type InvitationMode = 'IoM' | 'IoP';
+export type InviteType = 'commserver' | 'webrtc';
 
 export interface Invitation {
   token: string;
@@ -19,14 +20,105 @@ export interface Invitation {
 }
 
 export interface ParsedInvitation {
+  type: InviteType;
   mode: InvitationMode | undefined;
   invitation: Invitation | undefined;
   error?: string;
 }
 
+export interface ParsedWebRTCInvitation {
+  type: 'webrtc';
+  signalType: 'offer' | 'answer';
+  sessionId: string;
+  error?: string;
+}
+
+/**
+ * Detect invite type from URL
+ */
+export function detectInviteType(url: string): InviteType | null {
+  // WebRTC format: https://lama.one/webrtc#... (base64url encoded)
+  if (url.includes('/webrtc#')) {
+    return 'webrtc';
+  }
+  // CommServer format: https://edda.one/invites/invite.../?invited=true#...
+  if (url.includes('invites/invitePartner/') || url.includes('invites/inviteDevice/')) {
+    return 'commserver';
+  }
+  // Try to parse hash to detect format
+  const hashIndex = url.indexOf('#');
+  if (hashIndex !== -1) {
+    const fragment = url.substring(hashIndex + 1);
+    // CommServer uses URL-encoded JSON, WebRTC uses base64url
+    try {
+      const decoded = decodeURIComponent(fragment);
+      const parsed = JSON.parse(decoded);
+      if (parsed.token && parsed.url) {
+        return 'commserver';
+      }
+    } catch {
+      // Not URL-encoded JSON, try base64url (WebRTC)
+      try {
+        const webrtcData = decodeBase64url(fragment);
+        if (webrtcData && webrtcData.signal && webrtcData.sessionId) {
+          return 'webrtc';
+        }
+      } catch {
+        // Not valid either
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Parse WebRTC invitation URL
+ */
+export function parseWebRTCInvitationUrl(url: string): ParsedWebRTCInvitation {
+  try {
+    const hashIndex = url.indexOf('#');
+    if (hashIndex === -1) {
+      return { type: 'webrtc', signalType: 'offer', sessionId: '', error: 'No hash fragment in URL' };
+    }
+
+    const fragment = url.substring(hashIndex + 1);
+    const data = decodeBase64url(fragment);
+
+    if (!data || !data.signal || !data.sessionId) {
+      return { type: 'webrtc', signalType: 'offer', sessionId: '', error: 'Invalid WebRTC invitation format' };
+    }
+
+    return {
+      type: 'webrtc',
+      signalType: data.signal.type === 'answer' ? 'answer' : 'offer',
+      sessionId: data.sessionId,
+      error: undefined
+    };
+  } catch (error) {
+    return {
+      type: 'webrtc',
+      signalType: 'offer',
+      sessionId: '',
+      error: error instanceof Error ? error.message : 'Failed to parse WebRTC URL'
+    };
+  }
+}
+
+/**
+ * Decode base64url to JSON object
+ */
+function decodeBase64url(base64: string): any {
+  // Handle base64url
+  let normalized = base64.replace(/-/g, '+').replace(/_/g, '/');
+  while (normalized.length % 4) {
+    normalized += '=';
+  }
+  return JSON.parse(atob(normalized));
+}
+
 /**
  * Parse invitation URL following the one.leute pattern
- * 
+ *
  * @param invitationLink URL in format: https://edda.one/invites/invitePartner/?invited=true#[encoded-json]
  * @returns Parsed invitation with mode detection
  */
@@ -34,32 +126,35 @@ export function parseInvitationUrl(invitationLink: string): ParsedInvitation {
   try {
     // 1. Detect invitation mode based on URL pattern (from one.leute)
     let mode: InvitationMode | undefined;
-    
+
     if (invitationLink.includes('invites/inviteDevice/?invited=true')) {
       mode = 'IoM';  // Instance of Machine (device)
     } else if (invitationLink.includes('invites/invitePartner/?invited=true')) {
       mode = 'IoP';  // Instance of Person (partner)
     }
-    
+
     // 2. Extract and parse invitation data (from one.leute pattern)
     const invitation = getPairingInformation(invitationLink);
-    
+
     if (!invitation) {
       return {
+        type: 'commserver',
         mode,
         invitation: undefined,
         error: 'Failed to extract valid invitation data from URL'
       };
     }
-    
+
     return {
+      type: 'commserver',
       mode,
       invitation,
       error: undefined
     };
-    
+
   } catch (error) {
     return {
+      type: 'commserver',
       mode: undefined,
       invitation: undefined,
       error: error instanceof Error ? error.message : 'Unknown parsing error'

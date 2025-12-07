@@ -143,6 +143,9 @@ export class CoreInstanceInitializationPlan {
     const RecipesExperimental = (await import('@refinio/one.models/lib/recipes/recipes-experimental.js')).default;
     const { LamaRecipes } = await import('../recipes/index.js');
 
+    // Import cube.core recipes for DimensionState persistence
+    const { CubeCoreRecipes } = await import('@cube/core/recipes/index.js');
+
     // Import reverse maps
     const { ReverseMapsStable, ReverseMapsForIdObjectsStable } = await import('@refinio/one.models/lib/recipes/reversemaps-stable.js');
     const { ReverseMapsExperimental, ReverseMapsForIdObjectsExperimental } = await import('@refinio/one.models/lib/recipes/reversemaps-experimental.js');
@@ -150,7 +153,8 @@ export class CoreInstanceInitializationPlan {
     const allRecipes = [
       ...RecipesStable,
       ...RecipesExperimental,
-      ...(LamaRecipes || [])
+      ...(LamaRecipes || []),
+      ...(CubeCoreRecipes || [])
     ] as Recipe[];
 
     console.log('[CoreInstanceInitializationPlan] Loaded', allRecipes.length, 'recipes');

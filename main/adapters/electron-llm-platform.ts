@@ -66,6 +66,7 @@ export class ElectronLLMPlatform implements LLMPlatform {
   ): void {
     const window = this.getWindow();
     if (window && !window.isDestroyed()) {
+      // Emit streaming updates for real-time UI feedback
       window.webContents.send('llm:message-update', {
         topicId,
         messageId,
@@ -74,6 +75,15 @@ export class ElectronLLMPlatform implements LLMPlatform {
         modelId,
         modelName
       });
+
+      // When complete, also emit chat:newMessages to trigger message list refresh
+      // This unifies LLM messages with P2P messages for the UI
+      if (status === 'complete') {
+        window.webContents.send('chat:newMessages', {
+          conversationId: topicId,
+          source: 'llm'
+        });
+      }
     }
   }
 

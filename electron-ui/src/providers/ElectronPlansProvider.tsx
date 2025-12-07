@@ -32,6 +32,7 @@ import type { FeedForwardPlan } from '@chat/core/plans/FeedForwardPlan.js'
 import type { ConnectionPlan } from '@lama/connection.core'
 import type { TrustPlan } from '@trust/core/plans/TrustPlan.js'
 import type { CubePlan } from '@lama/core/plans/CubePlan.js'
+import type { TransportPlan } from '@transport/core'
 
 /**
  * IPC Wrapper for ContactsPlan
@@ -301,6 +302,10 @@ const proposalsPlan: ProposalsPlan = {
 
   async share(params: any) {
     return await window.electronAPI.invoke('proposals:share', params)
+  },
+
+  async getDetails(params: any) {
+    return await window.electronAPI.invoke('proposals:getDetails', params)
   }
 } as ProposalsPlan
 
@@ -471,6 +476,54 @@ const cubePlan: CubePlan = {
 } as CubePlan
 
 /**
+ * IPC Wrapper for TransportPlan
+ */
+const transportPlan: TransportPlan = {
+  async createWebRTCInvite(options) {
+    const result = await window.electronAPI.transport.createWebRTCInvite(options || {})
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to create WebRTC invite')
+    }
+    return {
+      url: result.url,
+      sessionId: result.sessionId,
+      completeWithAnswer: async (answerUrl: string) => {
+        const completeResult = await window.electronAPI.transport.completeWebRTCInvite({
+          sessionId: result.sessionId,
+          answerUrl
+        })
+        if (!completeResult.success) {
+          throw new Error(completeResult.error || 'Failed to complete WebRTC invite')
+        }
+        return {} as any // Connection object placeholder
+      },
+      cancel: () => {
+        window.electronAPI.transport.cancelWebRTCInvite({ sessionId: result.sessionId })
+      }
+    }
+  },
+
+  async acceptWebRTCInvite(offerUrl: string) {
+    const result = await window.electronAPI.transport.acceptWebRTCInvite({ offerUrl })
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to accept WebRTC invite')
+    }
+    return {
+      answerUrl: result.answerUrl,
+      connection: {} as any // Connection object placeholder
+    }
+  },
+
+  getConnection(_sessionId: string) {
+    return undefined // Not implemented for IPC
+  },
+
+  async shutdown() {
+    // No-op for IPC - main process handles cleanup
+  }
+}
+
+/**
  * IPC Wrapper for MemoryPlan
  */
 const memoryPlan: MemoryPlan = {
@@ -544,7 +597,10 @@ export const electronPlans: LAMAPlans = {
   cube: cubePlan,
 
   // Memory Plans (from memory.core)
-  memory: memoryPlan
+  memory: memoryPlan,
+
+  // Transport Plans (from transport.core)
+  transport: transportPlan
 
   // Platform-specific plans (optional):
   // filesystem?: FilesystemPlan  // TODO: Add Electron file dialog wrappers

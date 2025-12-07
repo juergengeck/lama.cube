@@ -26,7 +26,11 @@
     "baseUrl": ".",
     "paths": {
       "@refinio/api/*": ["../packages/refinio.api/dist/*"],
-      "@refinio/*": ["../packages/*"]
+      "@refinio/*": ["../packages/*"],
+      "@local/core": ["../local.core/dist/index"],
+      "@local/core/*": ["../local.core/dist/*"],
+      "@xenova/transformers": ["./node_modules/@xenova/transformers"],
+      "@xenova/transformers/*": ["./node_modules/@xenova/transformers/*"]
     }
   },
   "include": [
@@ -45,7 +49,8 @@
     "main/utils/**/*.ts",
     "main/recipes/**/*.ts",
     "main/api/**/*.ts",
-    "main/startup/**/*.ts"
+    "main/startup/**/*.ts",
+    "main/adapters/**/*.ts"
   ],
   "exclude": [
     "**/*.js",

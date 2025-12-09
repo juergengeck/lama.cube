@@ -6,8 +6,10 @@
 
 import electron from 'electron';
 const { ipcMain } = electron;
-import { DiscoveryService } from '@lama/connection.core';
+import { DiscoveryService, DiscoveryStart } from '@lama/connection.core';
 import { QuicVCDiscovery } from '../../core/quicvc-discovery.js';
+import { UdpBroadcaster } from '../../core/udp-broadcaster.js';
+import { RelayBroadcaster } from '../../core/relay-broadcaster.js';
 import nodeOneCore from '../../core/node-one-core.js';
 import type { IpcMainInvokeEvent } from 'electron';
 
@@ -22,6 +24,7 @@ interface IpcResponse<T = any> {
 // Singleton discovery service instance
 let discoveryService: DiscoveryService | null = null;
 let quicvcDiscovery: QuicVCDiscovery | null = null;
+let discoveryStart: DiscoveryStart | null = null;
 
 /**
  * Initialize QuicVC discovery service
@@ -76,6 +79,37 @@ async function initializeDiscoveryService(): Promise<void> {
   });
 
   console.log('[QuicVCDiscovery] Service initialized and started');
+}
+
+/**
+ * Initialize multi-transport discovery broadcasting
+ */
+async function initializeDiscoveryStart(
+  pubKey: string,
+  deviceId: string,
+  deviceName: string,
+  commServerUrl?: string
+): Promise<void> {
+  if (discoveryStart) {
+    await discoveryStart.stop();
+  }
+
+  discoveryStart = new DiscoveryStart(pubKey, {
+    enabledTransports: commServerUrl ? ['udp', 'relay'] : ['udp'],
+    commServerUrl,
+  });
+
+  // Register UDP broadcaster
+  const udpBroadcaster = new UdpBroadcaster(deviceId, deviceName);
+  discoveryStart.registerBroadcaster(udpBroadcaster);
+
+  // Register relay broadcaster if CommServer configured
+  if (commServerUrl) {
+    const relayBroadcaster = new RelayBroadcaster(commServerUrl);
+    discoveryStart.registerBroadcaster(relayBroadcaster);
+  }
+
+  console.log('[DiscoveryStart] Initialized with transports:', commServerUrl ? ['udp', 'relay'] : ['udp']);
 }
 
 /**
@@ -215,6 +249,71 @@ export function initializeQuicVCDiscoveryPlans(): void {
         devices: [],
       };
     }
+  });
+
+  /**
+   * Start multi-transport discovery broadcasting
+   */
+  ipcMain.handle('discovery:start', async (event: IpcMainInvokeEvent, params: {
+    pubKey: string;
+    deviceId: string;
+    deviceName: string;
+    commServerUrl?: string;
+  }): Promise<IpcResponse> => {
+    try {
+      console.log('[DiscoveryStart] Starting discovery via IPC');
+
+      await initializeDiscoveryStart(
+        params.pubKey,
+        params.deviceId,
+        params.deviceName,
+        params.commServerUrl
+      );
+      await discoveryStart?.start();
+
+      return {
+        success: true,
+        transports: discoveryStart?.getActiveBroadcasters() || [],
+      };
+    } catch (error) {
+      console.error('[DiscoveryStart] Failed to start discovery:', error);
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
+  });
+
+  /**
+   * Stop multi-transport discovery broadcasting
+   */
+  ipcMain.handle('discovery:stop', async (event: IpcMainInvokeEvent): Promise<IpcResponse> => {
+    try {
+      console.log('[DiscoveryStart] Stopping discovery via IPC');
+
+      await discoveryStart?.stop();
+
+      return {
+        success: true,
+      };
+    } catch (error) {
+      console.error('[DiscoveryStart] Failed to stop discovery:', error);
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
+  });
+
+  /**
+   * Get multi-transport discovery status
+   */
+  ipcMain.handle('discovery:status', async (event: IpcMainInvokeEvent): Promise<IpcResponse> => {
+    return {
+      success: true,
+      running: discoveryStart?.isRunning() || false,
+      transports: discoveryStart?.getActiveBroadcasters() || [],
+    };
   });
 
   console.log('[QuicVCDiscovery] IPC handlers registered');

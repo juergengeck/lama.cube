@@ -32,6 +32,9 @@ release/
 # Electron
 out/
 
+# Bundled AI models (downloaded during build)
+models/
+
 # Test coverage
 coverage/
 *.lcov

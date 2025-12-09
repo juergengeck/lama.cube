@@ -8,6 +8,98 @@
 import type { SHA256IdHash, SHA256Hash } from '@refinio/one.core/lib/util/type-checks.js';
 import type { Person } from '@refinio/one.core/lib/recipes.js';
 
+// ################ ONE.core Type Extensions ################
+// Extend OneUnversionedObjectInterfaces and OneVersionedObjectInterfaces
+// in the correct module so types work with storeUnversionedObject, getObject, etc.
+
+declare module '@refinio/one.core/lib/recipes.js' {
+    interface OneUnversionedObjectInterfaces {
+        // cube.core types
+        Dimension: Dimension;
+        QueryResult: QueryResult;
+        // meaning.core types
+        MeaningNode: MeaningNode;
+        MeaningDimensionValue: MeaningDimensionValue;
+    }
+
+    interface OneVersionedObjectInterfaces {
+        // cube.core types
+        CubeObject: CubeObject;
+        DimensionValue: DimensionValue;
+        DimensionState: DimensionState;
+        DimensionStateReference: DimensionStateReference;
+    }
+}
+
+// ################ cube.core Type Definitions ################
+
+interface CubeObject {
+    $type$: 'CubeObject';
+    oneObjectHash: SHA256Hash;
+    dimensionValues: SHA256Hash<DimensionValue>[];
+    created: number;
+    creator?: SHA256IdHash;
+}
+
+interface Dimension {
+    $type$: 'Dimension';
+    name: string;
+    dataType: 'string' | 'number' | 'boolean' | 'hash' | 'object';
+    standard: boolean;
+    shared: boolean;
+    packageName?: string;
+}
+
+interface DimensionValue {
+    $type$: 'DimensionValue';
+    dimensionHash: SHA256Hash<Dimension>;
+    value: unknown;
+    valueHash?: SHA256Hash;
+    created: number;
+}
+
+interface QueryResult {
+    $type$: 'QueryResult';
+    queryHash: SHA256Hash;
+    resultHashes: SHA256Hash[];
+    executedAt: number;
+    expiresAt?: number;
+}
+
+interface DimensionState {
+    $type$: 'DimensionState';
+    dimensionName: string;
+    stateData: string;
+    serializedAt: number;
+}
+
+interface DimensionStateReference {
+    $type$: 'DimensionStateReference';
+    dimensionName: string;
+    latestStateHash: SHA256Hash<DimensionState>;
+    updatedAt: number;
+}
+
+// ################ meaning.core Type Definitions ################
+
+interface MeaningNode {
+    $type$: 'MeaningNode';
+    embedding: number[];
+    model: string;
+    dimensions: number;
+    sourceText?: string;
+    contentType?: string;
+}
+
+interface MeaningDimensionValue {
+    $type$: 'MeaningDimensionValue';
+    dimensionHash: SHA256Hash;
+    meaningNodeHash: SHA256Hash<MeaningNode>;
+    created: number;
+}
+
+// ################ LAMA Application Types ################
+
 declare module '@OneObjectInterfaces' {
     // Subject represents a distinct discussion topic within a conversation
     // References content (topics, memories) that discusses this subject

@@ -5,8 +5,8 @@
 
 import React, { useState } from 'react';
 import { User, Users, Shield, Loader2 } from 'lucide-react';
-import { Badge } from '../ui/badge.js';
-import { ScrollArea } from '../ui/scroll-area.js';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import type {
   KeywordAccessState,
   AccessStateValue,

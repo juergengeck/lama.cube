@@ -6,6 +6,8 @@
  */
 
 import { app } from 'electron';
+import { existsSync, readdirSync } from 'fs';
+import { join } from 'path';
 import { pipeline, env, type FeatureExtractionPipeline } from '@xenova/transformers';
 import type {
   LocalEmbeddingProvider,
@@ -19,6 +21,38 @@ import { MODELS } from '@local/core';
 // Configure transformers.js for Electron Node.js environment
 env.allowLocalModels = true;
 env.useBrowserCache = false;
+
+/**
+ * Get path to bundled models directory
+ */
+function getBundledModelsDir(): string {
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    return join(process.cwd(), 'models');
+  }
+  return join(process.resourcesPath, 'models');
+}
+
+/**
+ * Check if bundled model exists and return its path
+ * Models are stored as: models/Xenova/whisper-tiny
+ */
+function getBundledModelPath(huggingFaceRepo: string): string | null {
+  const bundledDir = getBundledModelsDir();
+  const [org, name] = huggingFaceRepo.split('/');
+  const modelPath = join(bundledDir, org, name);
+
+  if (!existsSync(modelPath)) return null;
+
+  // Check for onnx files
+  try {
+    const files = readdirSync(modelPath);
+    const hasOnnx = files.some(f => f.endsWith('.onnx') || f === 'onnx');
+    return hasOnnx ? modelPath : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * ONNX Embedding Provider using transformers.js
@@ -57,7 +91,7 @@ export class ONNXEmbeddingProvider implements LocalEmbeddingProvider {
   /** Optional error callback */
   onError?: (error: Error) => void;
 
-  constructor(modelId: ModelId = 'nomic-embed-text-v1.5-q4') {
+  constructor(modelId: ModelId = 'all-MiniLM-L6-v2') {
     this.modelId = modelId;
     // Map to EmbeddingModel type (strips quantization suffix for compatibility)
     this.model = modelId.replace('-q4', '') as EmbeddingModel;
@@ -86,13 +120,23 @@ export class ONNXEmbeddingProvider implements LocalEmbeddingProvider {
     try {
       this._status = 'loading';
 
-      // Configure cache directory
       const modelInfo = MODELS[this.modelId];
-      const cacheDir = `${app.getPath('userData')}/models`;
-      env.cacheDir = cacheDir;
-
-      // Map modelId to Hugging Face repo
       const hfModel = this.getHuggingFaceModel();
+
+      // Check for bundled model first
+      if (modelInfo.bundled) {
+        const bundledPath = getBundledModelPath(modelInfo.huggingFaceRepo);
+        if (bundledPath) {
+          console.log(`[ONNXEmbeddingProvider] Using bundled model: ${bundledPath}`);
+          env.localModelPath = getBundledModelsDir();
+        }
+      }
+
+      // Fall back to cache directory for non-bundled or missing bundled
+      if (!env.localModelPath) {
+        const cacheDir = `${app.getPath('userData')}/models`;
+        env.cacheDir = cacheDir;
+      }
 
       this.onProgress?.({ stage: 'load', percent: 0 });
 
@@ -176,14 +220,7 @@ export class ONNXEmbeddingProvider implements LocalEmbeddingProvider {
       throw new Error(`Unknown model: ${this.modelId}`);
     }
 
-    // For quantized models, use the ONNX variant
-    if (this.modelId === 'nomic-embed-text-v1.5-q4') {
-      return 'Xenova/nomic-embed-text-v1.5';
-    }
-    if (this.modelId === 'nomic-embed-text-v1.5') {
-      return 'Xenova/nomic-embed-text-v1.5';
-    }
-
+    // Use huggingFaceRepo from registry
     return modelInfo.huggingFaceRepo;
   }
 }

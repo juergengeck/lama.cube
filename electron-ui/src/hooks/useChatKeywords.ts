@@ -1,9 +1,11 @@
 /**
  * useChatKeywords Hook
  * Non-blocking real-time single-word keyword extraction
+ * Uses usePlans() for platform-agnostic access to topicAnalysis plan
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { usePlans } from '@ui/core';
 import type { Keyword } from '../types/topic-analysis.js';
 
 interface Message {
@@ -15,7 +17,8 @@ interface Message {
 }
 
 export function useChatKeywords(topicId: string, messages: Message[] = []) {
-  // console.log('[useChatKeywords] Hook called with topicId:', topicId, 'messages:', messages.length);
+  // Use Plans for platform-agnostic operations
+  const { topicAnalysis } = usePlans();
 
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,47 +32,39 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
   // Track previous keyword count for change detection
   const prevKeywordCountRef = useRef(0);
 
-  // Listen for keyword update events from backend
+  // Listen for keyword update events from backend (platform-specific: Electron IPC)
   useEffect(() => {
     if (!topicId || !window.electronAPI) return;
 
     const handleKeywordsUpdated = (data: { topicId: string }) => {
-      // console.log(`[useChatKeywords-${topicId}] 🔔 Received keywords:updated event for: "${data.topicId}"`);
-      // console.log(`[useChatKeywords-${topicId}] 🔍 My topicId: "${topicId}"`);
-      // console.log(`[useChatKeywords-${topicId}] 🔍 Match: ${data.topicId === topicId}`);
       if (data.topicId === topicId) {
-        // console.log(`[useChatKeywords-${topicId}] ✅ Fetching updated keywords`);
         // Trigger a refresh by incrementing request counter
         requestCounter.current++;
-        // Re-fetch keywords immediately
+        // Re-fetch keywords immediately using Plans
         const fetchKeywords = async () => {
           try {
-            const response = await window.electronAPI.invoke('topicAnalysis:getKeywords', {
+            const response = await topicAnalysis.getKeywords({
               topicId,
               limit: 15
             });
             if (response.success && response.data?.keywords) {
-              // Keep full keyword objects with subjects array
-              const keywords = response.data.keywords as Keyword[];
-              const keywordTerms = keywords.map((k) => k.term);
-              // console.log(`[useChatKeywords-${topicId}] Refreshed keywords after update:`, keywordTerms.length);
-              setKeywords(keywords);
+              const fetchedKeywords = response.data.keywords as Keyword[];
+              setKeywords(fetchedKeywords);
             }
           } catch (err) {
-            // console.error(`[useChatKeywords-${topicId}] Error refreshing keywords:`, err);
+            console.error(`[useChatKeywords-${topicId}] Error refreshing keywords:`, err);
           }
         };
         fetchKeywords();
-      } else {
-        // console.log(`[useChatKeywords-${topicId}] ❌ Ignoring event for different topic`);
       }
     };
 
-    const unsub = window.electronAPI.on('keywords:updated', handleKeywordsUpdated);
+    // Subscribe to keywords:updated events - returns unsubscribe function
+    const unsub = (window.electronAPI as any).on('keywords:updated', handleKeywordsUpdated) as (() => void) | undefined;
     return () => {
       if (unsub) unsub();
     };
-  }, [topicId]);
+  }, [topicId, topicAnalysis]);
 
   // Detect when keywords appear (0 -> N) and return flag
   const keywordsJustAppeared = prevKeywordCountRef.current === 0 && keywords.length > 0;
@@ -78,7 +73,6 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
   // Non-blocking keyword extraction
   useEffect(() => {
     // CRITICAL: Clear keywords immediately when topicId changes to prevent stale data
-    // console.log('[useChatKeywords] 🧹 Clearing keywords for topic change to:', topicId);
     setKeywords([]);
 
     if (!topicId) {
@@ -99,7 +93,6 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
       const performExtraction = async () => {
         // Skip if another extraction is already in progress
         if (extractionInProgress.current) {
-          // console.log('[useChatKeywords] Skipping - extraction already in progress');
           return;
         }
 
@@ -112,10 +105,8 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
           }
 
           if (messages && messages.length > 0) {
-            // console.log('[useChatKeywords] Loading keywords from storage for', messages.length, 'messages');
-
-            // Get keywords from storage (populated by analyzeMessages)
-            const response = await window.electronAPI.invoke('topicAnalysis:getKeywords', {
+            // Get keywords from storage using Plans (platform-agnostic)
+            const response = await topicAnalysis.getKeywords({
               topicId,
               limit: 15
             });
@@ -123,23 +114,14 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
             // Only update if this is still the latest request
             if (currentRequest === requestCounter.current) {
               if (response.success && response.data?.keywords) {
-                // Keep full keyword objects with subjects array
                 const keywords = response.data.keywords as Keyword[];
-                const keywordTerms = keywords.map((k) => k.term);
-                // console.log('[useChatKeywords] ✅ Keywords loaded from storage:', keywordTerms.length, 'keywords:', keywordTerms);
                 setKeywords(keywords);
                 setError(null);
-              } else {
-                // console.log('[useChatKeywords] ❌ No keywords in response:', response);
               }
-            } else {
-              // console.log('[useChatKeywords] Ignoring stale response');
             }
           } else if (keywords.length === 0) {
             // Only try fallback if we have no keywords yet
-            // console.log('[useChatKeywords] No messages, trying fallback to subjects');
-
-            const subjectsResponse = await window.electronAPI.invoke('topicAnalysis:getSubjects', {
+            const subjectsResponse = await topicAnalysis.getSubjects({
               topicId,
               includeArchived: false
             });
@@ -197,7 +179,7 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
         clearTimeout(debounceTimer.current);
       }
     };
-  }, [topicId, messages.length]); // Only re-run when topic or message count changes
+  }, [topicId, messages.length, topicAnalysis]); // Added topicAnalysis dependency
 
   // Non-blocking update for new message
   const updateKeywordsForNewMessage = (messageText: string) => {
@@ -211,16 +193,28 @@ export function useChatKeywords(topicId: string, messages: Message[] = []) {
       try {
         console.log('[useChatKeywords] Updating keywords for new message (non-blocking)');
 
-        const response = await window.electronAPI.invoke('topicAnalysis:extractRealtimeKeywords', {
+        // Convert Keyword[] to string[] for API
+        const existingTerms = keywords.map(k => k.term);
+
+        const response = await topicAnalysis.extractRealtimeKeywords({
           text: messageText,
-          existingKeywords: keywords,
+          existingKeywords: existingTerms,
           maxKeywords: 15
         });
 
         // Only update if this is still the latest request
         if (currentRequest === requestCounter.current) {
           if (response.success && response.data?.keywords) {
-            setKeywords(response.data.keywords as Keyword[]);
+            // Convert string[] back to Keyword[]
+            const newKeywords: Keyword[] = response.data.keywords.map((term: string) => ({
+              $type$: 'Keyword' as const,
+              term,
+              frequency: 1,
+              subjects: [],
+              createdAt: Date.now(),
+              lastSeen: Date.now()
+            }));
+            setKeywords(newKeywords);
           }
         }
       } catch (err) {

@@ -146,6 +146,44 @@ REMOVE THEM. Browser uses IPC only: `window.electronAPI.invoke()`
 
 Specs: `specs/018-*/`, `specs/019-*/`, `specs/021-*/`
 
+## Registering ONE.core Types
+
+Custom ONE object types (recipes) must be registered at instance initialization time. Do NOT use module augmentation (`@OneObjectInterfaces.d.ts`) for runtime type registration.
+
+**Pattern - Adding new ONE types:**
+
+1. Create recipe file in your package (e.g., `meaning.core/src/recipes/MeaningNodeRecipe.ts`)
+2. Export recipes array from package:
+```typescript
+// meaning.core/src/recipes/index.ts
+export const MeaningCoreRecipes = [
+    MeaningNodeRecipe,
+    MeaningDimensionValueRecipe
+];
+```
+
+3. Add dependency in `lama.cube/package.json`:
+```json
+"@meaning/core": "file:../meaning.core"
+```
+
+4. Import and spread in `CoreInstanceInitializationPlan.loadRecipes()`:
+```typescript
+const { MeaningCoreRecipes } = await import('@meaning/core/recipes/index.js');
+
+const allRecipes = [
+    ...RecipesStable,
+    ...RecipesExperimental,
+    ...(LamaRecipes || []),
+    ...(CubeCoreRecipes || []),
+    ...(MeaningCoreRecipes || [])
+];
+```
+
+**Key file**: `main/plans/CoreInstanceInitializationPlan.ts`
+
+**Note**: The `@OneObjectInterfaces.d.ts` files provide TypeScript compile-time types only. Runtime registration happens via `initInstance({ initialRecipes: [...] })`.
+
 ## Development Principles
 
 - ESM everywhere (`import`)

@@ -4,9 +4,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.js';
-import { Badge } from '../ui/badge.js';
-import { Button } from '../ui/button.js';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Merge, Archive, MessageSquare, Clock } from 'lucide-react';
 import type { Subject, GetSubjectsResponse } from '../../types/topic-analysis.js';
 import { usePlans } from '@ui/core';

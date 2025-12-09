@@ -9,6 +9,7 @@
 
 import type { IpcMainInvokeEvent } from 'electron';
 import { ProposalsPlan } from '@lama/core/plans/ProposalsPlan.js';
+import { SemanticProposalEngine } from '@lama/core/services/semantic-proposal-engine.js';
 import { ProposalEngine } from '../../services/proposal-engine.js';
 import { ProposalRanker } from '../../services/proposal-ranker.js';
 import { ProposalCache } from '../../services/proposal-cache.js';
@@ -16,14 +17,76 @@ import type { ProposalConfig } from '../../services/proposal-engine.js';
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
 import type { Subject } from '@lama/core/one-ai/types/Subject.js';
 import nodeOneCoreInstance from '../../core/node-one-core.js';
+import { MeaningDimension } from '@cube/meaning.core';
+import { getInferenceManager } from '../../core/inference-manager.js';
 
 // Initialize services
 let proposalEngine: ProposalEngine | null = null;
 const proposalRanker = new ProposalRanker();
 const proposalCache = new ProposalCache(50, 60000); // 50 entries, 60s TTL
 
+// Semantic engine components
+let meaningDimension: MeaningDimension | null = null;
+let semanticEngine: SemanticProposalEngine | null = null;
+let meaningDimensionInitializing = false;
+
 // Singleton handler instance
 let proposalsHandler: ProposalsPlan | null = null;
+
+/**
+ * Initialize MeaningDimension for semantic proposals
+ * Non-blocking - continues without semantic engine if InferenceManager not ready
+ */
+async function initMeaningDimension(): Promise<void> {
+  if (meaningDimension || meaningDimensionInitializing) return;
+  meaningDimensionInitializing = true;
+
+  try {
+    const inferenceManager = getInferenceManager();
+    if (!inferenceManager.initialized) {
+      console.log('[Proposals] InferenceManager not ready, semantic proposals disabled');
+      return;
+    }
+
+    const localProvider = inferenceManager.getEmbeddingProvider();
+    console.log('[Proposals] Creating MeaningDimension with embedding provider');
+
+    // Adapt LocalEmbeddingProvider to meaning.core's EmbeddingProvider interface
+    const embeddingProvider = {
+      model: 'all-MiniLM-L6-v2' as const,  // Canonical model name for meaning.core
+      embed: (text: string) => localProvider.embed(text),
+      embedBatch: (texts: string[]) => localProvider.embedBatch(texts)
+    };
+
+    meaningDimension = new MeaningDimension({
+      model: 'all-MiniLM-L6-v2',  // Matches ONNX model
+      embeddingProvider
+    });
+
+    await meaningDimension.init();
+    console.log('[Proposals] MeaningDimension initialized');
+
+    semanticEngine = new SemanticProposalEngine(meaningDimension);
+    console.log('[Proposals] SemanticProposalEngine ready');
+
+    // Recreate handler with semantic engine
+    if (proposalsHandler && proposalEngine) {
+      proposalsHandler = new ProposalsPlan(
+        nodeOneCoreInstance,
+        nodeOneCoreInstance.topicAnalysisModel,
+        proposalEngine,
+        proposalRanker,
+        proposalCache,
+        semanticEngine
+      );
+      console.log('[Proposals] ProposalsPlan upgraded with semantic engine');
+    }
+  } catch (error) {
+    console.error('[Proposals] Failed to init MeaningDimension:', error);
+  } finally {
+    meaningDimensionInitializing = false;
+  }
+}
 
 /**
  * Initialize ProposalEngine and handler
@@ -48,8 +111,14 @@ function getProposalsHandler(): ProposalsPlan {
       nodeOneCoreInstance.topicAnalysisModel,
       proposalEngine,
       proposalRanker,
-      proposalCache
+      proposalCache,
+      semanticEngine ?? undefined
     );
+
+    // Try to init semantic engine in background
+    initMeaningDimension().catch(err => {
+      console.error('[Proposals] Background semantic init failed:', err);
+    });
   }
 
   return proposalsHandler;

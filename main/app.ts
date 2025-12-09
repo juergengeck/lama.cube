@@ -69,11 +69,44 @@ class MainApplication {
         const inferenceManager = getInferenceManager()
         inferenceManager.onProgress = (progress) => {
           console.log(`[MainApp] Inference loading: ${progress.stage} ${progress.percent}%`)
+          const status = {
+            state: progress.stage === 'download' ? 'downloading' as const : 'loading' as const,
+            progress: progress.percent
+          }
+          // Track status so renderer can request it on mount
+          inferenceManager.updateStatus(status)
+          // Send progress to renderer
+          if (this.mainWindow?.webContents) {
+            this.mainWindow.webContents.send('inference:status', status)
+          }
+        }
+        inferenceManager.onError = (error) => {
+          console.error('[MainApp] Inference error:', error)
+          const status = { state: 'error' as const, progress: 0, error: error.message }
+          inferenceManager.updateStatus(status)
+          if (this.mainWindow?.webContents) {
+            this.mainWindow.webContents.send('inference:status', status)
+          }
         }
         await inferenceManager.init({ preferLocal: true })
         console.log('[MainApp] Inference Manager initialized with local ONNX embeddings')
+        // Send ready state
+        const readyStatus = { state: 'ready' as const, progress: 100 }
+        inferenceManager.updateStatus(readyStatus)
+        if (this.mainWindow?.webContents) {
+          this.mainWindow.webContents.send('inference:status', readyStatus)
+        }
       } catch (error) {
         console.warn('[MainApp] Inference Manager initialization failed (non-critical):', error)
+        // Send error state
+        const errorStatus = { state: 'error' as const, progress: 0, error: (error as Error).message }
+        try {
+          const inferenceManager = getInferenceManager()
+          inferenceManager.updateStatus(errorStatus)
+        } catch {}
+        if (this.mainWindow?.webContents) {
+          this.mainWindow.webContents.send('inference:status', errorStatus)
+        }
         // Continue without inference - can be initialized later
       }
 

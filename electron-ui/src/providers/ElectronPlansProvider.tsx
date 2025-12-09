@@ -14,7 +14,7 @@
  */
 
 import { ReactNode, useState, useEffect } from 'react'
-import { PlansProvider, type LAMAPlansContext, type MemoryPlan } from '@ui/core'
+import { PlansProvider, type LAMAPlansContext, type MemoryPlan, type LocalModelsPlan } from '@ui/core'
 import type { ContactsPlan } from '@chat/core/plans/ContactsPlan.js'
 import type { ChatPlan } from '@chat/core/plans/ChatPlan.js'
 import type { AIPlan } from '@lama/core/plans/AIPlan.js'
@@ -277,6 +277,10 @@ const topicAnalysisPlan: TopicAnalysisPlan = {
 
   async mergeSubjects(params: any) {
     return await window.electronAPI.invoke('topicAnalysis:mergeSubjects', params)
+  },
+
+  async extractRealtimeKeywords(params: { text: string; existingKeywords?: any[]; maxKeywords?: number }) {
+    return await window.electronAPI.invoke('topicAnalysis:extractRealtimeKeywords', params)
   }
 } as TopicAnalysisPlan
 
@@ -565,6 +569,40 @@ const memoryPlan: MemoryPlan = {
 }
 
 /**
+ * IPC Wrapper for LocalModelsPlan
+ * Provides cross-platform local inference (Whisper, embeddings)
+ */
+const localModelsPlan: LocalModelsPlan = {
+  async whisperIsReady() {
+    return await window.electronAPI.invoke('localModels:whisperIsReady')
+  },
+
+  async whisperTranscribe(params) {
+    return await window.electronAPI.invoke('localModels:whisperTranscribe', params)
+  },
+
+  async getStatus(modelId: string) {
+    const response = await window.electronAPI.invoke('localModels:getStatus', { modelId })
+    if (response.success && response.data) {
+      return {
+        status: response.data.status === 'installed' ? 'ready' : response.data.status,
+        progress: response.data.downloadProgress,
+        error: response.data.error
+      }
+    }
+    return { status: 'error', error: response.error }
+  },
+
+  async loadModel(modelId: string) {
+    return await window.electronAPI.invoke('localModels:download', { modelId })
+  },
+
+  async unloadModel(modelId: string) {
+    return await window.electronAPI.invoke('localModels:delete', { modelId })
+  }
+}
+
+/**
  * Complete LAMAPlans implementation for Electron
  * All Plans are IPC wrappers that match Plan interfaces
  */
@@ -600,7 +638,10 @@ export const electronPlans: LAMAPlans = {
   memory: memoryPlan,
 
   // Transport Plans (from transport.core)
-  transport: transportPlan
+  transport: transportPlan,
+
+  // Local Models Plans (from local.core)
+  localModels: localModelsPlan
 
   // Platform-specific plans (optional):
   // filesystem?: FilesystemPlan  // TODO: Add Electron file dialog wrappers

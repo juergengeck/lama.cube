@@ -116,21 +116,30 @@ export class CoreInstanceInitializationPlan {
   }
 
   private async getInstanceCredentials(username: string, password: string, SettingsStore: any) {
-    console.log('[CoreInstanceInitializationPlan] Getting instance credentials...');
+    console.log('[CoreInstanceInitializationPlan] Getting instance credentials for user:', username);
 
-    // Use DIFFERENT email from browser to enable federation
+    // Always use the LOGIN credentials, not stored credentials
+    // This ensures we use the credentials the user actually entered
     const instanceName = `lama-node-${username}`;
     const email = `node-${username}@lama.local`;
 
-    // Check if instance already exists
+    // Check if this exact instance already exists (for isNewInstance flag)
     const storedInstanceName = await SettingsStore.getItem('instance');
     const storedEmail = await SettingsStore.getItem('email');
 
-    const isNewInstance = !storedInstanceName || !storedEmail;
+    // Instance exists if stored credentials match what we're logging in as
+    const isNewInstance = storedInstanceName !== instanceName || storedEmail !== email;
 
+    if (isNewInstance && storedInstanceName) {
+      console.log('[CoreInstanceInitializationPlan] Different user login detected');
+      console.log('[CoreInstanceInitializationPlan]   Stored:', storedInstanceName);
+      console.log('[CoreInstanceInitializationPlan]   Login:', instanceName);
+    }
+
+    // Always return credentials derived from LOGIN username
     return {
-      instanceName: storedInstanceName || instanceName,
-      email: storedEmail || email,
+      instanceName,
+      email,
       isNewInstance
     };
   }
@@ -146,6 +155,9 @@ export class CoreInstanceInitializationPlan {
     // Import cube.core recipes for DimensionState persistence
     const { CubeCoreRecipes } = await import('@cube/core/recipes/index.js');
 
+    // Import meaning.core recipes for semantic embedding dimension
+    const { MeaningCoreRecipes } = await import('@meaning/core/recipes/index.js');
+
     // Import reverse maps
     const { ReverseMapsStable, ReverseMapsForIdObjectsStable } = await import('@refinio/one.models/lib/recipes/reversemaps-stable.js');
     const { ReverseMapsExperimental, ReverseMapsForIdObjectsExperimental } = await import('@refinio/one.models/lib/recipes/reversemaps-experimental.js');
@@ -154,7 +166,8 @@ export class CoreInstanceInitializationPlan {
       ...RecipesStable,
       ...RecipesExperimental,
       ...(LamaRecipes || []),
-      ...(CubeCoreRecipes || [])
+      ...(CubeCoreRecipes || []),
+      ...(MeaningCoreRecipes || [])
     ] as Recipe[];
 
     console.log('[CoreInstanceInitializationPlan] Loaded', allRecipes.length, 'recipes');

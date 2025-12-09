@@ -64,6 +64,8 @@
     "tests/**",
     "packages/**",
     "reference/**",
-    "../trust.core/**"
+    "../trust.core/**",
+    "../meaning.core/**",
+    "../cube.core/**"
   ]
 }

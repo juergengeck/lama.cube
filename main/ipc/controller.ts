@@ -40,6 +40,7 @@ import createUserSettingsPlans from './plans/user-settings.js';
 // import { registerAssemblyPlans } from './plans/assembly.js'; // Disabled - migrating to assembly.core
 import { registerDirectAssemblyPlans } from './plans/assembly-direct.js';
 import * as transportPlans from './plans/transport.js';
+import localModelsPlans from './plans/local-models.js';
 
 // Node error type
 interface NodeError extends Error {
@@ -388,6 +389,15 @@ class IPCController {
     this.handle('transport:acceptWebRTCInvite', transportPlans.acceptWebRTCInvite);
     this.handle('transport:cancelWebRTCInvite', transportPlans.cancelWebRTCInvite);
 
+    // Local Models plans (embeddings, whisper)
+    this.handle('localModels:list', localModelsPlans.list);
+    this.handle('localModels:download', localModelsPlans.download);
+    this.handle('localModels:delete', localModelsPlans.delete);
+    this.handle('localModels:getStatus', localModelsPlans.getStatus);
+    this.handle('inference:getStatus', localModelsPlans.getInferenceStatus);
+    this.handle('localModels:whisperIsReady', localModelsPlans.whisperIsReady);
+    this.handle('localModels:whisperTranscribe', localModelsPlans.whisperTranscribe);
+
     // Note: app:clearData is handled in lama-electron-shadcn.js
 
     // Action plans (user-initiated actions)
@@ -423,7 +433,14 @@ class IPCController {
           'settings:get',
           'settings:getAll',
           'app:clearData',
-          'action:init'
+          'action:init',
+          'localModels:list',
+          'localModels:download',
+          'localModels:delete',
+          'localModels:getStatus',
+          'localModels:whisperIsReady',
+          'localModels:whisperTranscribe',
+          'inference:getStatus'
         ];
 
         // Check if NodeOneCore is initialized for channels that require it

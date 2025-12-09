@@ -1,252 +1,255 @@
-# LAMA Electron Desktop App
+# lama.cube - Electron Desktop Application
 
-A desktop application for LAMA (Local AI Messaging App) built with Electron, React, and ONE.CORE with Internet of Me (IoM) support.
+Electron desktop application for LAMA (Local AI Messaging App) with ONE.core integration and Internet of Me (IoM) support.
 
-## Current Status
-
-✅ **Working Features:**
-- Electron app with custom macOS title bar
-- Full ONE.CORE integration with IoM (Internet of Me)
-- MultiUser authentication system
-- AI chat interface with multiple LLM providers
-- Conversations management with persistence
-- Settings with AI provider configuration
-- **Data Dashboard with real-time IOM replication monitoring**
-- **CHUM protocol sync status and error tracking**
-- **Live storage metrics from actual system resources**
-- **HTML Export with microdata for conversations**
-- **AI-powered topic analysis with keyword extraction**
-- **Combined LLM response + analysis in single call**
-- **Deterministic topic ID generation**
-- Development hot-reload with Vite
-- IPC communication for UDP and native features
-- App data reset with automatic restart
-- MCP (Model Context Protocol) tool integration
-
-🚧 **In Progress:**
-- Journal tab (unified with chat messages)
-- Contacts management UI
-- P2P networking via IoM connections
-- Multi-device synchronization
-- BLE/UDP discovery for mobile instances
-- Real-time subject tracking across conversations
-
-## Architecture
+## Architecture Overview
 
 ```
-lama-electron-shadcn.js     # Main Electron process
+lama-electron-shadcn.ts        # Main Electron process entry
 ├── Window Management (macOS hiddenInset)
-├── IPC Handlers (UDP, App Data, System)
-├── Custom Title Bar Injection
+├── IPC Handlers (system, app data)
 └── Dev/Production modes
 
-main/                       # Node.js Backend
-├── core/
-│   ├── node-one-core.js   # Single Node.js ONE.core instance
-│   ├── ai-assistant-model.js  # AI integration with analysis
-│   ├── topic-group-manager.js # P2P and group chat management
-│   └── one-ai/           # Topic analysis package
-│       ├── models/       # Subject, Keyword, Summary models
-│       └── services/     # Analysis and extraction services
-├── services/
-│   ├── llm-manager.js    # LLM provider with chatWithAnalysis
-│   ├── mcp-manager.js    # MCP tool integration
-│   └── html-export/      # HTML export with microdata
-└── ipc/
-    ├── controller.js      # IPC communication handler
-    └── handlers/
-        ├── chat.js        # Chat with deterministic IDs
-        ├── topic-analysis.js  # AI analysis handlers
-        └── export.js      # HTML export handler
+main/                          # Node.js Backend (SINGLE ONE.core instance)
+├── app.ts                     # Application lifecycle
+├── core/                      # Core business logic
+│   ├── node-one-core.ts       # THE ONE.core instance (Node.js only)
+│   ├── instance-manager.ts    # Instance lifecycle management
+│   ├── device-manager.ts      # Device pairing and management
+│   ├── contact-trust-manager.ts
+│   ├── inference-manager.ts   # Local LLM inference status
+│   └── ai-message-listener.ts # AI response handling
+├── ipc/                       # IPC communication layer
+│   ├── controller.ts          # Central IPC router
+│   └── plans/                 # IPC handlers by domain
+│       ├── ai.ts              # AI/LLM operations
+│       ├── chat.ts            # Chat messaging
+│       ├── contacts.ts        # Contact management
+│       ├── devices.ts         # Device management
+│       ├── auth.ts            # Authentication
+│       ├── export.ts          # HTML export
+│       ├── mcp.ts             # MCP server control
+│       └── ... (50+ plan files)
+├── plans/                     # Initialization plans
+│   ├── CoreInstanceInitializationPlan.ts
+│   ├── ModelInitializationPlan.ts
+│   └── MCPInitializationPlan.ts
+├── services/                  # Background services
+├── recipes/                   # ONE.core type definitions
+├── types/                     # TypeScript types
+└── config/                    # Configuration
 
-electron-ui/               # React Frontend
+electron-ui/                   # React Frontend (NO ONE.core)
 ├── src/
-│   ├── App.tsx           # Main app with navigation
-│   ├── components/       # UI components
-│   │   ├── ChatLayout.tsx    # Multi-conversation chat
-│   │   ├── ChatView.tsx      # Individual chat interface
-│   │   ├── DataDashboard.tsx # IOM replication monitoring
-│   │   ├── SettingsView.tsx  # AI providers & app settings
-│   │   └── ModelOnboarding.tsx # LLM setup wizard
-│   ├── models/           # Data models
-│   │   ├── AppModel.ts       # Root orchestrator
-│   │   └── ai/               # AI integration
-│   │       ├── LLMManager.ts # LLM provider management
-│   │       └── AIAssistantModel.ts
-│   └── services/         # Core services
-│       ├── real-browser-instance.ts  # Browser ONE.CORE
-│       └── init-flow.ts             # Platform initialization
+│   ├── App.tsx                # Main app shell with navigation
+│   ├── bridge/
+│   │   └── lama-bridge.ts     # IPC bridge (ALL communication)
+│   ├── components/            # UI components
+│   │   ├── ChatLayout.tsx     # Multi-conversation layout
+│   │   ├── ChatView.tsx       # Chat interface
+│   │   ├── MessageView.tsx    # Message display
+│   │   ├── DevicesView.tsx    # Device management
+│   │   ├── ContactsView.tsx   # Contact management
+│   │   ├── SettingsView.tsx   # Settings interface
+│   │   ├── StatusBar.tsx      # App status bar
+│   │   └── InferenceStatus.tsx # Local AI status indicator
+│   ├── contexts/              # React contexts
+│   ├── hooks/                 # Custom React hooks
+│   ├── services/              # Frontend services
+│   └── types/                 # TypeScript types
+└── preload.cjs                # Electron preload script
+```
+
+## Critical Architecture Principles
+
+### Single ONE.core Instance (Node.js ONLY)
+
+**The browser/renderer process has NO direct access to ONE.core.**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Browser (Renderer)                                      │
+│  ┌─────────────────────────────────────────────────────┐│
+│  │  React UI                                            ││
+│  │  - Components, hooks, contexts                       ││
+│  │  - NO AppModel, NO LeuteModel, NO authentication     ││
+│  │  - ALL operations via IPC only                       ││
+│  └─────────────────────────────────────────────────────┘│
+│                           │                              │
+│                    IPC (window.electronAPI)              │
+│                           │                              │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│  Node.js (Main Process)                                  │
+│  ┌─────────────────────────────────────────────────────┐│
+│  │  ONE.core Instance (node-one-core.ts)               ││
+│  │  - LeuteModel, ChannelManager, ConnectionsModel     ││
+│  │  - TopicModel, TopicRoom                            ││
+│  │  - File system storage                              ││
+│  └─────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────┘
+```
+
+### IPC Communication Flow
+
+All browser-to-core communication uses the IPC bridge:
+
+```typescript
+// Browser side (lama-bridge.ts)
+const contacts = await window.electronAPI.invoke('contacts:list')
+
+// Main process (ipc/plans/contacts.ts)
+export const contactPlans = {
+  async 'contacts:list'(event) {
+    return await contactHandler.listContacts()
+  }
+}
 ```
 
 ## Development
 
-### Prerequisites
-- Node.js 18+
-- npm or yarn
-- Windows: Windows 7 or later (for building Windows installers)
-- macOS: macOS 10.13 or later (for building macOS installers)
-- Linux: Ubuntu 16.04 or later (for building Linux packages)
+### Commands
 
-### Setup
 ```bash
-# Install dependencies
-npm install
+# Development
+npm run electron              # Run app (uses dist/)
+npm run electron:src          # Run from source TypeScript
+cd electron-ui && npm run dev # Vite dev server (hot-reload)
 
-# Start development
-npm run dev              # Start Vite dev server (in lama/electron-ui)
-npm run electron         # Launch Electron app
+# Building
+npm run build:all             # TypeScript + React UI
+npm run build:main            # Main process only
+npm run build:ui              # UI only
+npm run watch:main            # Watch mode for main process
+
+# Testing
+cd electron-ui && npm test    # Run tests
+npm run test:watch            # Watch mode
+npm run test:ci               # CI mode
+
+# Distribution
+npm run dist                  # Current platform
+npm run dist:mac              # macOS DMG
+npm run dist:win              # Windows installer
+npm run dist:linux            # Linux AppImage/deb
+
+# Cleanup
+./clear-all-storage.sh        # Clear ALL ONE.core storage
+pkill -f Electron             # Kill Electron processes
 ```
 
-### Running the App
-1. Start the Vite dev server:
-   ```bash
-   cd lama/electron-ui
-   npm run dev
-   ```
+### Quick Start
 
-2. In another terminal, launch Electron:
-   ```bash
-   NODE_ENV=development npx electron lama-electron-shadcn.js
-   ```
-
-### Building for Production
-
-#### Run in Production Mode
 ```bash
-cd lama/electron-ui
-npm run build
-NODE_ENV=production npx electron lama-electron-shadcn.js
+# Terminal 1: Start Vite dev server with hot reload
+cd electron-ui && npm run dev
+
+# Terminal 2: Launch Electron
+npm run electron
 ```
 
-#### Build Installers
+## Features
 
-**Windows Installer (Single-file downloads):**
-```bash
-# Build NSIS installer (.exe with one-click installation)
-npm run dist:win
+### Current Capabilities
 
-# Build portable version (.exe that runs without installation)
-npm run dist:win-portable
+- **AI Chat Interface**: Multiple LLM providers (Claude, OpenAI, Ollama)
+- **Local Inference**: On-device LLM with download progress and status
+- **MCP Integration**: Model Context Protocol for tool use
+- **Contact Management**: P2P identity and trust handling
+- **Device Management**: Multi-device pairing and sync
+- **Topic Analysis**: AI-powered keyword extraction and summarization
+- **HTML Export**: Conversations with microdata markup
+- **Proposals**: Context-aware suggestions based on conversation
+- **Memory Scan**: Store and retrieve conversation memories
 
-# Build both NSIS and portable versions
-npm run dist:all
+### UI Components
+
+- **StatusBar**: App-wide status with inference indicator, MCP status, sliders
+- **InferenceStatus**: Traffic-light style local AI status (idle/downloading/loading/ready/error)
+- **ChatLayout**: Multi-conversation interface
+- **DevicesView**: Device pairing with QR codes
+- **ContactsView**: Contact management with trust levels
+- **SettingsView**: AI providers, user preferences
+
+## Configuration
+
+Three-layer configuration system:
+
+1. **Bootstrap** (`lama.config.json`): Pre-ONE.core settings (network, identity)
+2. **User Settings** (ONE.core): Synced preferences (AI config, UI theme)
+3. **Entity Configs** (ONE.core): Per-entity config (MCP servers, models)
+
+## Channel Architecture
+
+### P2P Channels (2 participants)
+- Single shared channel
+- Person-based access control
+- Both participants write to same channel
+
+### Group Channels (3+ participants)
+- One channel per participant
+- Group-based access control
+- Each member writes to own channel only
+- Reads aggregate all channels
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `lama-electron-shadcn.ts` | Electron main entry point |
+| `main/core/node-one-core.ts` | THE ONE.core instance |
+| `main/ipc/controller.ts` | Central IPC router |
+| `main/plans/CoreInstanceInitializationPlan.ts` | Instance setup and recipes |
+| `electron-ui/src/bridge/lama-bridge.ts` | Browser-side IPC bridge |
+| `electron-ui/src/App.tsx` | React app shell |
+
+## Registering ONE.core Types
+
+Custom ONE object types (recipes) are registered at initialization:
+
+```typescript
+// 1. Create recipe in your package
+// meaning.core/src/recipes/MeaningNodeRecipe.ts
+
+// 2. Export from package
+export const MeaningCoreRecipes = [MeaningNodeRecipe];
+
+// 3. Import in CoreInstanceInitializationPlan.ts
+const { MeaningCoreRecipes } = await import('@meaning/core/recipes/index.js');
+
+const allRecipes = [
+  ...RecipesStable,
+  ...RecipesExperimental,
+  ...(MeaningCoreRecipes || [])
+];
 ```
 
-**macOS Installer:**
-```bash
-# Build DMG installer for macOS
-npm run dist:mac
-```
+## Related Packages
 
-**Linux:**
-```bash
-# Build AppImage and deb packages
-npm run dist:linux
-```
+- **lama.core**: Platform-agnostic business logic (no Electron imports)
+- **lama.ui**: Shared React components (StatusBar, ChatLayout, etc.)
+- **one.core**: Core data storage and synchronization
+- **one.models**: Data models (LeuteModel, TopicModel, etc.)
 
-Built installers will be available in the `dist/` folder:
-- Windows: `LAMA-1.0.0-Installer.exe` (NSIS) or `LAMA-1.0.0-Portable.exe` (portable)
-- macOS: `LAMA-1.0.0.dmg`
-- Linux: `LAMA-1.0.0.AppImage` and `LAMA_1.0.0_amd64.deb`
+## Common Issues
 
-## UI Components
+### "User not authenticated"
+User must complete login flow. Node instance initializes after authentication.
 
-### Navigation Tabs
-- **Chats** - Message conversations with P2P contacts
-- **Journal** - Personal notes and thoughts (unified with chat)
-- **Contacts** - Manage P2P connections
-- **Settings** - App configuration and preferences
+### Browser trying to access ONE.core
+Remove direct ONE.core imports from renderer. Use IPC via `window.electronAPI.invoke()`.
 
-### Features to Implement
-1. **Journal/Chat Unification**
-   - Share message component between Journal and Chat
-   - Journal entries are self-messages
-   - Same storage and sync mechanism
+### Messages not syncing
+- Verify channel access permissions
+- Check that each participant writes to correct channel
+- Use `TopicRoom.retrieveAllMessages()` to read
 
-2. **Contacts Management**
-   - Add/remove contacts
-   - Display connection status
-   - Pairing via QR codes or links
+## Development Principles
 
-3. **Settings**
-   - Profile management
-   - Network configuration
-   - AI model selection
-   - Privacy settings
-
-## Key Features
-
-### Recent Improvements (January 2025)
-
-#### Performance Optimizations
-- **LLM Cold Start Reduction**: Pre-warming connections reduce startup from 12+ seconds to <1 second
-- **Contact Caching**: 5-second cache eliminates redundant API calls during initialization
-- **Reduced Log Noise**: 80% reduction in startup logs through batching and filtering
-- **Race Condition Fixes**: Proper mutex cleanup prevents topic creation conflicts
-- **AI Topic Registration Fix**: Corrected initialization order ensures AI topics are properly registered for message listening
-
-#### AI & Analysis
-- **Combined Response + Analysis**: Single LLM call provides both user response and topic analysis
-- **Non-blocking Processing**: Keywords and subjects extracted in background using `setImmediate()`
-- **Context-Aware Extraction**: Focuses on meaning over message length
-- **Automatic Subject Tracking**: Creates and manages conversation subjects dynamically
-
-#### Topic Management
-- **Deterministic IDs**: Topics use name-based IDs instead of timestamps
-- **Duplicate Prevention**: Automatic validation ensures unique topic identifiers
-- **No Spurious Creation**: Analysis calls no longer auto-create topics
-
-#### Export Features
-- **HTML with Microdata**: Export conversations with embedded ONE.core object references
-- **Implode Integration**: Uses ONE.core's native `implode()` for complete data embedding
-- **Self-contained Files**: HTML exports include all styling and metadata
-
-### Internet of Me (IoM)
-The app establishes a full Internet of Me using ONE.CORE and one.models:
-- **Single Node.js Instance**: All ONE.core operations run in main process
-- **LeuteModel** - Handles identity management and trust certificates
-- **ChannelManager** - Manages data channels for synchronization
-- **TopicGroupManager** - Handles P2P and group chat architectures
-
-### AI Integration
-- Multiple LLM providers (Claude, OpenAI, Ollama, HuggingFace)
-- Streaming responses with markdown support
-- Conversation persistence and management
-- Model configuration and API key management
-
-### Native Features
-- UDP sockets for P2P communication
-- IndexedDB for browser storage
-- File system access for Node.js storage
-- Custom macOS title bar with traffic light controls
-- App data reset with automatic restart
-
-## Next Steps
-
-1. **Immediate Tasks**
-   - [ ] Implement Journal tab with message display
-   - [ ] Add Contacts list view
-   - [ ] Create Settings UI
-   - [ ] Unify message components
-
-2. **Integration Tasks**
-   - [ ] Replace mock lama-bridge with real implementation
-   - [ ] Connect to ONE platform models
-   - [ ] Enable P2P networking
-   - [ ] Add local AI processing
-
-3. **Polish**
-   - [ ] Dark/light theme toggle
-   - [ ] System tray support
-   - [ ] Auto-updates
-   - [ ] Cross-platform testing
-
-## Known Issues
-
-- Preload script must use .cjs extension due to ES modules
-- DevTools autofill warnings (can be ignored)
-- Window focus state not always accurate
-
-## Contributing
-
-This is part of the LAMA ecosystem. See main LAMA repository for contribution guidelines.
+- ESM everywhere (`import` syntax)
+- IPC via contextBridge only
+- NO browser ONE.core access
+- Fail fast, NO fallbacks
+- Single source of truth in Node.js

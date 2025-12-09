@@ -10,14 +10,22 @@ export default defineConfig({
     react()
   ],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@components': path.resolve(__dirname, './src/components'),
-      '@lib': path.resolve(__dirname, './src/lib'),
-      '@lama/core': path.resolve(__dirname, '../../lama.core'),
-      '@lama/ui': path.resolve(__dirname, '../../lama.ui/src'),
-      '@ui/core': path.resolve(__dirname, '../../ui.core/src')
-    }
+    alias: [
+      // CRITICAL: Order matters - more specific paths must come first
+      // Map lama.ui's internal @/ imports to lama.ui (for ui components)
+      { find: /^@\/components\/ui\/(.*)$/, replacement: path.resolve(__dirname, '../../lama.ui/src/components/ui/$1') },
+      { find: '@/lib/utils', replacement: path.resolve(__dirname, '../../lama.ui/src/lib/utils') },
+
+      // Local aliases for electron-ui
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+      { find: '@components', replacement: path.resolve(__dirname, './src/components') },
+      { find: '@lib', replacement: path.resolve(__dirname, './src/lib') },
+
+      // External packages
+      { find: '@lama/core', replacement: path.resolve(__dirname, '../../lama.core') },
+      { find: '@lama/ui', replacement: path.resolve(__dirname, '../../lama.ui/src') },
+      { find: '@ui/core', replacement: path.resolve(__dirname, '../../ui.core/src') }
+    ]
   },
   define: {
     global: 'globalThis',

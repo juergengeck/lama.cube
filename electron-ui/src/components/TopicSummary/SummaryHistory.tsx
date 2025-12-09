@@ -4,9 +4,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card.js';
-import { Button } from '../ui/button.js';
-import { Badge } from '../ui/badge.js';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { GitBranch, Clock, ChevronRight, Eye, EyeOff, FileText } from 'lucide-react';
 import { usePlans } from '@ui/core';
 import type { Summary, GetSummaryResponse } from '../../types/topic-analysis.js';

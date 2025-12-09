@@ -4,7 +4,57 @@
  */
 
 import { IpcMainInvokeEvent } from 'electron';
-import { mcpManager } from '@mcp/core/local';
+import { mcpManager, MCPSupplyManager } from '@mcp/core/local';
+import { MCPRemoteAdapter } from '@mcp/core/router';
+import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { PlanRouter } from '@mcp/core/router';
+
+// Singleton instances for supply/demand management
+let supplyManager: MCPSupplyManager | null = null;
+let remoteAdapter: MCPRemoteAdapter | null = null;
+let myPersonId: SHA256IdHash | null = null;
+
+/**
+ * Initialize the supply manager and remote adapter
+ * Called when the node-one-core is ready
+ */
+export function initMCPSupplyManager(deps: {
+  router: PlanRouter;
+  sendMessage: (topicId: SHA256IdHash, message: any) => Promise<void>;
+  sendCredential: (targetPersonId: SHA256IdHash, credential: any) => Promise<void>;
+  myPersonId: SHA256IdHash;
+}): void {
+  myPersonId = deps.myPersonId;
+  supplyManager = new MCPSupplyManager({
+    myPersonId: deps.myPersonId,
+    sendCredential: deps.sendCredential
+  });
+  remoteAdapter = new MCPRemoteAdapter({
+    router: deps.router,
+    myPersonId: deps.myPersonId,
+    sendMessage: deps.sendMessage,
+    getCredentialForTopic: (topicId, senderId) => {
+      if (!supplyManager) return undefined;
+      return supplyManager.hasValidCredential(topicId, senderId)
+        ? `${topicId}:${senderId}`
+        : undefined;
+    }
+  });
+}
+
+/**
+ * Get the supply manager instance
+ */
+export function getSupplyManager(): MCPSupplyManager | null {
+  return supplyManager;
+}
+
+/**
+ * Get the remote adapter instance
+ */
+export function getRemoteAdapter(): MCPRemoteAdapter | null {
+  return remoteAdapter;
+}
 
 interface MCPServer {
   name: string;
@@ -385,6 +435,269 @@ const mcpHandlers = {
       return {
         success: false,
         error: error.message || 'Failed to reconnect MCP servers'
+      };
+    }
+  },
+
+  // ============================================
+  // Supply/Demand Handlers (Remote MCP Support)
+  // ============================================
+
+  /**
+   * Create an MCP supply (enable MCP service for a topic)
+   */
+  async createSupply(
+    event: IpcMainInvokeEvent,
+    request: { topicId: string; allowedTools?: string[] }
+  ): Promise<MCPActionResult> {
+    try {
+      const { topicId, allowedTools } = request;
+      console.log('[MCP] Creating supply for topic:', topicId);
+
+      if (!supplyManager) {
+        throw new Error('MCP supply manager not initialized');
+      }
+
+      await supplyManager.createSupply(topicId as SHA256IdHash, allowedTools);
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('[MCP] Failed to create supply:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to create MCP supply'
+      };
+    }
+  },
+
+  /**
+   * Remove an MCP supply (disable MCP service for a topic)
+   */
+  async removeSupply(
+    event: IpcMainInvokeEvent,
+    request: { topicId: string }
+  ): Promise<MCPActionResult> {
+    try {
+      const { topicId } = request;
+      console.log('[MCP] Removing supply for topic:', topicId);
+
+      if (!supplyManager) {
+        throw new Error('MCP supply manager not initialized');
+      }
+
+      await supplyManager.removeSupply(topicId as SHA256IdHash);
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('[MCP] Failed to remove supply:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to remove MCP supply'
+      };
+    }
+  },
+
+  /**
+   * Check if MCP is enabled for a topic
+   */
+  async hasSupply(
+    event: IpcMainInvokeEvent,
+    request: { topicId: string }
+  ): Promise<{ success: boolean; hasSupply?: boolean; error?: string }> {
+    try {
+      const { topicId } = request;
+
+      if (!supplyManager) {
+        throw new Error('MCP supply manager not initialized');
+      }
+
+      const supply = supplyManager.getSupply(topicId as SHA256IdHash);
+
+      return {
+        success: true,
+        hasSupply: supply !== undefined
+      };
+    } catch (error: any) {
+      console.error('[MCP] Failed to check supply:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to check MCP supply'
+      };
+    }
+  },
+
+  /**
+   * Get supply details for a topic
+   */
+  async getSupply(
+    event: IpcMainInvokeEvent,
+    request: { topicId: string }
+  ): Promise<{
+    success: boolean;
+    supply?: { allowedTools?: string[]; createdAt: number };
+    error?: string;
+  }> {
+    try {
+      const { topicId } = request;
+
+      if (!supplyManager) {
+        throw new Error('MCP supply manager not initialized');
+      }
+
+      const supply = supplyManager.getSupply(topicId as SHA256IdHash);
+
+      if (!supply) {
+        return { success: true, supply: undefined };
+      }
+
+      return {
+        success: true,
+        supply: {
+          allowedTools: supply.allowedTools,
+          createdAt: supply.createdAt
+        }
+      };
+    } catch (error: any) {
+      console.error('[MCP] Failed to get supply:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to get MCP supply'
+      };
+    }
+  },
+
+  /**
+   * Handle an incoming MCP demand (credential request)
+   * Called when we receive a demand from a remote peer
+   */
+  async handleDemand(
+    event: IpcMainInvokeEvent,
+    request: { topicId: string; requesterPersonId: string }
+  ): Promise<MCPActionResult> {
+    try {
+      const { topicId, requesterPersonId } = request;
+      console.log('[MCP] Handling demand from:', requesterPersonId);
+
+      if (!supplyManager) {
+        throw new Error('MCP supply manager not initialized');
+      }
+
+      // Issue credential if we have a supply for this topic
+      const demand = {
+        $type$: 'MCPDemand' as const,
+        topicId: topicId as SHA256IdHash,
+        requesterPersonId: requesterPersonId as SHA256IdHash,
+        createdAt: Date.now()
+      };
+      const credential = await supplyManager.handleDemand(demand);
+
+      if (!credential) {
+        return {
+          success: false,
+          error: 'No supply available for this topic'
+        };
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('[MCP] Failed to handle demand:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to handle MCP demand'
+      };
+    }
+  },
+
+  /**
+   * Handle an incoming MCP request (tool execution)
+   * Called when we receive an MCPRequest message
+   */
+  async handleRequest(
+    event: IpcMainInvokeEvent,
+    request: { requestData: any; senderPersonId: string; topicId: string }
+  ): Promise<MCPActionResult> {
+    try {
+      const { requestData, senderPersonId, topicId } = request;
+      console.log('[MCP] Handling request from:', senderPersonId);
+
+      if (!remoteAdapter) {
+        throw new Error('MCP remote adapter not initialized');
+      }
+
+      await remoteAdapter.handleRequest(
+        requestData,
+        senderPersonId as SHA256IdHash,
+        topicId as SHA256IdHash
+      );
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('[MCP] Failed to handle request:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to handle MCP request'
+      };
+    }
+  },
+
+  /**
+   * Check if a consumer has a valid credential for a topic
+   */
+  async hasValidCredential(
+    event: IpcMainInvokeEvent,
+    request: { topicId: string; consumerPersonId: string }
+  ): Promise<{ success: boolean; hasCredential?: boolean; error?: string }> {
+    try {
+      const { topicId, consumerPersonId } = request;
+
+      if (!supplyManager) {
+        throw new Error('MCP supply manager not initialized');
+      }
+
+      const hasCredential = supplyManager.hasValidCredential(
+        topicId as SHA256IdHash,
+        consumerPersonId as SHA256IdHash
+      );
+
+      return {
+        success: true,
+        hasCredential
+      };
+    } catch (error: any) {
+      console.error('[MCP] Failed to check credential:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to check credential'
+      };
+    }
+  },
+
+  /**
+   * Revoke a credential for a consumer
+   */
+  async revokeCredential(
+    event: IpcMainInvokeEvent,
+    request: { topicId: string; consumerPersonId: string }
+  ): Promise<MCPActionResult> {
+    try {
+      const { topicId, consumerPersonId } = request;
+      console.log('[MCP] Revoking credential for:', consumerPersonId);
+
+      if (!supplyManager) {
+        throw new Error('MCP supply manager not initialized');
+      }
+
+      await supplyManager.revokeCredential(
+        topicId as SHA256IdHash,
+        consumerPersonId as SHA256IdHash
+      );
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('[MCP] Failed to revoke credential:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to revoke credential'
       };
     }
   }

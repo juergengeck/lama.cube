@@ -24,12 +24,13 @@
     "generate-icons": "node assets/generate-icons-from-svg.js",
     "update-vendor": "node scripts/update-vendor-packages.js",
     "postinstall": "cd electron-ui && npm install",
-    "dist": "npm run build:all && electron-builder",
-    "dist:win": "npm run build:all && electron-builder --win",
-    "dist:win-portable": "npm run build:all && electron-builder --win portable",
-    "dist:mac": "npm run build:all && electron-builder --mac",
-    "dist:linux": "npm run build:all && electron-builder --linux",
-    "dist:all": "npm run build:all && electron-builder --win nsis portable --mac --linux"
+    "bundle:models": "node scripts/download-models.js",
+    "dist": "npm run build:all && npm run bundle:models && electron-builder",
+    "dist:win": "npm run build:all && npm run bundle:models && electron-builder --win",
+    "dist:win-portable": "npm run build:all && npm run bundle:models && electron-builder --win portable",
+    "dist:mac": "npm run build:all && npm run bundle:models && electron-builder --mac",
+    "dist:linux": "npm run build:all && npm run bundle:models && electron-builder --linux",
+    "dist:all": "npm run build:all && npm run bundle:models && electron-builder --win nsis portable --mac --linux"
   },
   "devDependencies": {
     "@types/node": "^22.18.13",
@@ -41,7 +42,6 @@
     "electron-builder": "^26.0.12",
     "esbuild": "^0.25.10",
     "glob": "^11.0.3",
-    "sharp": "^0.34.3",
     "typescript": "^5.7.2"
   },
   "dependencies": {
@@ -53,6 +53,7 @@
     "@lama/core": "file:../lama.core",
     "@local/core": "file:../local.core",
     "@mcp/core": "file:../mcp.core",
+    "@meaning/core": "file:../meaning.core",
     "@memory/core": "file:../memory.core",
     "@modelcontextprotocol/sdk": "^1.17.3",
     "@react-three/drei": "^10.0.0",
@@ -64,13 +65,13 @@
     "@transport/core": "file:../transport.core",
     "@transport/node": "file:../transport.node",
     "@trust/core": "file:../trust.core",
+    "@xenova/transformers": "^2.17.2",
     "d3-force-3d": "^3.0.5",
     "fast-xml-parser": "^5.3.0",
     "node-fetch": "^2.7.0",
     "qrcode": "^1.5.4",
     "three": "^0.170.0",
     "tweetnacl": "^1.0.3",
-    "ws": "^8.18.3",
-    "@xenova/transformers": "^2.17.2"
+    "ws": "^8.18.3"
   }
 }

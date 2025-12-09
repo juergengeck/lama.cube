@@ -14,7 +14,7 @@ import {
     ProposalRecipe,
     ProposalInteractionPlanRecipe,
     ProposalInteractionResponseRecipe
-} from './proposal-recipes.js'
+} from '@lama/core/recipes/index.js'
 import { MCPRecipes } from './mcp-recipes.js'
 import { AvatarPreferenceRecipe } from './avatar-recipes.js'
 // import { FeedForwardRecipes } from './feed-forward-recipes.js'

@@ -7,7 +7,8 @@
  * See: specs/008-unified-plan-system/ for architecture details.
  */
 
-import { PlanRegistry, IPCTransportPlan } from '@refinio/api/plan-system';
+import { PlanRegistry } from '@refinio/api/plan-system';
+import { IPCTransportPlan } from '@refinio/api/transports/IPCTransportPlan.js';
 import { ExportPlanSimple } from '@chat/core/plans/ExportPlanSimple.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';

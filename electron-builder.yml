@@ -34,6 +34,10 @@ extraResources:
   - from: electron-ui/dist
     to: electron-ui/dist
     filter: ["**/*"]
+  # Include bundled AI models (~200MB)
+  - from: models
+    to: models
+    filter: ["**/*"]
 
 # Windows configuration
 win:

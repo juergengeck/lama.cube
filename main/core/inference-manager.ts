@@ -48,15 +48,38 @@ export interface InferenceConfig {
  * await inferenceManager.shutdown();
  * ```
  */
+/** Inference status for UI display */
+export interface InferenceStatus {
+  state: 'idle' | 'downloading' | 'loading' | 'ready' | 'error';
+  progress: number;
+  error?: string;
+}
+
 export class InferenceManager {
   private embeddingProvider: LocalEmbeddingProvider | null = null;
   private _initialized = false;
+  private _lastStatus: InferenceStatus = { state: 'idle', progress: 0 };
 
   /** Progress callback for model loading */
   onProgress?: (progress: ModelLoadProgress) => void;
 
   /** Error callback */
   onError?: (error: Error) => void;
+
+  /**
+   * Get the last emitted inference status
+   * Used by renderer to get current status on mount (fixes race condition)
+   */
+  getLastStatus(): InferenceStatus {
+    return { ...this._lastStatus };
+  }
+
+  /**
+   * Update and store the current status
+   */
+  updateStatus(status: InferenceStatus): void {
+    this._lastStatus = { ...status };
+  }
 
   /**
    * Initialize inference providers
@@ -73,7 +96,7 @@ export class InferenceManager {
 
     if (config.preferLocal) {
       // Use bundled ONNX model - works offline, no setup required
-      const modelId = config.embeddingModel || 'nomic-embed-text-v1.5-q4';
+      const modelId = config.embeddingModel || 'all-MiniLM-L6-v2';
       console.log(`[InferenceManager] Using local ONNX model: ${modelId}`);
 
       this.embeddingProvider = new ONNXEmbeddingProvider(modelId);

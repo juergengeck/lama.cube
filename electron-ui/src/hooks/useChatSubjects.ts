@@ -1,13 +1,18 @@
 /**
  * useChatSubjects Hook
  * Fetches and manages subjects for a chat topic
+ * Uses usePlans() for platform-agnostic access to topicAnalysis plan
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { usePlans } from '@ui/core';
 import type { Subject } from '../types/topic-analysis';
 
 export function useChatSubjects(topicId: string) {
   console.log('[useChatSubjects] Hook called with topicId:', topicId);
+
+  // Use Plans for platform-agnostic operations
+  const { topicAnalysis } = usePlans();
 
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(false);
@@ -20,47 +25,19 @@ export function useChatSubjects(topicId: string) {
   // Track previous subject count for change detection
   const prevSubjectCountRef = useRef(0);
 
-  // Listen for subject update events from backend
-  useEffect(() => {
-    if (!topicId || !window.electronAPI) return;
-
-    const handleSubjectsUpdated = (data: any) => {
-      // console.log(`[useChatSubjects-${topicId}] 🔔 Received subjects:updated event for: "${data.topicId}"`);
-      if (data.topicId === topicId) {
-        // console.log(`[useChatSubjects-${topicId}] ✅ Fetching updated subjects`);
-        // Re-fetch subjects immediately
-        fetchSubjects();
-      }
-    };
-
-    const unsub = window.electronAPI.on('subjects:updated', handleSubjectsUpdated);
-    return () => {
-      if (unsub) unsub();
-    };
-  }, [topicId]);
-
-  // Detect when subjects appear (0 -> N) and return flag
-  const subjectsJustAppeared = prevSubjectCountRef.current === 0 && subjects.length > 0;
-
-  // Only update ref when subjects count actually changes (not on every render)
-  useEffect(() => {
-    prevSubjectCountRef.current = subjects.length;
-  }, [subjects.length]);
-
-  // Fetch subjects
-  const fetchSubjects = async () => {
+  // Fetch subjects using Plans (platform-agnostic)
+  const fetchSubjects = useCallback(async () => {
     const currentRequest = ++requestCounter.current;
 
     try {
       if (loading) {
-        // console.log('[useChatSubjects] Skipping - fetch already in progress');
         return;
       }
 
       setLoading(true);
 
-      console.log('[useChatSubjects] Calling topicAnalysis:getSubjects for:', topicId);
-      const response = await window.electronAPI.invoke('topicAnalysis:getSubjects', {
+      console.log('[useChatSubjects] Calling topicAnalysis.getSubjects for:', topicId);
+      const response = await topicAnalysis.getSubjects({
         topicId,
         includeArchived: false
       });
@@ -90,7 +67,33 @@ export function useChatSubjects(topicId: string) {
         setLoading(false);
       }
     }
-  };
+  }, [topicId, topicAnalysis, loading]);
+
+  // Listen for subject update events from backend (platform-specific: Electron IPC)
+  useEffect(() => {
+    if (!topicId || !window.electronAPI) return;
+
+    const handleSubjectsUpdated = (data: any) => {
+      if (data.topicId === topicId) {
+        // Re-fetch subjects immediately
+        fetchSubjects();
+      }
+    };
+
+    // Subscribe to subjects:updated events - returns unsubscribe function
+    const unsub = (window.electronAPI as any).on('subjects:updated', handleSubjectsUpdated) as (() => void) | undefined;
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [topicId, fetchSubjects]);
+
+  // Detect when subjects appear (0 -> N) and return flag
+  const subjectsJustAppeared = prevSubjectCountRef.current === 0 && subjects.length > 0;
+
+  // Only update ref when subjects count actually changes (not on every render)
+  useEffect(() => {
+    prevSubjectCountRef.current = subjects.length;
+  }, [subjects.length]);
 
   // Load subjects when topicId changes
   useEffect(() => {
@@ -118,7 +121,7 @@ export function useChatSubjects(topicId: string) {
         clearTimeout(debounceTimer.current);
       }
     };
-  }, [topicId]);
+  }, [topicId, fetchSubjects]);
 
   return {
     subjects,

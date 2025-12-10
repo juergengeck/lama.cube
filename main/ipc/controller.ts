@@ -389,7 +389,7 @@ class IPCController {
     this.handle('transport:acceptWebRTCInvite', transportPlans.acceptWebRTCInvite);
     this.handle('transport:cancelWebRTCInvite', transportPlans.cancelWebRTCInvite);
 
-    // Local Models plans (embeddings, whisper)
+    // Local Models plans (embeddings, whisper, text generation)
     this.handle('localModels:list', localModelsPlans.list);
     this.handle('localModels:download', localModelsPlans.download);
     this.handle('localModels:delete', localModelsPlans.delete);
@@ -397,6 +397,12 @@ class IPCController {
     this.handle('inference:getStatus', localModelsPlans.getInferenceStatus);
     this.handle('localModels:whisperIsReady', localModelsPlans.whisperIsReady);
     this.handle('localModels:whisperTranscribe', localModelsPlans.whisperTranscribe);
+    // Text generation
+    this.handle('localModels:listTextGen', localModelsPlans.listTextGenModels);
+    this.handle('localModels:loadTextGen', localModelsPlans.loadTextGenModel);
+    this.handle('localModels:unloadTextGen', localModelsPlans.unloadTextGenModel);
+    this.handle('localModels:chatTextGen', localModelsPlans.chatWithTextGen);
+    this.handle('localModels:getTextGenStatus', localModelsPlans.getTextGenStatus);
 
     // Note: app:clearData is handled in lama-electron-shadcn.js
 
@@ -440,6 +446,11 @@ class IPCController {
           'localModels:getStatus',
           'localModels:whisperIsReady',
           'localModels:whisperTranscribe',
+          'localModels:listTextGen',
+          'localModels:loadTextGen',
+          'localModels:unloadTextGen',
+          'localModels:chatTextGen',
+          'localModels:getTextGenStatus',
           'inference:getStatus'
         ];
 

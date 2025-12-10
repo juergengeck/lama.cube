@@ -13,6 +13,7 @@ import { lamaBridge } from '@/bridge/lama-bridge'
 import { ConversationList, type Conversation } from '@lama/ui'
 import { usePlans } from '@ui/core'
 import { InputDialog } from './InputDialog'
+import { NewChatDialog } from './NewChatDialog'
 import { UserSelectionDialog } from './UserSelectionDialog'
 import { GroupChatDialog } from './GroupChatDialog'
 import { MCPConfigDialog } from './MCPConfigDialog'
@@ -222,16 +223,23 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
   }
 
   // Create new conversation with the provided name
-  const handleCreateConversation = async (chatName: string) => {
+  const handleCreateConversation = async (chatName: string, modelType: 'cloud' | 'local' = 'cloud', localModelId?: string) => {
     try {
-      // Get default AI model
-      const defaultModelResult = await ai.getDefaultModel()
-      if (!defaultModelResult.success) {
-        throw new Error(defaultModelResult.error || 'Failed to get default AI model')
-      }
-      const aiModelId = defaultModelResult.data
-      if (!aiModelId) {
-        throw new Error('No default AI model configured. Please select a default model in settings.')
+      let aiModelId: string | undefined
+
+      if (modelType === 'local' && localModelId) {
+        // Use local model - prefix with 'local:' to identify it
+        aiModelId = `local:${localModelId}`
+      } else {
+        // Get default cloud AI model
+        const defaultModelResult = await ai.getDefaultModel()
+        if (!defaultModelResult.success) {
+          throw new Error(defaultModelResult.error || 'Failed to get default AI model')
+        }
+        aiModelId = defaultModelResult.data
+        if (!aiModelId) {
+          throw new Error('No default AI model configured. Please select a default model in settings.')
+        }
       }
 
       // Create conversation through Plan Facade with AI model
@@ -241,15 +249,15 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
         name: chatName,
         aiModelId
       })
-      
+
       if (!result.success || !result.data) {
         throw new Error(result.error || 'Failed to create conversation')
       }
-      
+
       // Reload conversations from Node.js to get fresh data
       await reloadConversations()
       setSelectedConversation(result.data.id)
-      
+
       // Mark as processing since welcome message will be generated
       setProcessingConversations(prev => {
         const next = new Set(prev)
@@ -641,14 +649,9 @@ export function ChatLayout({ selectedConversationId }: ChatLayoutProps = {}) {
     </div>
 
     {/* Dialogs */}
-    <InputDialog
+    <NewChatDialog
       open={showNewChatDialog}
       onOpenChange={setShowNewChatDialog}
-      title="New Chat"
-      description="Enter a name for your new chat conversation"
-      label="Chat Name"
-      placeholder="e.g., Project Discussion"
-      defaultValue={`Chat ${conversations.length + 1}`}
       onSubmit={handleCreateConversation}
     />
 

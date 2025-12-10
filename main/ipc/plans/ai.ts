@@ -114,9 +114,12 @@ const aiPlans = {
             name: m.name,
             description: m.description || '',
             provider: m.provider,
+            server: m.server || '',
+            inferenceType: m.inferenceType || 'cloud',
             modelType: m.modelType || 'unknown',
             capabilities: m.capabilities || [],
             contextLength: m.contextLength || 0,
+            maxTokens: m.maxTokens || 0,
             size: m.size || 0,
             isLoaded: m.isLoaded || false,
             isDefault: m.isDefault || false
@@ -320,12 +323,12 @@ const aiPlans = {
    * Called after Ollama config is saved to dynamically register available models
    */
   async discoverOllamaModels(
-    event: IpcMainInvokeEvent
+    event: IpcMainInvokeEvent,
+    params?: { serverUrl?: string }
   ) {
     try {
-      // Discover Ollama models (no API key needed for local Ollama)
-      // TODO: discoverOllamaModels() not yet exported in @lama/core type definitions
-      // await llmManager.discoverOllamaModels();
+      // Discover and register Ollama models
+      await llmManager.discoverOllamaModels();
 
       // Get discovered Ollama models to return to UI
       const allModels = await llmManager.getAvailableModels();

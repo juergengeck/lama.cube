@@ -225,7 +225,11 @@ const aiAssistantPlan: AIAssistantPlan = {
 /**
  * IPC Wrapper for LLMConfigPlan
  */
-const llmConfigPlan: LLMConfigPlan = {
+const llmConfigPlan: LLMConfigPlan & {
+  getAvailableModels: () => Promise<any>
+  discoverOllamaModels: (params?: { serverUrl?: string }) => Promise<any>
+  discoverClaudeModels: () => Promise<any>
+} = {
   async getAllConfigs() {
     return await window.electronAPI.invoke('llmConfig:getAll')
   },
@@ -244,8 +248,22 @@ const llmConfigPlan: LLMConfigPlan = {
 
   async testConnection(modelId: string) {
     return await window.electronAPI.invoke('llmConfig:testConnection', modelId)
+  },
+
+  async getAvailableModels(params?: any) {
+    return await window.electronAPI.invoke('ai:getModels', params)
+  },
+
+  async discoverOllamaModels(params?: { serverUrl?: string }) {
+    const result = await window.electronAPI.invoke('ai:discoverOllamaModels', params)
+    return result
+  },
+
+  async discoverClaudeModels() {
+    const result = await window.electronAPI.invoke('ai:discoverClaudeModels')
+    return result
   }
-} as LLMConfigPlan
+} as any
 
 /**
  * IPC Wrapper for TopicAnalysisPlan

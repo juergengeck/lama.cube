@@ -129,7 +129,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'chat:messageSent',
       'chat:newMessages',
       'node-log',
-      'onecore:init-progress'
+      'onecore:init-progress',
+      'localModels:textGenProgress',
+      'localModels:textGenStream',
+      'localModels:progress'
     ]
     if (validChannels.includes(channel)) {
       // Strip the Electron IPC event object, only pass data to callback

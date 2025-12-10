@@ -12,7 +12,7 @@ import {
 import { usePlans } from '@ui/core'
 import {
   Settings, User, Shield, Globe, HardDrive,
-  Save, RefreshCw, Brain, Code, Key, Database, Hash, Clock, Package, Eye, ChevronDown, ChevronRight, Copy, FileText, Monitor, Sparkles, Download, LogOut
+  Save, RefreshCw, Brain, Code, Key, Database, Hash, Clock, Package, Eye, ChevronDown, ChevronRight, Copy, FileText, Monitor, Sparkles, Download, LogOut, Cpu
 } from 'lucide-react'
 import { ipcStorage } from '@/services/ipc-storage'
 import { MCPSettings } from './Settings/MCPSettings'
@@ -27,6 +27,7 @@ import {
   PrivacySettingsPanel,
   AccountSettingsPanel
 } from './Settings'
+import { LocalModelsPanel } from './Settings/LocalModelsPanel'
 
 interface SettingsViewProps {
   onLogout?: () => void
@@ -115,7 +116,7 @@ export function SettingsView({ onLogout, onNavigate, appMenuItems = [], trafficL
   })
 
   const [hasChanges, setHasChanges] = useState(false)
-  const [activeTab, setActiveTab] = useState<'general' | 'ai' | 'ui' | 'proposals' | 'mcp'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'ai' | 'local' | 'ui' | 'proposals' | 'mcp'>('general')
 
   useEffect(() => {
     loadSystemObjects()
@@ -579,6 +580,14 @@ export function SettingsView({ onLogout, onNavigate, appMenuItems = [], trafficL
           AI Settings
         </Button>
         <Button
+          variant={activeTab === 'local' ? 'default' : 'ghost'}
+          onClick={() => setActiveTab('local')}
+          className="rounded-b-none"
+        >
+          <Cpu className="h-4 w-4 mr-2" />
+          Local Models
+        </Button>
+        <Button
           variant={activeTab === 'ui' ? 'default' : 'ghost'}
           onClick={() => setActiveTab('ui')}
           className="rounded-b-none"
@@ -613,6 +622,17 @@ export function SettingsView({ onLogout, onNavigate, appMenuItems = [], trafficL
               <Card>
                 <CardContent className="pt-6">
                   <AISettingsPanel />
+                </CardContent>
+              </Card>
+            </SettingsErrorBoundary>
+          )}
+
+          {/* Local Models Panel */}
+          {activeTab === 'local' && (
+            <SettingsErrorBoundary>
+              <Card>
+                <CardContent className="pt-6">
+                  <LocalModelsPanel />
                 </CardContent>
               </Card>
             </SettingsErrorBoundary>

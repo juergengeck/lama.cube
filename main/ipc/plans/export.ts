@@ -186,7 +186,7 @@ async function exportMessage(event: IpcMainInvokeEvent, { format, content, metad
 
     // Get handler and prepare export data
     const handler = getHandler();
-    const result = handler.exportMessage({ format, content, metadata });
+    const result = await handler.exportMessage({ format, content, metadata });
 
     if (!result.success) {
       return {

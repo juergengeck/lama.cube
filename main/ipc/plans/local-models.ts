@@ -7,20 +7,23 @@ import { IpcMainInvokeEvent, app } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
-import { MODELS } from '@local/core';
-import type { ModelId } from '@local/core';
+import { MODELS, getTextGenerationModels } from '@local/core';
+import type { ModelId, TextGenModelId, ChatMessage, TextGenerationOptions } from '@local/core';
+import { ONNXTextGenerationProvider } from '../../adapters/local/ONNXTextGenerationProvider.js';
 import { getInferenceManager, type InferenceStatus } from '../../core/inference-manager.js';
 import { ONNXWhisperProvider } from '../../adapters/local/ONNXWhisperProvider.js';
 
 interface LocalModelState {
   id: string;
   name: string;
-  type: 'embedding' | 'whisper';
+  type: 'embedding' | 'whisper' | 'text-generation';
   sizeBytes: number;
   status: 'not_installed' | 'downloading' | 'installed' | 'loading' | 'ready' | 'error';
   downloadProgress?: number;
   error?: string;
   bundled: boolean;
+  familyName?: string;
+  contextLength?: number;
 }
 
 // Track model states
@@ -147,7 +150,9 @@ async function initializeModelStates(): Promise<void> {
       type: model.type,
       sizeBytes: model.sizeBytes,
       status: installed ? 'installed' : 'not_installed',
-      bundled: model.bundled
+      bundled: model.bundled,
+      familyName: model.familyName,
+      contextLength: model.contextLength
     });
   }
 
@@ -160,6 +165,12 @@ void initializeModelStates();
 
 // Singleton Whisper provider for transcription
 let whisperProvider: ONNXWhisperProvider | null = null;
+
+// Singleton text generation provider
+let textGenProvider: ONNXTextGenerationProvider | null = null;
+let loadedTextGenModelId: string | null = null;
+let textGenUnloadTimeout: NodeJS.Timeout | null = null;
+const TEXT_GEN_UNLOAD_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 
 const localModelsPlans = {
   /**
@@ -421,6 +432,229 @@ const localModelsPlans = {
       console.error('[LocalModels] Transcription failed:', error);
       return { success: false, error: (error as Error).message };
     }
+  },
+
+  // ==================== TEXT GENERATION ====================
+
+  /**
+   * List available text generation models
+   */
+  async listTextGenModels(
+    _event: IpcMainInvokeEvent
+  ): Promise<{ success: boolean; data?: LocalModelState[]; error?: string }> {
+    try {
+      const textGenModels = getTextGenerationModels();
+      const models: LocalModelState[] = [];
+
+      for (const model of textGenModels) {
+        const state = modelStates.get(model.id);
+        if (state) {
+          models.push(state);
+        }
+      }
+
+      return { success: true, data: models };
+    } catch (error) {
+      console.error('[LocalModels] Failed to list text gen models:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  },
+
+  /**
+   * Load a text generation model
+   */
+  async loadTextGenModel(
+    event: IpcMainInvokeEvent,
+    params: { modelId: string }
+  ): Promise<{ success: boolean; error?: string }> {
+    const { modelId } = params;
+
+    try {
+      // Clear any pending unload
+      if (textGenUnloadTimeout) {
+        clearTimeout(textGenUnloadTimeout);
+        textGenUnloadTimeout = null;
+      }
+
+      // If same model already loaded, return success
+      if (textGenProvider && loadedTextGenModelId === modelId && textGenProvider.status === 'ready') {
+        console.log(`[LocalModels] Text gen model already loaded: ${modelId}`);
+        return { success: true };
+      }
+
+      // Unload existing model if different
+      if (textGenProvider && loadedTextGenModelId !== modelId) {
+        console.log(`[LocalModels] Unloading current model: ${loadedTextGenModelId}`);
+        await textGenProvider.unload();
+        textGenProvider = null;
+        loadedTextGenModelId = null;
+      }
+
+      const modelInfo = MODELS[modelId as ModelId];
+      if (!modelInfo || modelInfo.type !== 'text-generation') {
+        return { success: false, error: `Invalid text generation model: ${modelId}` };
+      }
+
+      console.log(`[LocalModels] Loading text gen model: ${modelId}`);
+      const state = modelStates.get(modelId);
+      if (state) {
+        state.status = 'loading';
+      }
+
+      textGenProvider = new ONNXTextGenerationProvider(modelId as TextGenModelId);
+
+      // Set up progress callback
+      textGenProvider.onProgress = (progress) => {
+        event.sender.send('localModels:textGenProgress', { modelId, progress: progress.percent });
+        if (state) {
+          state.downloadProgress = progress.percent;
+        }
+      };
+
+      await textGenProvider.load();
+      loadedTextGenModelId = modelId;
+
+      if (state) {
+        state.status = 'ready';
+        state.downloadProgress = undefined;
+      }
+
+      console.log(`[LocalModels] Text gen model loaded: ${modelId}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[LocalModels] Failed to load text gen model ${modelId}:`, error);
+      const state = modelStates.get(modelId);
+      if (state) {
+        state.status = 'error';
+        state.error = (error as Error).message;
+      }
+      return { success: false, error: (error as Error).message };
+    }
+  },
+
+  /**
+   * Unload current text generation model
+   */
+  async unloadTextGenModel(
+    _event: IpcMainInvokeEvent
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (textGenUnloadTimeout) {
+        clearTimeout(textGenUnloadTimeout);
+        textGenUnloadTimeout = null;
+      }
+
+      if (textGenProvider) {
+        const modelId = loadedTextGenModelId;
+        console.log(`[LocalModels] Unloading text gen model: ${modelId}`);
+        await textGenProvider.unload();
+        textGenProvider = null;
+        loadedTextGenModelId = null;
+
+        if (modelId) {
+          const state = modelStates.get(modelId);
+          if (state) {
+            state.status = 'installed';
+          }
+        }
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('[LocalModels] Failed to unload text gen model:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  },
+
+  /**
+   * Chat with local text generation model
+   */
+  async chatWithTextGen(
+    event: IpcMainInvokeEvent,
+    params: {
+      modelId: string;
+      messages: ChatMessage[];
+      options?: {
+        temperature?: number;
+        maxTokens?: number;
+        stream?: boolean;
+      };
+    }
+  ): Promise<{ success: boolean; data?: { response: string; modelId: string }; error?: string }> {
+    const { modelId, messages, options = {} } = params;
+
+    try {
+      // Load model if needed
+      if (!textGenProvider || loadedTextGenModelId !== modelId) {
+        const loadResult = await localModelsPlans.loadTextGenModel(event, { modelId });
+        if (!loadResult.success) {
+          return { success: false, error: loadResult.error };
+        }
+      }
+
+      if (!textGenProvider || textGenProvider.status !== 'ready') {
+        return { success: false, error: 'Text generation model not ready' };
+      }
+
+      // Reset unload timeout
+      if (textGenUnloadTimeout) {
+        clearTimeout(textGenUnloadTimeout);
+      }
+      textGenUnloadTimeout = setTimeout(async () => {
+        console.log('[LocalModels] Auto-unloading text gen model due to inactivity');
+        await localModelsPlans.unloadTextGenModel(event);
+      }, TEXT_GEN_UNLOAD_DELAY_MS);
+
+      console.log(`[LocalModels] Generating response with ${modelId}, ${messages.length} messages`);
+
+      // Generate response
+      const response = await textGenProvider.chat(messages, {
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        onStream: options.stream
+          ? (chunk: string) => {
+              event.sender.send('localModels:textGenStream', { modelId, chunk });
+            }
+          : undefined
+      });
+
+      console.log(`[LocalModels] Generated response: ${response.substring(0, 50)}...`);
+
+      return {
+        success: true,
+        data: {
+          response,
+          modelId: loadedTextGenModelId!
+        }
+      };
+    } catch (error) {
+      console.error('[LocalModels] Text generation failed:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  },
+
+  /**
+   * Get current text generation model status
+   */
+  async getTextGenStatus(
+    _event: IpcMainInvokeEvent
+  ): Promise<{
+    success: boolean;
+    data?: {
+      loaded: boolean;
+      modelId: string | null;
+      status: string;
+    };
+    error?: string;
+  }> {
+    return {
+      success: true,
+      data: {
+        loaded: textGenProvider !== null && textGenProvider.status === 'ready',
+        modelId: loadedTextGenModelId,
+        status: textGenProvider?.status ?? 'unloaded'
+      }
+    };
   }
 };
 

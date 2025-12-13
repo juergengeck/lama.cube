@@ -29,7 +29,7 @@ export interface LamaAPI {
   getAvailableModels: () => Promise<any[]>
   getDefaultModel: () => Promise<string | null>
   setDefaultModel: (modelId: string) => Promise<boolean>
-  switchTopicModel: (topicId: string, newModelId: string) => Promise<boolean>
+  switchAIModel: (aiPersonId: string, modelId: string) => Promise<boolean>
   enableAIForTopic: (topicId: string) => Promise<boolean>
   disableAIForTopic: (topicId: string) => Promise<boolean>
   getBestModelForTask: (task: 'coding' | 'reasoning' | 'chat' | 'analysis') => Promise<any>
@@ -346,11 +346,11 @@ class LamaBridge implements LamaAPI {
     return result.success
   }
 
-  async switchTopicModel(topicId: string, newModelId: string): Promise<boolean> {
+  async switchAIModel(aiPersonId: string, modelId: string): Promise<boolean> {
     if (!window.electronAPI) {
       throw new Error('IPC not available')
     }
-    const result = await window.electronAPI.invoke('ai:switchTopicModel', { topicId, newModelId })
+    const result = await window.electronAPI.invoke('ai:switchAIModel', { aiPersonId, modelId })
     return result.success
   }
 

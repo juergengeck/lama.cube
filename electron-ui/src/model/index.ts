@@ -201,9 +201,9 @@ export function useModel() {
     },
 
     // ===== Model methods =====
-    switchTopicModel: async (topicId: string, modelId: string) => {
+    switchAIModel: async (aiPersonId: string, modelId: string) => {
       // TODO: Implement via IPC
-      console.log('[useModel] switchTopicModel not yet implemented:', { topicId, modelId });
+      console.log('[useModel] switchAIModel not yet implemented:', { aiPersonId, modelId });
     },
 
     // ===== Compatibility aliases =====

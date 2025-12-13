@@ -85,15 +85,21 @@ export const ChatView = memo(function ChatView({
     loadModels()
   }, [])
 
-  // Handle model switching
+  // Handle model switching - find AI participant and update their model
   const handleSwitchModel = useCallback(async (newModelId: string) => {
     try {
-      await lamaBridge.switchTopicModel(conversationId, newModelId)
-      console.log(`[ChatView] Switched to model ${newModelId} for topic ${conversationId}`)
+      // Find an AI message to get the AI Person ID
+      const aiMessage = messages.find((m: any) => m.isAI === true)
+      if (!aiMessage?.senderId) {
+        console.error('[ChatView] No AI participant found in messages')
+        return
+      }
+      await lamaBridge.switchAIModel(aiMessage.senderId, newModelId)
+      console.log(`[ChatView] Switched AI ${aiMessage.senderId.substring(0, 8)}... to model ${newModelId}`)
     } catch (error) {
       console.error('[ChatView] Failed to switch model:', error)
     }
-  }, [conversationId])
+  }, [messages])
 
 
   // Analysis is handled automatically by chatWithAnalysis() in ai-assistant-model.ts

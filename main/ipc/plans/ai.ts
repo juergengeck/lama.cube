@@ -10,6 +10,9 @@ import llmManager from '../../services/llm-manager-singleton.js';
 import { mcpManager } from '@mcp/core/local';
 import type { IpcMainInvokeEvent } from 'electron';
 import electron from 'electron';
+import localModelsPlans from './local-models.js';
+import { AIBirthService, type BirthContext } from '@lama/core/services/AIBirthService.js';
+import { BirthContextCollector, NodeBirthContextProvider } from '@lama/core/services/BirthContextCollector.js';
 const { BrowserWindow } = electron;
 
 /**
@@ -100,30 +103,80 @@ const aiPlans = {
   },
 
   /**
-   * Get available AI models
+   * Get available AI models (cloud/server + local on-device)
    */
   async getModels(event: IpcMainInvokeEvent) {
     try {
-      const models = await llmManager.getAvailableModels();
+      // Get local text-gen models first - we need their IDs to filter storage results
+      const localResult = await localModelsPlans.listTextGenModels(event);
+      const localModels = (localResult.success && localResult.data) ? localResult.data : [];
+      const localModelIds = new Set(localModels.map(m => m.id));
+
+      const allModelsFromStorage = await llmManager.getAvailableModels();
+
+      // Filter out on-device models from storage - we get them fresh from localModelsPlans
+      // This prevents duplicates since local models are also stored in ONE.core
+      // Also filter by provider to catch models stored with wrong/missing inferenceType
+      // Also filter out any models whose ID matches a known local model ID (catches corrupted ollama entries)
+      const cloudAndServerModels = allModelsFromStorage.filter(m =>
+        m.inferenceType !== 'ondevice' &&
+        m.modelType !== 'ondevice' &&
+        m.provider !== 'local-onnx' &&
+        m.provider !== 'onnx' &&
+        m.provider !== 'transformers' &&
+        !localModelIds.has(m.id) // filter out any model with same ID as local model
+      );
+
+      // Get text-gen status to know which model is loaded
+      const statusResult = await localModelsPlans.getTextGenStatus(event);
+      const loadedModelId = statusResult.success ? statusResult.data?.modelId : null;
+
+      // Filter to only available (installed/ready/loaded) local models
+      const availableLocalModels = localModels.filter(m =>
+        m.status === 'installed' || m.status === 'ready' || m.id === loadedModelId
+      );
+
+      // Map local models to the same format as cloud models
+      // Note: Model IDs no longer use 'local:' prefix - routing is handled by LLM inferenceType field
+      const localModelsFormatted = availableLocalModels.map(m => ({
+        id: m.id,
+        name: m.name,
+        description: `On-device ${m.familyName || 'ONNX'} model`,
+        provider: 'local-onnx',
+        server: 'local',
+        inferenceType: 'ondevice' as const,
+        modelType: 'ondevice' as const,
+        capabilities: ['chat', 'text-generation'],
+        contextLength: m.contextLength || 2048,
+        maxTokens: m.contextLength || 2048,
+        size: m.sizeBytes || 0,
+        isLoaded: m.id === loadedModelId,
+        isDefault: false
+      }));
 
       return {
         success: true,
         data: {
-          models: models.map(m => ({
-            id: m.id,
-            name: m.name,
-            description: m.description || '',
-            provider: m.provider,
-            server: m.server || '',
-            inferenceType: m.inferenceType || 'cloud',
-            modelType: m.modelType || 'unknown',
-            capabilities: m.capabilities || [],
-            contextLength: m.contextLength || 0,
-            maxTokens: m.maxTokens || 0,
-            size: m.size || 0,
-            isLoaded: m.isLoaded || false,
-            isDefault: m.isDefault || false
-          }))
+          models: [
+            // Local on-device models first
+            ...localModelsFormatted,
+            // Then cloud/server models (on-device filtered out above)
+            ...cloudAndServerModels.map(m => ({
+              id: m.id,
+              name: m.name,
+              description: m.description || '',
+              provider: m.provider,
+              server: m.server || '',
+              inferenceType: m.inferenceType || 'cloud',
+              modelType: m.modelType || 'unknown',
+              capabilities: m.capabilities || [],
+              contextLength: m.contextLength || 0,
+              maxTokens: m.maxTokens || 0,
+              size: m.size || 0,
+              isLoaded: m.isLoaded || false,
+              isDefault: m.isDefault || false
+            }))
+          ]
         }
       };
     } catch (error: any) {
@@ -133,16 +186,16 @@ const aiPlans = {
 
   /**
    * Set default AI model
-   * Note: LLMManager doesn't have default model concept, so this just validates the model exists
+   * Creates AI Person with optional custom name/email from birth flow
    */
   async setDefaultModel(
     event: IpcMainInvokeEvent,
-    { modelId }: { modelId: string }
+    { modelId, displayName, email }: { modelId: string; displayName?: string; email?: string }
   ) {
     try {
-      console.log(`[AI IPC] Setting default model: ${modelId}`);
+      console.log(`[AI IPC] Setting default model: ${modelId}, displayName: ${displayName}, email: ${email}`);
       const handler = getAIHandler();
-      await handler.setDefaultModel(modelId);
+      await handler.setDefaultModel(modelId, displayName, email);
       console.log(`[AI IPC] ✅ Default model set successfully: ${modelId}`);
       return true;
     } catch (error: any) {
@@ -270,6 +323,17 @@ const aiPlans = {
           return modelId || null;
         }
       }
+
+      // Fallback: Read directly from AISettingsManager if aiAssistantModel not available
+      // This handles the case where ModuleRegistry init failed but settings exist
+      const { AISettingsManager } = await import('@lama/core/models/settings/AISettingsManager.js');
+      const settingsManager = new AISettingsManager(nodeOneCore);
+      const settings = await settingsManager.getSettings();
+      if (settings?.defaultModelId) {
+        console.log('[AI IPC] getDefaultModel fallback - found modelId:', settings.defaultModelId);
+        return settings.defaultModelId;
+      }
+
       return null;
     } catch (error: any) {
       console.error('[AI IPC] Error getting default model:', error);
@@ -394,19 +458,26 @@ const aiPlans = {
   },
 
   /**
-   * Switch the model for a specific topic
+   * Switch the model for an AI Person
    */
-  async switchTopicModel(
+  async switchAIModel(
     event: IpcMainInvokeEvent,
-    { topicId, newModelId }: { topicId: string; newModelId: string }
+    { aiPersonId, modelId }: { aiPersonId: string; modelId: string }
   ) {
     try {
       const handler = getAIHandler();
-      handler.topicManager.switchTopicModel(topicId, newModelId);
-      console.log(`[AI IPC] Switched topic ${topicId} to model ${newModelId}`);
+      await handler.switchAIModel(aiPersonId as any, modelId);
+      console.log(`[AI IPC] Switched AI ${aiPersonId.substring(0, 8)}... to model ${modelId}`);
+
+      // Emit event to notify UI that AI model changed
+      const windows = BrowserWindow.getAllWindows();
+      for (const win of windows) {
+        win.webContents.send('ai:modelChanged', { aiPersonId, modelId });
+      }
+
       return { success: true };
     } catch (error: any) {
-      console.error('[AI IPC] Failed to switch topic model:', error);
+      console.error('[AI IPC] Failed to switch AI model:', error);
       return { success: false, error: error.message };
     }
   },
@@ -503,6 +574,81 @@ const aiPlans = {
     } catch (error: any) {
       console.error('[AI IPC] getResponseLength error:', error);
       return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Generate AI name
+   * Called on first launch to create AI identity
+   * @param modelId - Model ID to use for name generation (user's selected model)
+   */
+  async generateBirthName(
+    event: IpcMainInvokeEvent,
+    { modelId }: { modelId: string }
+  ): Promise<{
+    success: boolean;
+    data?: { name: string; email: string };
+    error?: string;
+  }> {
+    console.log(`[AI IPC] Generating AI name with model: ${modelId}`);
+
+    if (!modelId) {
+      return {
+        success: false,
+        error: 'modelId is required - cannot generate name without selecting a model'
+      };
+    }
+
+    try {
+      // Collect context (device, locale, time)
+      const contextProvider = new NodeBirthContextProvider();
+      const contextCollector = new BirthContextCollector(contextProvider);
+      const context = await contextCollector.collect();
+
+      // Create service with llmManager chat wrapper
+      // For local models (granite-*), use chatLocalDirect which bypasses storage lookup
+      // This is needed because during first-run, the model isn't in storage yet
+      const isLocalModel = modelId.startsWith('granite-');
+
+      const birthService = new AIBirthService(async (messages, reqModelId) => {
+        let response: string;
+
+        if (isLocalModel) {
+          // Local models: bypass storage lookup entirely
+          response = await llmManager.chatLocalDirect(reqModelId, messages, { disableTools: true });
+        } else {
+          // Cloud/external models: use regular chat with storage lookup
+          const result = await llmManager.chat(messages, reqModelId, { disableTools: true });
+          if (typeof result === 'string') {
+            response = result;
+          } else if (result && typeof result === 'object' && 'content' in result) {
+            response = (result as any).content || '';
+          } else {
+            response = JSON.stringify(result);
+          }
+        }
+
+        return response;
+      });
+
+      // Generate name using the user's selected model
+      const result = await birthService.generateName(context, modelId);
+
+      console.log(`[AI IPC] AI name generated: ${result.name}`);
+
+      return {
+        success: true,
+        data: {
+          name: result.name,
+          email: result.email
+        }
+      };
+    } catch (error: any) {
+      console.error('[AI IPC] Name generation failed:', error);
+      return {
+        success: false,
+        error: error.message
+      };
     }
   },
 

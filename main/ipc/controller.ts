@@ -245,6 +245,8 @@ class IPCController {
     this.handle('llm:testApiKey', aiPlans.testApiKey);
     this.handle('ai:getDefaultModel', aiPlans['ai:getDefaultModel']);
     this.handle('ai:isAITopic', aiPlans.isAITopic);
+    this.handle('ai:switchAIModel', aiPlans.switchAIModel);
+    this.handle('ai:generateBirthName', aiPlans.generateBirthName);
 
     // LLM Configuration plans (network Ollama support)
     registerLlmConfigPlans();
@@ -451,7 +453,8 @@ class IPCController {
           'localModels:unloadTextGen',
           'localModels:chatTextGen',
           'localModels:getTextGenStatus',
-          'inference:getStatus'
+          'inference:getStatus',
+          'ai:generateBirthName'
         ];
 
         // Check if NodeOneCore is initialized for channels that require it

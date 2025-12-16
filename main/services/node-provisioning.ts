@@ -384,7 +384,9 @@ class NodeProvisioning {
     // Initialize AssemblyManager for knowledge extraction and Supply/Demand markets
     try {
       console.log('[NodeProvisioning] Initializing AssemblyManager...')
-      await assemblyManagerSingleton.init()
+      await assemblyManagerSingleton.init();
+      // CRITICAL: Assign to nodeOneCore so AIAssistantPlan can use it
+      (nodeOneCore as any).assemblyManager = assemblyManagerSingleton
       console.log('[NodeProvisioning] AssemblyManager initialized - knowledge extraction active')
     } catch (error) {
       console.warn('[NodeProvisioning] Failed to initialize AssemblyManager:', error)
@@ -428,6 +430,15 @@ class NodeProvisioning {
       // This ensures we use the correct AIAssistantPlan instance with registered topics
       const aiModule = getAIModule()
       if (aiModule) {
+        // Initialize AIToolExecutor with MCP manager
+        try {
+          const { default: mcpManager } = await import('./mcp-manager.js')
+          aiModule.initToolExecutor({ mcpManager })
+          console.log('[NodeProvisioning] ✅ AIToolExecutor initialized')
+        } catch (error) {
+          console.warn('[NodeProvisioning] Failed to initialize AIToolExecutor:', error)
+        }
+
         console.log('[NodeProvisioning] Starting AI message listener...')
         await aiModule.startMessageListener(nodeOneCore.ownerId)
         console.log('[NodeProvisioning] ✅ AI message listener started')

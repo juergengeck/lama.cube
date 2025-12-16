@@ -20,7 +20,7 @@ import {
   DeviceModule
 } from '@lama/core/modules';
 import { InstancePlan } from '@lama/core/plans/InstancePlan.js';
-import { ElectronLLMPlatform, createElectronLLMConfigAdapter } from '../adapters/electron-llm-platform.js';
+import { ElectronLLMPlatform, createElectronLLMConfigAdapter } from '../../adapters/electron-llm-platform.js';
 import type { NodeOneCore } from '../types/one-core.js';
 
 // Singleton registry instance
@@ -85,6 +85,15 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   // ExportPlan from lama.core is self-contained (uses one.core implode directly)
   const exportPlan = new ExportPlan();
   moduleRegistry.supply('ExportPlan', exportPlan);
+
+  // Supply MCPManager for AIToolExecutor (optional - auto-wires when available)
+  try {
+    const { default: mcpManager } = await import('../services/mcp-manager.js');
+    moduleRegistry.supply('MCPManager', mcpManager);
+    console.log('[ModuleRegistryInit] MCPManager supplied for AIToolExecutor');
+  } catch (error) {
+    console.warn('[ModuleRegistryInit] MCPManager not available:', error);
+  }
 
   // Register shared modules from lama.core
   console.log('[ModuleRegistryInit] Registering CoreModule...');

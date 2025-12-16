@@ -430,15 +430,7 @@ class NodeProvisioning {
       // This ensures we use the correct AIAssistantPlan instance with registered topics
       const aiModule = getAIModule()
       if (aiModule) {
-        // Initialize AIToolExecutor with MCP manager
-        try {
-          const { default: mcpManager } = await import('./mcp-manager.js')
-          aiModule.initToolExecutor({ mcpManager })
-          console.log('[NodeProvisioning] ✅ AIToolExecutor initialized')
-        } catch (error) {
-          console.warn('[NodeProvisioning] Failed to initialize AIToolExecutor:', error)
-        }
-
+        // AIToolExecutor is auto-wired via ModuleRegistry when MCPManager is supplied
         console.log('[NodeProvisioning] Starting AI message listener...')
         await aiModule.startMessageListener(nodeOneCore.ownerId)
         console.log('[NodeProvisioning] ✅ AI message listener started')

@@ -65,6 +65,10 @@ export class MCPInitializationPlan {
 
     // Step 3: Start HTTP API server
     const lamaAPIServer = await this.startAPIServer();
+    this.reportProgress('mcp-init', 90, 'HTTP API server started');
+
+    // Step 4: Initialize AIToolExecutor for unified tool access
+    await this.initializeToolExecutor(mcpManager);
     this.reportProgress('mcp-init', 100, 'MCP initialization complete');
 
     console.log('[MCPInitializationPlan] ✅ All MCP services initialized');
@@ -96,7 +100,11 @@ export class MCPInitializationPlan {
     const lamaAPIServer = await this.startAPIServer();
     this.reportProgress('mcp-init', 40, 'HTTP API server started');
 
-    // Step 4: Initialize MCP Manager in background (slow - deferred)
+    // Step 4: Initialize AIToolExecutor for unified tool access
+    await this.initializeToolExecutor(mcpManager);
+    this.reportProgress('mcp-init', 50, 'AIToolExecutor initialized');
+
+    // Step 5: Initialize MCP Manager in background (slow - deferred)
     // Don't await - let it run in background
     this.initializeMCPManagerBackground(mcpManager);
 
@@ -156,6 +164,31 @@ export class MCPInitializationPlan {
     }
 
     console.log('[MCPInitializationPlan] ✅ Plans registered');
+  }
+
+  /**
+   * Initialize AIToolExecutor with MCP manager
+   * Call this after MCP initialization is complete
+   */
+  async initializeToolExecutor(mcpManager: any): Promise<void> {
+    console.log('[MCPInitializationPlan] Initializing AIToolExecutor...');
+
+    try {
+      const { getAIModule } = await import('../registry/module-registry-init.js');
+      const aiModule = getAIModule();
+
+      if (aiModule) {
+        aiModule.initToolExecutor({
+          mcpManager: mcpManager
+          // planRouter will be added when PolicyEngine/AuditLogger are wired up
+        });
+        console.log('[MCPInitializationPlan] ✅ AIToolExecutor initialized');
+      } else {
+        console.warn('[MCPInitializationPlan] AIModule not available - AIToolExecutor not initialized');
+      }
+    } catch (error) {
+      console.error('[MCPInitializationPlan] Failed to initialize AIToolExecutor:', error);
+    }
   }
 
   private async startAPIServer(): Promise<any> {

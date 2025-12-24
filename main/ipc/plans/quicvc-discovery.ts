@@ -14,6 +14,7 @@ import { handshakeService } from '@trust/core/services/HandshakeService.js';
 import { CompositeLocalDiscovery } from '../../core/composite-local-discovery.js';
 import { UdpBroadcaster } from '../../core/udp-broadcaster.js';
 import { RelayBroadcaster } from '../../core/relay-broadcaster.js';
+import { createTransportFactory } from '../../core/udp-transport-factory.js';
 import { getBTLEBroadcastService } from '../../core/node-btle-service.js';
 import nodeOneCore from '../../core/node-one-core.js';
 import type { IpcMainInvokeEvent } from 'electron';
@@ -175,38 +176,10 @@ async function initializeDiscoveryCollectionService(): Promise<void> {
       discoveryService: discoveryService!,
       handshakeService: handshakeService as any,
 
-      // Create transport for handshake channel
-      // For now, use a simple WebSocket transport placeholder
-      createTransport: async (address: string) => {
-        // TODO: Implement proper transport factory based on address type
-        // For now, return a simple stub transport
-        console.log('[DiscoveryCollection] Creating transport for:', address);
-        let state: 'connecting' | 'connected' | 'disconnecting' | 'disconnected' = 'disconnected';
-        let stateCallback: ((state: 'connecting' | 'connected' | 'disconnecting' | 'disconnected') => void) | null = null;
-
-        return {
-          type: 'websocket' as const,
-          connect: async (addr: string) => {
-            console.log('[Transport] Connect stub to:', addr);
-            state = 'connecting';
-            stateCallback?.(state);
-            // Simulate connection
-            state = 'connected';
-            stateCallback?.(state);
-          },
-          send: async (data: Uint8Array) => { console.log('[Transport] Send stub:', data.length, 'bytes'); },
-          onReceive: (callback: (data: Uint8Array) => void) => {},
-          onStateChange: (callback: (state: 'connecting' | 'connected' | 'disconnecting' | 'disconnected') => void) => {
-            stateCallback = callback;
-          },
-          close: () => {
-            console.log('[Transport] Close stub');
-            state = 'disconnected';
-            stateCallback?.(state);
-          },
-          getState: () => state
-        };
-      },
+      // Create UDP transport for handshake verification
+      createTransport: createTransportFactory({
+        connectTimeout: 5000
+      }),
 
       // Settings accessor
       getSettings: async () => {

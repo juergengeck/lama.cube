@@ -2,14 +2,19 @@
  * QuicVC Discovery IPC Handlers
  *
  * Provides IPC interface for QuicVC device discovery in the UI
+ * Supports both UDP and BTLE transports for local discovery
+ * Includes DiscoveryCollectionService for verified peer collection
  */
 
 import electron from 'electron';
 const { ipcMain } = electron;
-import { DiscoveryService, DiscoveryStart } from '@lama/connection.core';
-import { QuicVCDiscovery } from '../../core/quicvc-discovery.js';
+import { DiscoveryService, DiscoveryStart, BTLEBroadcaster, DiscoveryCollectionService } from '@lama/connection.core';
+import type { DiscoveryCollectionDependencies, CollectedPeer } from '@lama/connection.core';
+import { handshakeService } from '@trust/core/services/HandshakeService.js';
+import { CompositeLocalDiscovery } from '../../core/composite-local-discovery.js';
 import { UdpBroadcaster } from '../../core/udp-broadcaster.js';
 import { RelayBroadcaster } from '../../core/relay-broadcaster.js';
+import { getBTLEBroadcastService } from '../../core/node-btle-service.js';
 import nodeOneCore from '../../core/node-one-core.js';
 import type { IpcMainInvokeEvent } from 'electron';
 
@@ -21,13 +26,16 @@ interface IpcResponse<T = any> {
   [key: string]: any;
 }
 
-// Singleton discovery service instance
+// Singleton discovery service instances
 let discoveryService: DiscoveryService | null = null;
-let quicvcDiscovery: QuicVCDiscovery | null = null;
+let compositeDiscovery: CompositeLocalDiscovery | null = null;
 let discoveryStart: DiscoveryStart | null = null;
+let discoveryCollectionService: DiscoveryCollectionService | null = null;
+let isCollectionActive = false;
 
 /**
  * Initialize QuicVC discovery service
+ * Uses CompositeLocalDiscovery to support both UDP and BTLE transports
  */
 async function initializeDiscoveryService(): Promise<void> {
   if (discoveryService) {
@@ -40,15 +48,15 @@ async function initializeDiscoveryService(): Promise<void> {
 
   console.log('[QuicVCDiscovery] Initializing with device ID:', ownDeviceId, 'name:', ownDeviceName);
 
-  // Create QuicVC discovery provider
-  quicvcDiscovery = new QuicVCDiscovery(ownDeviceId, ownDeviceName);
+  // Create composite discovery provider (UDP + BTLE)
+  compositeDiscovery = new CompositeLocalDiscovery(ownDeviceId, ownDeviceName);
 
   // Create discovery service
   discoveryService = new DiscoveryService();
 
-  // Initialize with QuicVC local discovery
+  // Initialize with composite local discovery (UDP + BTLE)
   await discoveryService.initialize({
-    localDiscovery: quicvcDiscovery,
+    localDiscovery: compositeDiscovery,
   });
 
   // Start continuous discovery
@@ -83,6 +91,7 @@ async function initializeDiscoveryService(): Promise<void> {
 
 /**
  * Initialize multi-transport discovery broadcasting
+ * Registers UDP, BTLE, and optionally relay broadcasters
  */
 async function initializeDiscoveryStart(
   pubKey: string,
@@ -94,8 +103,14 @@ async function initializeDiscoveryStart(
     await discoveryStart.stop();
   }
 
+  // Build list of enabled transports
+  const enabledTransports: ('udp' | 'btle' | 'relay')[] = ['udp', 'btle'];
+  if (commServerUrl) {
+    enabledTransports.push('relay');
+  }
+
   discoveryStart = new DiscoveryStart(pubKey, {
-    enabledTransports: commServerUrl ? ['udp', 'relay'] : ['udp'],
+    enabledTransports,
     commServerUrl,
   });
 
@@ -103,13 +118,157 @@ async function initializeDiscoveryStart(
   const udpBroadcaster = new UdpBroadcaster(deviceId, deviceName);
   discoveryStart.registerBroadcaster(udpBroadcaster);
 
+  // Register BTLE broadcaster
+  try {
+    const btleBroadcastService = getBTLEBroadcastService();
+    const initialized = await btleBroadcastService.initialize();
+    if (initialized) {
+      const btleBroadcaster = new BTLEBroadcaster(btleBroadcastService);
+      discoveryStart.registerBroadcaster(btleBroadcaster);
+      console.log('[DiscoveryStart] BTLE broadcaster registered');
+    } else {
+      console.warn('[DiscoveryStart] BTLE not available, skipping BTLE broadcaster');
+    }
+  } catch (error) {
+    console.warn('[DiscoveryStart] Failed to initialize BTLE broadcaster:', error);
+  }
+
   // Register relay broadcaster if CommServer configured
   if (commServerUrl) {
     const relayBroadcaster = new RelayBroadcaster(commServerUrl);
     discoveryStart.registerBroadcaster(relayBroadcaster);
   }
 
-  console.log('[DiscoveryStart] Initialized with transports:', commServerUrl ? ['udp', 'relay'] : ['udp']);
+  console.log('[DiscoveryStart] Initialized with transports:', enabledTransports);
+}
+
+/**
+ * Initialize DiscoveryCollectionService with required dependencies.
+ * Connects to discovered peers and verifies their identity via handshake.
+ */
+async function initializeDiscoveryCollectionService(): Promise<void> {
+  if (discoveryCollectionService) {
+    return; // Already initialized
+  }
+
+  // Ensure discovery service is ready
+  if (!discoveryService) {
+    await initializeDiscoveryService();
+  }
+
+  // Check if nodeOneCore has required models
+  if (!nodeOneCore.leuteModel) {
+    console.warn('[DiscoveryCollection] LeuteModel not available, cannot initialize collection service');
+    return;
+  }
+
+  console.log('[DiscoveryCollection] Initializing collection service...');
+
+  try {
+    // Get ONE.core crypto API
+    const { default: cryptoApi } = await import('@refinio/one.core/lib/crypto/CryptoApi.js');
+
+    // Create dependencies for DiscoveryCollectionService
+    const deps: DiscoveryCollectionDependencies = {
+      cryptoApi: cryptoApi as any,
+      leuteModel: nodeOneCore.leuteModel as any,
+      discoveryService: discoveryService!,
+      handshakeService: handshakeService as any,
+
+      // Create transport for handshake channel
+      // For now, use a simple WebSocket transport placeholder
+      createTransport: async (address: string) => {
+        // TODO: Implement proper transport factory based on address type
+        // For now, return a simple stub transport
+        console.log('[DiscoveryCollection] Creating transport for:', address);
+        let state: 'connecting' | 'connected' | 'disconnecting' | 'disconnected' = 'disconnected';
+        let stateCallback: ((state: 'connecting' | 'connected' | 'disconnecting' | 'disconnected') => void) | null = null;
+
+        return {
+          type: 'websocket' as const,
+          connect: async (addr: string) => {
+            console.log('[Transport] Connect stub to:', addr);
+            state = 'connecting';
+            stateCallback?.(state);
+            // Simulate connection
+            state = 'connected';
+            stateCallback?.(state);
+          },
+          send: async (data: Uint8Array) => { console.log('[Transport] Send stub:', data.length, 'bytes'); },
+          onReceive: (callback: (data: Uint8Array) => void) => {},
+          onStateChange: (callback: (state: 'connecting' | 'connected' | 'disconnecting' | 'disconnected') => void) => {
+            stateCallback = callback;
+          },
+          close: () => {
+            console.log('[Transport] Close stub');
+            state = 'disconnected';
+            stateCallback?.(state);
+          },
+          getState: () => state
+        };
+      },
+
+      // Settings accessor
+      getSettings: async () => {
+        // Get settings from settings.core via userSettingsManager
+        try {
+          if (nodeOneCore.userSettingsManager) {
+            const deviceSettings = await nodeOneCore.userSettingsManager.get('deviceSettings');
+            return {
+              autoTrustKnownPersonDevices: deviceSettings?.autoTrustKnownPersonDevices ?? false,
+              profileVisibility: deviceSettings?.profileVisibility ?? 'minimal'
+            };
+          }
+        } catch (e) {
+          console.warn('[DiscoveryCollection] Failed to get settings:', e);
+        }
+        return {
+          autoTrustKnownPersonDevices: false,
+          profileVisibility: 'minimal' as const
+        };
+      }
+    };
+
+    discoveryCollectionService = new DiscoveryCollectionService(deps);
+
+    // Set up event forwarding to renderer
+    discoveryCollectionService.on('peerCollected', (peer: CollectedPeer) => {
+      console.log('[DiscoveryCollection] Peer collected:', peer.id.substring(0, 8));
+      const allWindows = electron.BrowserWindow.getAllWindows();
+      allWindows.forEach((win) => {
+        win.webContents.send('discovery:peerCollected', peer);
+      });
+    });
+
+    discoveryCollectionService.on('knownPersonNewDevice', (peer: CollectedPeer) => {
+      console.log('[DiscoveryCollection] Known person new device:', peer.id.substring(0, 8));
+      const allWindows = electron.BrowserWindow.getAllWindows();
+      allWindows.forEach((win) => {
+        win.webContents.send('discovery:knownPersonNewDevice', peer);
+      });
+    });
+
+    discoveryCollectionService.on('peerLost', (peerId: string) => {
+      console.log('[DiscoveryCollection] Peer lost:', peerId.substring(0, 8));
+      const allWindows = electron.BrowserWindow.getAllWindows();
+      allWindows.forEach((win) => {
+        win.webContents.send('discovery:peerLost', { id: peerId });
+      });
+    });
+
+    discoveryCollectionService.on('handshakeFailed', (peerId: string, error: string) => {
+      console.log('[DiscoveryCollection] Handshake failed:', peerId.substring(0, 8), error);
+      const allWindows = electron.BrowserWindow.getAllWindows();
+      allWindows.forEach((win) => {
+        win.webContents.send('discovery:handshakeFailed', { peerId, error });
+      });
+    });
+
+    console.log('[DiscoveryCollection] Collection service initialized');
+  } catch (error) {
+    console.error('[DiscoveryCollection] Failed to initialize:', error);
+    throw error;
+  }
 }
 
 /**
@@ -314,6 +473,94 @@ export function initializeQuicVCDiscoveryPlans(): void {
       running: discoveryStart?.isRunning() || false,
       transports: discoveryStart?.getActiveBroadcasters() || [],
     };
+  });
+
+  // ============================================================================
+  // Discovery Collection IPC Handlers
+  // ============================================================================
+
+  /**
+   * Get collected peers (verified via handshake)
+   */
+  ipcMain.handle('discovery:getCollectedPeers', async (event: IpcMainInvokeEvent): Promise<IpcResponse> => {
+    try {
+      // Initialize collection service if needed
+      if (!discoveryCollectionService) {
+        await initializeDiscoveryCollectionService();
+      }
+
+      if (!discoveryCollectionService) {
+        return {
+          success: true,
+          peers: [],
+        };
+      }
+
+      const peers = discoveryCollectionService.getCollectedPeers();
+      console.log('[DiscoveryCollection] Returning', peers.length, 'collected peers');
+
+      return {
+        success: true,
+        peers,
+      };
+    } catch (error) {
+      console.error('[DiscoveryCollection] Failed to get collected peers:', error);
+      return {
+        success: false,
+        error: (error as Error).message,
+        peers: [],
+      };
+    }
+  });
+
+  /**
+   * Check if discovery collection is active
+   */
+  ipcMain.handle('discovery:isCollectionActive', async (event: IpcMainInvokeEvent): Promise<IpcResponse> => {
+    return {
+      success: true,
+      active: isCollectionActive,
+    };
+  });
+
+  /**
+   * Set discovery collection active state (start/stop collecting)
+   */
+  ipcMain.handle('discovery:setCollectionActive', async (event: IpcMainInvokeEvent, active: boolean): Promise<IpcResponse> => {
+    try {
+      console.log('[DiscoveryCollection] Setting collection active:', active);
+
+      if (active) {
+        // Initialize and start collection
+        if (!discoveryCollectionService) {
+          await initializeDiscoveryCollectionService();
+        }
+
+        if (discoveryCollectionService && !isCollectionActive) {
+          discoveryCollectionService.start();
+          isCollectionActive = true;
+          console.log('[DiscoveryCollection] Collection started');
+        }
+      } else {
+        // Stop collection
+        if (discoveryCollectionService && isCollectionActive) {
+          discoveryCollectionService.stop();
+          isCollectionActive = false;
+          console.log('[DiscoveryCollection] Collection stopped');
+        }
+      }
+
+      return {
+        success: true,
+        active: isCollectionActive,
+      };
+    } catch (error) {
+      console.error('[DiscoveryCollection] Failed to set collection active:', error);
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
   });
 
   console.log('[QuicVCDiscovery] IPC handlers registered');

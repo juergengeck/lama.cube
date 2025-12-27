@@ -11,8 +11,8 @@ import { mcpManager } from '@mcp/core/local';
 import type { IpcMainInvokeEvent } from 'electron';
 import electron from 'electron';
 import localModelsPlans from './local-models.js';
-import { AIBirthService, type BirthContext } from '@lama/core/services/AIBirthService.js';
-import { BirthContextCollector, NodeBirthContextProvider } from '@lama/core/services/BirthContextCollector.js';
+import { AICreationService, type CreationContext } from '@lama/core/services/AICreateService.js';
+import { CreationContextCollector, NodeCreationContextProvider } from '@lama/core/services/CreateContextCollector.js';
 const { BrowserWindow } = electron;
 
 /**
@@ -104,15 +104,27 @@ const aiPlans = {
 
   /**
    * Get available AI models (cloud/server + local on-device)
+   * Auto-discovers Ollama and Claude models before returning
    */
   async getModels(event: IpcMainInvokeEvent) {
     try {
+      // Auto-discover Ollama models
+      console.log('[AI IPC] getModels: discovering Ollama models...');
+      try {
+        await llmManager.discoverOllamaModels();
+        console.log('[AI IPC] getModels: Ollama discovery complete');
+      } catch (err: any) {
+        console.log('[AI IPC] getModels: Ollama discovery failed:', err.message);
+      }
+
       // Get local text-gen models first - we need their IDs to filter storage results
       const localResult = await localModelsPlans.listTextGenModels(event);
       const localModels = (localResult.success && localResult.data) ? localResult.data : [];
       const localModelIds = new Set(localModels.map(m => m.id));
+      console.log('[AI IPC] getModels: local models:', localModels.length);
 
       const allModelsFromStorage = await llmManager.getAvailableModels();
+      console.log('[AI IPC] getModels: models from storage/registry:', allModelsFromStorage.length, allModelsFromStorage.map((m: any) => m.id));
 
       // Filter out on-device models from storage - we get them fresh from localModelsPlans
       // This prevents duplicates since local models are also stored in ONE.core
@@ -154,29 +166,33 @@ const aiPlans = {
         isDefault: false
       }));
 
+      const allModels = [
+        // Local on-device models first
+        ...localModelsFormatted,
+        // Then cloud/server models (on-device filtered out above)
+        ...cloudAndServerModels.map(m => ({
+          id: m.id,
+          name: m.name,
+          description: m.description || '',
+          provider: m.provider,
+          server: m.server || '',
+          inferenceType: m.inferenceType || 'cloud',
+          modelType: m.modelType || 'unknown',
+          capabilities: m.capabilities || [],
+          contextLength: m.contextLength || 0,
+          maxTokens: m.maxTokens || 0,
+          size: m.size || 0,
+          isLoaded: m.isLoaded || false,
+          isDefault: m.isDefault || false
+        }))
+      ];
+
+      console.log('[AI IPC] getModels: returning', allModels.length, 'models:', allModels.map(m => `${m.id}(${m.provider})`));
+
       return {
         success: true,
         data: {
-          models: [
-            // Local on-device models first
-            ...localModelsFormatted,
-            // Then cloud/server models (on-device filtered out above)
-            ...cloudAndServerModels.map(m => ({
-              id: m.id,
-              name: m.name,
-              description: m.description || '',
-              provider: m.provider,
-              server: m.server || '',
-              inferenceType: m.inferenceType || 'cloud',
-              modelType: m.modelType || 'unknown',
-              capabilities: m.capabilities || [],
-              contextLength: m.contextLength || 0,
-              maxTokens: m.maxTokens || 0,
-              size: m.size || 0,
-              isLoaded: m.isLoaded || false,
-              isDefault: m.isDefault || false
-            }))
-          ]
+          models: allModels
         }
       };
     } catch (error: any) {
@@ -186,7 +202,7 @@ const aiPlans = {
 
   /**
    * Set default AI model
-   * Creates AI Person with optional custom name/email from birth flow
+   * Creates AI Person with optional custom name/email from AI creation flow
    */
   async setDefaultModel(
     event: IpcMainInvokeEvent,
@@ -458,6 +474,23 @@ const aiPlans = {
   },
 
   /**
+   * Get the AI Person ID for a topic
+   * Used by UI to pass to switchAIModel()
+   */
+  async getAIPersonForTopic(
+    event: IpcMainInvokeEvent,
+    { topicId }: { topicId: string }
+  ) {
+    try {
+      const handler = getAIHandler();
+      const aiPersonId = handler.getAIPersonForTopic(topicId);
+      return { success: true, aiPersonId };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
    * Switch the model for an AI Person
    */
   async switchAIModel(
@@ -581,10 +614,11 @@ const aiPlans = {
    * Generate AI name
    * Called on first launch to create AI identity
    * @param modelId - Model ID to use for name generation (user's selected model)
+   * @param _provider - Unused (LLM object's provider field is used from storage)
    */
-  async generateBirthName(
+  async generateAIName(
     event: IpcMainInvokeEvent,
-    { modelId }: { modelId: string }
+    { modelId, provider: _provider }: { modelId: string; provider?: string }
   ): Promise<{
     success: boolean;
     data?: { name: string; email: string };
@@ -601,23 +635,24 @@ const aiPlans = {
 
     try {
       // Collect context (device, locale, time)
-      const contextProvider = new NodeBirthContextProvider();
-      const contextCollector = new BirthContextCollector(contextProvider);
+      const contextProvider = new NodeCreationContextProvider();
+      const contextCollector = new CreationContextCollector(contextProvider);
       const context = await contextCollector.collect();
 
-      // Create service with llmManager chat wrapper
-      // For local models (granite-*), use chatLocalDirect which bypasses storage lookup
-      // This is needed because during first-run, the model isn't in storage yet
-      const isLocalModel = modelId.startsWith('granite-');
+      // On-device inference models (run locally, not through ONE.core storage)
+      const isOnDeviceModel = modelId.startsWith('granite-');
 
-      const birthService = new AIBirthService(async (messages, reqModelId) => {
+      // Create service with llmManager chat wrapper
+      // On-device models bypass storage; all others use storage (provider from LLM object)
+      const creationService = new AICreationService(async (messages, reqModelId) => {
         let response: string;
 
-        if (isLocalModel) {
-          // Local models: bypass storage lookup entirely
+        if (isOnDeviceModel) {
+          // On-device models: bypass storage (local inference)
           response = await llmManager.chatLocalDirect(reqModelId, messages, { disableTools: true });
         } else {
-          // Cloud/external models: use regular chat with storage lookup
+          // All other models: use chat() which reads LLM object from storage
+          // Provider is determined from the stored LLM object's provider field
           const result = await llmManager.chat(messages, reqModelId, { disableTools: true });
           if (typeof result === 'string') {
             response = result;
@@ -632,7 +667,7 @@ const aiPlans = {
       });
 
       // Generate name using the user's selected model
-      const result = await birthService.generateName(context, modelId);
+      const result = await creationService.generateName(context, modelId);
 
       console.log(`[AI IPC] AI name generated: ${result.name}`);
 

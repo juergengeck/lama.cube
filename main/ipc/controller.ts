@@ -41,6 +41,7 @@ import createUserSettingsPlans from './plans/user-settings.js';
 import { registerDirectAssemblyPlans } from './plans/assembly-direct.js';
 import * as transportPlans from './plans/transport.js';
 import localModelsPlans from './plans/local-models.js';
+import ttsPlans from './plans/tts.js';
 
 // Node error type
 interface NodeError extends Error {
@@ -246,7 +247,8 @@ class IPCController {
     this.handle('ai:getDefaultModel', aiPlans['ai:getDefaultModel']);
     this.handle('ai:isAITopic', aiPlans.isAITopic);
     this.handle('ai:switchAIModel', aiPlans.switchAIModel);
-    this.handle('ai:generateBirthName', aiPlans.generateBirthName);
+    this.handle('ai:getAIPersonForTopic', aiPlans.getAIPersonForTopic);
+    this.handle('ai:generateAIName', aiPlans.generateAIName);
 
     // LLM Configuration plans (network Ollama support)
     registerLlmConfigPlans();
@@ -406,6 +408,18 @@ class IPCController {
     this.handle('localModels:chatTextGen', localModelsPlans.chatWithTextGen);
     this.handle('localModels:getTextGenStatus', localModelsPlans.getTextGenStatus);
 
+    // TTS plans (text-to-speech via ONNXTTSProvider)
+    // TTS is pre-loaded in module-registry-init.ts at startup
+    // These handlers expose status to the Settings UI
+    this.handle('tts:getStatus', ttsPlans['tts:getStatus']);
+    this.handle('tts:load', ttsPlans['tts:load']);
+    this.handle('tts:synthesize', ttsPlans['tts:synthesize']);
+    this.handle('tts:preloadVoice', ttsPlans['tts:preloadVoice']);
+    this.handle('tts:unload', ttsPlans['tts:unload']);
+    this.handle('tts:supportsVoiceCloning', ttsPlans['tts:supportsVoiceCloning']);
+    this.handle('tts:listModels', ttsPlans['tts:listModels']);
+    this.handle('tts:download', ttsPlans['tts:download']);
+
     // Note: app:clearData is handled in lama-electron-shadcn.js
 
     // Action plans (user-initiated actions)
@@ -454,7 +468,13 @@ class IPCController {
           'localModels:chatTextGen',
           'localModels:getTextGenStatus',
           'inference:getStatus',
-          'ai:generateBirthName'
+          'ai:generateAIName',
+          'tts:getStatus',
+          'tts:load',
+          'tts:synthesize',
+          'tts:preloadVoice',
+          'tts:unload',
+          'tts:supportsVoiceCloning'
         ];
 
         // Check if NodeOneCore is initialized for channels that require it

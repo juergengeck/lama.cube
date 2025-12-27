@@ -2,6 +2,7 @@
 // Browser uses IPC ONLY - NO ONE.core, NO AppModel
 
 import { ipcStorage } from '../services/ipc-storage.js'
+import { Events } from '@lama/core/events'
 
 export interface LamaAPI {
   // Identity & Authentication
@@ -30,6 +31,7 @@ export interface LamaAPI {
   getDefaultModel: () => Promise<string | null>
   setDefaultModel: (modelId: string) => Promise<boolean>
   switchAIModel: (aiPersonId: string, modelId: string) => Promise<boolean>
+  getAIPersonForTopic: (topicId: string) => Promise<string | null>
   enableAIForTopic: (topicId: string) => Promise<boolean>
   disableAIForTopic: (topicId: string) => Promise<boolean>
   getBestModelForTask: (task: 'coding' | 'reasoning' | 'chat' | 'analysis') => Promise<any>
@@ -57,6 +59,14 @@ export interface LamaAPI {
   // Events
   on: (event: string, callback: (...args: any[]) => void) => void
   off: (event: string, callback: (...args: any[]) => void) => void
+
+  // TTS (Text-to-Speech)
+  ttsGetStatus: () => Promise<{ status: string; modelId: string | null; sampleRate: number | null }>
+  ttsLoad: (modelId: string) => Promise<{ modelId: string; sampleRate: number }>
+  ttsSynthesize: (text: string, options?: any) => Promise<{ audio: Float32Array; sampleRate: number }>
+  ttsPreloadVoice: (audioUrl: string) => Promise<void>
+  ttsUnload: () => Promise<void>
+  ttsSupportsVoiceCloning: () => Promise<boolean>
 }
 
 export interface Message {
@@ -68,10 +78,9 @@ export interface Message {
   encrypted: boolean
   isAI?: boolean
   isOwn?: boolean // Whether this message is from the current user (computed server-side)
-  attachments?: any[]
+  attachments?: any[] // Note: thinking/reasoning stored as CLOB attachment named 'thinking.txt'
   topicId?: string
   topicName?: string
-  thinking?: string // Reasoning trace from models like DeepSeek R1
 }
 
 export interface Peer {
@@ -110,49 +119,51 @@ class LamaBridge implements LamaAPI {
         }
       }
 
-      // Register all IPC event listeners
-      // AI streaming events (legacy names)
-      window.electronAPI.on('message:thinking', createIPCHandler('message:thinking'))
-      window.electronAPI.on('message:stream', createIPCHandler('message:stream'))
-      window.electronAPI.on('message:updated', createIPCHandler('message:updated'))
+      // Register all IPC event listeners using centralized event registry
 
-      // LLM events (from ElectronLLMPlatform) - forward as-is without translation
-      window.electronAPI.on('llm:message-update', createIPCHandler('llm:message-update'))
-      window.electronAPI.on('llm:thinking-update', createIPCHandler('llm:thinking-update'))
-      window.electronAPI.on('llm:thinking-status', createIPCHandler('llm:thinking-status'))
-      window.electronAPI.on('llm:stream-chunk', createIPCHandler('llm:stream-chunk'))
-      window.electronAPI.on('llm:progress', createIPCHandler('llm:progress'))
-      window.electronAPI.on('llm:error', (data: any) => {
-        console.error('[LamaBridge] LLM error:', data)
-        this.emit('llm:error', data)
+      // AI assistant events
+      window.electronAPI.on(Events.AI_RESPONDING, createIPCHandler(Events.AI_RESPONDING))
+      window.electronAPI.on(Events.AI_ERROR, (data: any) => {
+        console.error('[LamaBridge] AI error:', data)
+        this.emit(Events.AI_ERROR, data)
       })
 
-      // Contact events
-      window.electronAPI.on('contact:added', createIPCHandler('contact:added'))
+      // Analysis data events
+      window.electronAPI.on(Events.SUBJECTS_UPDATED, createIPCHandler(Events.SUBJECTS_UPDATED))
+      window.electronAPI.on(Events.KEYWORDS_UPDATED, createIPCHandler(Events.KEYWORDS_UPDATED))
 
-      // Subject/keyword update events (for topic analysis)
-      window.electronAPI.on('subjects:updated', createIPCHandler('subjects:updated'))
-      window.electronAPI.on('keywords:updated', createIPCHandler('keywords:updated'))
+      // LLM model events
+      window.electronAPI.on(Events.LLM_STREAM, createIPCHandler(Events.LLM_STREAM))
+      window.electronAPI.on(Events.LLM_COMPLETE, createIPCHandler(Events.LLM_COMPLETE))
+      window.electronAPI.on(Events.LLM_THINKING, createIPCHandler(Events.LLM_THINKING))
+      window.electronAPI.on(Events.LLM_STATUS, createIPCHandler(Events.LLM_STATUS))
+
+      // Contact events
+      window.electronAPI.on(Events.CONTACT_ADDED, createIPCHandler(Events.CONTACT_ADDED))
 
       // Conversation events
-      window.electronAPI.on('chat:conversationCreated', createIPCHandler('conversation:created'))
+      window.electronAPI.on(Events.CHAT_CONVERSATION_CREATED, createIPCHandler('conversation:created'))
 
-      // Message events - single event for all message updates
-      window.electronAPI.on('chat:newMessages', (data: any) => {
-        // console.log('[LamaBridge] 🔥🔥🔥 chat:newMessages received from IPC:', JSON.stringify(data))
-        // Debug: log to main process
-        // window.electronAPI.invoke('debug:log', `[LamaBridge] chat:newMessages received: ${data.conversationId}`)
-        this.emit('chat:newMessages', data)
-        // console.log('[LamaBridge] 🔥🔥🔥 Emitted chat:newMessages to React')
-        // Debug: check how many listeners are registered
-        // const listeners = this.eventListeners.get('chat:newMessages')
-        // const listenerCount = listeners?.size || 0
-        // console.log(`[LamaBridge] Number of listeners for chat:newMessages: ${listenerCount}`)
-        // window.electronAPI.invoke('debug:log', `[LamaBridge] Emitted to ${listenerCount} listeners`)
+      // Message events
+      window.electronAPI.on(Events.CHAT_NEW_MESSAGES, (data: any) => {
+        this.emit(Events.CHAT_NEW_MESSAGES, data)
+      })
+
+      // Channel update events
+      window.electronAPI.on(Events.CHANNEL_UPDATED, (data: any) => {
+        console.log('[LamaBridge] 📡 channel:updated received:', data?.channelId?.substring(0, 16))
+        if (window.electronAPI.invoke) {
+          window.electronAPI.invoke('debug:log', `[LamaBridge] 📡 channel:updated ACK for ${data?.channelId?.substring(0, 16)}...`).catch(() => {})
+        }
+        this.emit(Events.CHANNEL_UPDATED, data)
       })
 
       // Navigation events
-      window.electronAPI.on('navigate', createIPCHandler('navigate'))
+      window.electronAPI.on(Events.NAVIGATE, createIPCHandler(Events.NAVIGATE))
+
+      // TTS events
+      window.electronAPI.on(Events.TTS_PROGRESS, createIPCHandler(Events.TTS_PROGRESS))
+      window.electronAPI.on(Events.TTS_ERROR, createIPCHandler(Events.TTS_ERROR))
 
       // console.log('[LamaBridge] IPC event listeners registered successfully')
       this.ipcListenersSetup = true
@@ -259,8 +270,7 @@ class LamaBridge implements LamaAPI {
       isOwn: msg.isOwn || false, // Server-computed ownership flag
       topicId: conversationId,
       topicName: 'Chat',
-      attachments: msg.attachments,
-      thinking: msg.thinking // Include thinking trace if present
+      attachments: msg.attachments
     }))
   }
   
@@ -352,6 +362,17 @@ class LamaBridge implements LamaAPI {
     }
     const result = await window.electronAPI.invoke('ai:switchAIModel', { aiPersonId, modelId })
     return result.success
+  }
+
+  async getAIPersonForTopic(topicId: string): Promise<string | null> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('ai:getAIPersonForTopic', { topicId })
+    if (result.success) {
+      return result.aiPersonId || null
+    }
+    return null
   }
 
   async enableAIForTopic(topicId: string): Promise<boolean> {
@@ -588,6 +609,120 @@ class LamaBridge implements LamaAPI {
       throw new Error('IPC not available')
     }
     return await window.electronAPI.invoke('memory:getKnowledgeGraph')
+  }
+
+  // TTS methods
+  async ttsGetStatus(): Promise<{ status: string; modelId: string | null; sampleRate: number | null }> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('tts:getStatus')
+    if (!result) {
+      throw new Error('TTS getStatus returned no result')
+    }
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to get TTS status')
+    }
+    return result.data
+  }
+
+  async ttsLoad(modelId: string): Promise<{ modelId: string; sampleRate: number }> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('tts:load', { modelId })
+    if (!result) {
+      throw new Error('TTS load returned no result')
+    }
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to load TTS model')
+    }
+    if (!result.data) {
+      throw new Error('TTS load returned no model info')
+    }
+    return result.data
+  }
+
+  async ttsSynthesize(text: string, options?: any): Promise<{ audio: Float32Array; sampleRate: number }> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('tts:synthesize', { text, options })
+    if (!result) {
+      throw new Error('TTS synthesize returned no result - is the TTS model loaded?')
+    }
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to synthesize speech')
+    }
+    if (!result.data) {
+      throw new Error('TTS synthesize returned no audio data')
+    }
+    return result.data
+  }
+
+  async ttsPreloadVoice(audioUrl: string): Promise<void> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('tts:preloadVoice', { audioUrl })
+    if (!result) {
+      throw new Error('TTS preloadVoice returned no result')
+    }
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to preload voice')
+    }
+  }
+
+  async ttsUnload(): Promise<void> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('tts:unload')
+    if (!result) {
+      throw new Error('TTS unload returned no result')
+    }
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to unload TTS model')
+    }
+  }
+
+  async ttsSupportsVoiceCloning(): Promise<boolean> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('tts:supportsVoiceCloning')
+    if (!result) {
+      return false
+    }
+    if (!result.success) {
+      return false
+    }
+    return result.data ?? false
+  }
+
+  // Attachment methods
+  async getAttachment(hash: string): Promise<{ data: ArrayBuffer; type: string; name: string; size: number } | null> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    const result = await window.electronAPI.invoke('attachment:get', { hash })
+    if (!result || !result.success || !result.data) {
+      console.warn('[LamaBridge] Failed to get attachment:', hash, result?.error)
+      return null
+    }
+    // IPC returns base64-encoded data, convert to ArrayBuffer
+    const base64 = result.data.data
+    const binaryString = atob(base64)
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+    return {
+      data: bytes.buffer,
+      type: result.data.metadata?.type || 'application/octet-stream',
+      name: result.data.metadata?.name || 'attachment',
+      size: bytes.length
+    }
   }
 }
 

@@ -14,9 +14,14 @@ import LeuteModel from '@refinio/one.models/lib/models/Leute/LeuteModel.js';
 import ChannelManager from '@refinio/one.models/lib/models/ChannelManager.js';
 import ConnectionsModel from '@refinio/one.models/lib/models/ConnectionsModel.js';
 import TopicModel from '@refinio/one.models/lib/models/Chat/TopicModel.js';
+import { objectEvents } from '@refinio/one.models/lib/misc/ObjectEventDispatcher.js';
 import { LLMObjectManager } from '@lama/core/models/LLMObjectManager.js';
-import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
-import type { Person, Group } from '@refinio/one.core/lib/recipes.js';
+import { TTSObjectManager } from '@lama/core/models/TTSObjectManager.js';
+import { STTObjectManager } from '@lama/core/models/STTObjectManager.js';
+import { syncMonitor } from '../services/sync-monitor.js';
+import type { SHA256IdHash, SHA256Hash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { Person, Group, BLOB } from '@refinio/one.core/lib/recipes.js';
+import { FilterGate, ChumFilterAdapter, type EffectiveAccess } from '@filter/core';
 
 export interface ModelInitContext {
   ownerId: SHA256IdHash<Person>;
@@ -31,7 +36,24 @@ export interface InitializedModels {
   channelManager: ChannelManager;
   topicModel: TopicModel;
   llmObjectManager: LLMObjectManager;
+  ttsObjectManager: TTSObjectManager;
+  sttObjectManager: STTObjectManager;
 }
+
+/**
+ * Holder for TopicGroupManager - allows late binding of filters
+ * TopicGroupManager is created after ConnectionsModel, so we use a holder
+ * that delegates to TopicGroupManager when it becomes available.
+ */
+export interface TopicGroupManagerHolder {
+  manager?: {
+    isAllowedOutbound(hash: string): boolean;
+    isAllowedInbound(hash: string): boolean;
+  };
+}
+
+// Global holder that gets populated when TopicGroupManager is created
+export const topicGroupManagerHolder: TopicGroupManagerHolder = {};
 
 /**
  * Model Initialization Plan
@@ -40,6 +62,25 @@ export interface InitializedModels {
 export class ModelInitializationPlan {
   async execute(context: ModelInitContext): Promise<InitializedModels> {
     console.log('[ModelInitializationPlan] Initializing models...');
+
+    // CRITICAL: Initialize ObjectEventDispatcher FIRST
+    // This enables CHUM sync notifications - without this, when CHUM imports
+    // new ChannelInfo versions, no events fire to notify ChannelManager.
+    // ChannelManager registers listeners on objectEvents.onNewVersion.
+    try {
+      console.log('[ModelInitializationPlan] Initializing ObjectEventDispatcher...');
+      await objectEvents.init();
+      console.log('[ModelInitializationPlan] ✅ ObjectEventDispatcher initialized');
+
+      // Initialize sync monitor to track CHUM activity for traffic light visualization
+      await syncMonitor.init();
+    } catch (e: any) {
+      if (e.message?.includes('already initialized')) {
+        console.log('[ModelInitializationPlan] ObjectEventDispatcher already initialized');
+      } else {
+        throw e;
+      }
+    }
 
     // Step 1: Initialize LeuteModel
     const leuteModel = await this.initializeLeuteModel(context);
@@ -59,9 +100,17 @@ export class ModelInitializationPlan {
     const channelManager = await this.initializeChannelManager(leuteModel, context.ownerId);
     context.onProgress?.('channels', 60, 'Channels initialized');
 
-    // Step 5: Initialize TopicModel (requires ChannelManager and LeuteModel)
+    // Step 5: Initialize TopicModel (owner-namespaced)
     const topicModel = await this.initializeTopicModel(channelManager, leuteModel);
-    context.onProgress?.('topics', 70, 'Chat topics initialized');
+    context.onProgress?.('topics', 70, 'Topics initialized');
+
+    // Step 6: Initialize TTSObjectManager
+    const ttsObjectManager = await this.initializeTTSObjectManager(context);
+    context.onProgress?.('tts', 75, 'TTS configuration loaded');
+
+    // Step 7: Initialize STTObjectManager
+    const sttObjectManager = await this.initializeSTTObjectManager(context);
+    context.onProgress?.('stt', 80, 'STT configuration loaded');
 
     console.log('[ModelInitializationPlan] ✅ All models initialized');
 
@@ -70,7 +119,9 @@ export class ModelInitializationPlan {
       connectionsModel,
       channelManager,
       topicModel,
-      llmObjectManager
+      llmObjectManager,
+      ttsObjectManager,
+      sttObjectManager
     };
   }
 
@@ -170,10 +221,176 @@ export class ModelInitializationPlan {
     return topicModel;
   }
 
+  private async initializeTTSObjectManager(context: ModelInitContext): Promise<TTSObjectManager> {
+    console.log('[ModelInitializationPlan] Initializing TTSObjectManager...');
+
+    const { storeVersionedObject, getObjectByIdHash } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
+    const { storeArrayBufferAsBlob, readBlobAsArrayBuffer } = await import('@refinio/one.core/lib/storage-blob.js');
+
+    // Capture ownerId for closure
+    const ownerId = context.ownerId;
+
+    const ttsObjectManager = new TTSObjectManager({
+      storeVersionedObject,
+      getObjectByIdHash,
+      storeArrayBufferAsBlob,
+      readBlobAsArrayBuffer,
+      getOwnerId: async () => ownerId
+      // queryAllTTSObjects not provided yet - will add when needed
+    });
+
+    await ttsObjectManager.initialize();
+    console.log('[ModelInitializationPlan] ✅ TTSObjectManager initialized');
+
+    return ttsObjectManager;
+  }
+
+  private async initializeSTTObjectManager(context: ModelInitContext): Promise<STTObjectManager> {
+    console.log('[ModelInitializationPlan] Initializing STTObjectManager...');
+
+    const { storeVersionedObject, getObjectByIdHash } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
+    const { storeArrayBufferAsBlob, readBlobAsArrayBuffer } = await import('@refinio/one.core/lib/storage-blob.js');
+
+    // Capture ownerId for closure
+    const ownerId = context.ownerId;
+
+    const sttObjectManager = new STTObjectManager({
+      storeVersionedObject,
+      getObjectByIdHash,
+      storeArrayBufferAsBlob,
+      readBlobAsArrayBuffer,
+      getOwnerId: async () => ownerId
+      // queryAllSTTObjects not provided yet - will add when needed
+    });
+
+    await sttObjectManager.initialize();
+    console.log('[ModelInitializationPlan] ✅ STTObjectManager initialized');
+
+    return sttObjectManager;
+  }
+
   private async initializeConnectionsModel(leuteModel: LeuteModel, commServerUrl: string): Promise<ConnectionsModel> {
     console.log('[ModelInitializationPlan] Initializing ConnectionsModel...');
 
-    // Create ConnectionsModel with configuration
+    // Create FilterGate in SHADOW MODE for parallel evaluation
+    // Shadow mode logs decisions without affecting actual filtering
+    const filterGate = new FilterGate({
+      getEffectiveAccess: async (subject: SHA256IdHash<Person>): Promise<EffectiveAccess | undefined> => {
+        // TODO: Replace with FilterModel.getEffectiveAccess once certificates are deployed
+        // For now, return a permissive default access that allows everything
+        // This lets us observe what FilterGate WOULD decide with real certificate data
+        return {
+          $type$: 'EffectiveAccess',
+          id: subject,
+          subject,
+          trustLevel: 'high', // Default to high trust in shadow mode
+          contextPermissions: JSON.stringify({ '*': ['read', 'write'] }),
+          delegationAllowed: true,
+          computedAt: Date.now(),
+          basedOn: '[]',
+          chainDepth: 0,
+          source: 'direct'
+        };
+      },
+      shadowMode: true // Enable shadow mode - log but don't enforce
+    });
+    console.log('[ModelInitializationPlan] FilterGate created in SHADOW MODE');
+
+    // Create ChumFilterAdapter wrapping FilterGate
+    const filterAdapter = new ChumFilterAdapter({
+      filterGate,
+      loadObject: async (hash: SHA256Hash | SHA256IdHash) => {
+        // TODO: Implement actual object loading from ONE.core
+        // For shadow mode, we return a minimal object with just the type
+        // The type will be extracted from the CHUM filter call
+        return undefined; // Objects loaded on-demand in filter functions
+      },
+      logDecisions: true // Enable logging for shadow mode observation
+    });
+
+    // Object filter for CHUM sync (what we SEND to peers)
+    // Security model:
+    // - HashGroup/Group are metadata - allow freely
+    // - Access/IdAccess grant actual permissions - check against allowlist
+    const objectFilter = async (hash: any, type: string): Promise<boolean> => {
+      // HashGroup and Group are just metadata - allow freely
+      if (type === 'HashGroup' || type === 'Group') {
+        console.log(`[ConnectionsModel] objectFilter: ✅ ${type} ${String(hash).substring(0, 8)} (metadata)`);
+        return true;
+      }
+
+      // Access/IdAccess grant permissions - check against allowlist
+      if (type === 'Access' || type === 'IdAccess') {
+        if (topicGroupManagerHolder.manager) {
+          const allowed = topicGroupManagerHolder.manager.isAllowedOutbound(String(hash));
+          console.log(`[ConnectionsModel] objectFilter: ${allowed ? '✅' : '❌'} ${type} ${String(hash).substring(0, 8)} (allowlist)`);
+          return allowed;
+        }
+        // TopicGroupManager not ready yet - allow (permissive during init)
+        console.log(`[ConnectionsModel] objectFilter: ✅ ${type} ${String(hash).substring(0, 8)} (TGM not ready)`);
+        return true;
+      }
+
+      // All other object types allowed freely
+      return true;
+    };
+
+    // Import filter for CHUM sync (what we ACCEPT from peers)
+    // Delegates to TopicGroupManager when available
+    const importFilter = async (hash: any, type: string): Promise<boolean> => {
+      // Access/IdAccess grant permissions - check against allowlist
+      if (type === 'Access' || type === 'IdAccess') {
+        if (topicGroupManagerHolder.manager) {
+          const allowed = topicGroupManagerHolder.manager.isAllowedInbound(String(hash));
+          console.log(`[ConnectionsModel] importFilter: ${allowed ? '✅' : '❌'} ${type} ${String(hash).substring(0, 8)} (allowlist)`);
+          return allowed;
+        }
+        // TopicGroupManager not ready yet - allow (permissive during init)
+        console.log(`[ConnectionsModel] importFilter: ✅ ${type} ${String(hash).substring(0, 8)} (TGM not ready)`);
+        return true;
+      }
+      // HashGroup/Group are metadata - allow from authenticated CHUM peers
+      if (type === 'HashGroup' || type === 'Group') {
+        console.log(`[ConnectionsModel] importFilter: ✅ ${type} ${String(hash).substring(0, 8)} (metadata)`);
+        return true;
+      }
+      // All other object types allowed
+      return true;
+    };
+
+    // Factory functions that create per-peer filters with FilterGate shadow evaluation
+    const objectFilterFactory = (remotePersonId: SHA256IdHash<Person>) => {
+      // Get a FilterGate-aware filter for this specific peer
+      const filterGateFilter = filterAdapter.createExportFilter(remotePersonId);
+
+      return async (hash: SHA256Hash | SHA256IdHash, type: string): Promise<boolean> => {
+        // Run FilterGate in shadow mode (logs but doesn't affect decision)
+        // This runs in parallel to observe what FilterGate would decide
+        filterGateFilter(hash, type).catch(err => {
+          console.log(`[FilterGate:Shadow] Error evaluating export for ${type}: ${err.message}`);
+        });
+
+        // Use existing filter logic for actual decision
+        return objectFilter(hash, type);
+      };
+    };
+
+    const importFilterFactory = (remotePersonId: SHA256IdHash<Person>) => {
+      // Get a FilterGate-aware filter for this specific peer
+      const filterGateFilter = filterAdapter.createImportFilter(remotePersonId);
+
+      return async (hash: SHA256Hash | SHA256IdHash, type: string): Promise<boolean> => {
+        // Run FilterGate in shadow mode (logs but doesn't affect decision)
+        filterGateFilter(hash, type).catch(err => {
+          console.log(`[FilterGate:Shadow] Error evaluating import for ${type}: ${err.message}`);
+        });
+
+        // Use existing filter logic for actual decision
+        return importFilter(hash, type);
+      };
+    };
+
+    // Create ConnectionsModel with factory-based filtering for peer-aware FilterGate
     const connectionsModel = new ConnectionsModel(leuteModel, {
       commServerUrl,
       acceptIncomingConnections: true,
@@ -184,12 +401,15 @@ export class ModelInitializationPlan {
       allowDebugRequests: true,
       pairingTokenExpirationDuration: 60000 * 15,  // 15 minutes
       noImport: false,
-      noExport: false
+      noExport: false,
+      objectFilterFactory,  // Per-peer factory with shadow mode FilterGate
+      importFilterFactory   // Per-peer factory with shadow mode FilterGate
     });
 
     // Initialize ConnectionsModel (blacklist group is optional)
     await connectionsModel.init();
     console.log('[ModelInitializationPlan] ✅ ConnectionsModel initialized - CHUM sync active');
+    console.log('[ModelInitializationPlan] Pairing available:', !!(connectionsModel as any).pairing);
 
     return connectionsModel;
   }
@@ -202,10 +422,10 @@ export class ModelInitializationPlan {
     await channelManager.init();
     console.log('[ModelInitializationPlan] ✅ ChannelManager initialized');
 
-    // Create the 'lama' channel for LLM config storage
-    // Use ownerId as the channel owner since LLM config is per-user
-    await channelManager.createChannel('lama', ownerId);
-    console.log('[ModelInitializationPlan] ✅ Created lama channel for LLM config storage');
+    // Create a channel for LLM config storage (owner as sole participant)
+    // Using [ownerId] as participants - ChannelManager.createChannel now takes participants array
+    await channelManager.createChannel([ownerId], ownerId);
+    console.log('[ModelInitializationPlan] ✅ Created LLM config channel for owner');
 
     return channelManager;
   }

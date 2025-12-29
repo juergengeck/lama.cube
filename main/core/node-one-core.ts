@@ -116,6 +116,8 @@ class NodeOneCore implements INodeOneCore {
   commServerUrl?: string  // CommServer URL for invitations and connections
   llmManager?: any
   llmObjectManager?: any
+  ttsObjectManager?: any  // TTSObjectManager for TTS model management
+  sttObjectManager?: any  // STTObjectManager for STT/Whisper model management
   userSettingsManager?: any  // UserSettingsManager for user preferences
   assemblyManager?: any  // AssemblyManager for knowledge assembly infrastructure
   knowledgeAssembly?: any  // KnowledgeAssembly for knowledge extraction
@@ -283,22 +285,20 @@ class NodeOneCore implements INodeOneCore {
     // 2. Grant access to P2P channel
     try {
       const myId = this.ownerId
-      const p2pChannelId = myId < remotePersonId ? `${myId}<->${remotePersonId}` : `${remotePersonId}<->${myId}`
+      // P2P channels use sorted participants array
+      const participants = myId < remotePersonId ? [myId, remotePersonId] : [remotePersonId, myId]
 
-      const p2pChannelInfoHash = await calculateIdHashOfObj({
-        $type$: 'ChannelInfo',
-        id: p2pChannelId,
-        owner: undefined  // P2P channels have no owner
-      })
+      // Get or create the P2P channel to get its channelInfoIdHash
+      const channelResult = await this.channelManager.createChannel(participants, null) // null owner for P2P
 
       await createAccess([{
-        id: p2pChannelInfoHash,
+        id: channelResult.channelInfoIdHash,
         person: [remotePersonId],
         group: [],
         mode: SET_ACCESS_MODE.ADD
       }])
 
-      console.log('[NodeOneCore] ✅ Granted P2P channel access:', p2pChannelId)
+      console.log('[NodeOneCore] ✅ Granted P2P channel access, participants:', channelResult.participantsHash?.substring(0, 8))
     } catch (error) {
       console.warn('[NodeOneCore] Failed to grant P2P channel access:', (error as Error).message)
     }
@@ -653,6 +653,14 @@ class NodeOneCore implements INodeOneCore {
     this.channelManager = models.channelManager
     this.topicModel = models.topicModel
     this.llmObjectManager = models.llmObjectManager
+    this.ttsObjectManager = models.ttsObjectManager
+    this.sttObjectManager = models.sttObjectManager
+
+    // Wire up TTSObjectManager to TTS IPC handlers
+    const { setTTSObjectManager } = await import('../ipc/plans/tts.js');
+    setTTSObjectManager(models.ttsObjectManager);
+
+    // STTObjectManager will be wired up when STT IPC handlers are implemented
 
     // Pairing event handling is now managed by ConnectionPlan (via IPC handlers)
     // ConnectionPlan registers its own handler and fires callbacks for platform-specific UI updates
@@ -693,11 +701,29 @@ class NodeOneCore implements INodeOneCore {
     // NOTE: Using inline implementation for now - will migrate to refinio.api package later
     try {
       const { createSimplePlanRegistry } = await import('../registry/simple-plan-registry.js')
-      this.planRegistry = createSimplePlanRegistry({
+      const simplePlanRegistry = createSimplePlanRegistry({
         leuteModel: this.leuteModel,
         channelManager: this.channelManager
       })
-      console.log('[NodeOneCore] ✅ PlanRegistry initialized with ONE Plans:', this.planRegistry.listPlans().join(', '))
+      console.log('[NodeOneCore] ✅ SimplePlanRegistry initialized with ONE Plans:', simplePlanRegistry.listPlans().join(', '))
+
+      // Wrap with GatedRegistry for access control monitoring (shadow mode)
+      try {
+        const { setupGatedRegistry, addDefaultGates } = await import('../registry/gated-registry-setup.js')
+        const gatedRegistry = await setupGatedRegistry({
+          planRegistry: simplePlanRegistry,
+          myPersonId: this.ownerId,
+          shadowMode: true,
+          debug: true,
+          logInterval: 60000 // Log summary every minute
+        })
+        addDefaultGates(gatedRegistry)
+        this.planRegistry = gatedRegistry
+        console.log('[NodeOneCore] ✅ GatedRegistry shadow mode active')
+      } catch (gatedError) {
+        console.warn('[NodeOneCore] GatedRegistry setup failed, using SimplePlanRegistry:', (gatedError as Error).message)
+        this.planRegistry = simplePlanRegistry
+      }
     } catch (error) {
       console.error('[NodeOneCore] Failed to initialize PlanRegistry:', error)
       // Non-fatal - continue without PlanRegistry
@@ -742,13 +768,14 @@ class NodeOneCore implements INodeOneCore {
               continue
             }
 
-            // For group chats, use our owner ID
+            // For group chats, use our owner ID as participant
             const channelOwner = this.ownerId
 
             // Create a channel for each conversation
+            // With new participants-based ChannelInfo, the owner is the sole participant
             // This ensures the Node instance receives CHUM updates for messages in these conversations
-            await this.channelManager.createChannel(id, channelOwner)
-            console.log(`[NodeOneCore] Created channel for conversation: ${id} (owner: ${channelOwner})`)
+            const channelResult = await this.channelManager.createChannel([channelOwner], channelOwner)
+            console.log(`[NodeOneCore] Created channel for conversation: ${id} (participantsHash: ${channelResult.participantsHash?.substring(0, 8)})`)
           } catch (error) {
             // Channel might already exist, that's fine
             if (!(error as Error).message?.includes('already exists')) {
@@ -1277,6 +1304,14 @@ class NodeOneCore implements INodeOneCore {
    */
   async shutdown(): Promise<any> {
     console.log('[NodeOneCore] Shutting down...')
+
+    // Shutdown GatedRegistry first (logs final summary)
+    try {
+      const { shutdownGatedRegistry } = await import('../registry/gated-registry-setup.js')
+      shutdownGatedRegistry()
+    } catch (e) {
+      // Ignore if not initialized
+    }
 
     // Shutdown ModuleRegistry first (saves dimension state)
     try {

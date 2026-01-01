@@ -22,7 +22,7 @@ import type { NodeOneCore as INodeOneCore } from '../types/one-core.js';
 
 // Import extracted Plans
 import { CoreInstanceInitializationPlan } from '../plans/CoreInstanceInitializationPlan.js';
-import { ModelInitializationPlan } from '../plans/ModelInitializationPlan.js';
+import { ModelInitializationPlan, topicGroupManagerHolder } from '../plans/ModelInitializationPlan.js';
 // CHUM handlers removed - CHUM is handled automatically by ConnectionsModel in one.core
 // TEMP: MemoryInitializationPlan disabled - MemoryServicesPlan not exported from memory.core
 // import { MemoryInitializationPlan } from '../plans/MemoryInitializationPlan.js';
@@ -694,7 +694,12 @@ class NodeOneCore implements INodeOneCore {
         calculateHashOfObj,
         createAccess
       })
-      console.log('[NodeOneCore] ✅ TopicGroupManager initialized')
+
+      // CRITICAL: Wire TopicGroupManager to the holder for CHUM filter delegation
+      // The holder is used by ModelInitializationPlan's objectFilter/importFilter
+      // to delegate Access/IdAccess decisions to TopicGroupManager
+      topicGroupManagerHolder.manager = this.topicGroupManager;
+      console.log('[NodeOneCore] ✅ TopicGroupManager initialized and wired to holder for CHUM filters')
     }
 
     // Initialize ONE PlanRegistry with core ONE Plans

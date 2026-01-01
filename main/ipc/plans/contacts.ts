@@ -36,7 +36,7 @@ export function registerContactPlans() {
     if (response.success && response.contacts && nodeOneCore.aiAssistantModel) {
       try {
         response.contacts = response.contacts.map((contact: any) => {
-          const isAI = nodeOneCore.aiAssistantModel.isAIPerson(contact.id);
+          const isAI = nodeOneCore.aiAssistantModel.isAIPerson(contact.personId);
           return {
             ...contact,
             isAI,

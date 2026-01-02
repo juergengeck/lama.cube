@@ -176,6 +176,14 @@ function getHandler(): ConnectionPlan {
       trustDeps,  // Trust dependencies - enables automatic trust after pairing
       pairingCallbacks  // Platform-specific UI updates
     );
+
+    // Wire up mesh propagation support
+    if (nodeOneCore.topicGroupManager) {
+      connectionHandler.setTopicGroupManager(nodeOneCore.topicGroupManager);
+    }
+    if (nodeOneCore.paranoiaLevel !== undefined) {
+      connectionHandler.setParanoiaLevel(nodeOneCore.paranoiaLevel);
+    }
   }
   return connectionHandler;
 }
@@ -196,9 +204,30 @@ async function getInstances(event: IpcMainInvokeEvent) {
  * Supports both IoM (device) and IoP (partner) modes
  */
 async function createPairingInvitation(event: IpcMainInvokeEvent, mode?: 'IoM' | 'IoP') {
+  console.log('[Connection IPC] 📝 createPairingInvitation called, mode:', mode || 'IoP (default)');
   const handler = getHandler();
   const webUrl = getWebUrl();
-  return await handler.createPairingInvitation({ mode, webUrl });
+  console.log('[Connection IPC] webUrl:', webUrl);
+  const result = await handler.createPairingInvitation({ mode, webUrl });
+  console.log('[Connection IPC] createPairingInvitation result:', {
+    success: result.success,
+    hasUrl: !!result.invitation?.url,
+    mode: result.invitation?.mode,
+    error: result.error
+  });
+
+  // DEBUG: Check activeInvitations state after creation
+  const pairing = nodeOneCore.connectionsModel?.pairing;
+  if (pairing) {
+    const activeInvitations = (pairing as any).activeInvitations;
+    console.log('[Connection IPC] 🔍 DEBUG: activeInvitations size:', activeInvitations?.size || 0);
+    if (activeInvitations?.size > 0) {
+      const tokens = Array.from(activeInvitations.keys());
+      console.log('[Connection IPC] 🔍 DEBUG: stored tokens:', tokens.map((t: string) => t.substring(0, 20) + '...'));
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -206,8 +235,22 @@ async function createPairingInvitation(event: IpcMainInvokeEvent, mode?: 'IoM' |
  * Delegates to one.models ConnectionsModel.pairing
  */
 async function acceptPairingInvitation(event: IpcMainInvokeEvent, invitationUrl: string) {
+  console.log('[Connection IPC] 📥 acceptPairingInvitation called');
+  console.log('[Connection IPC] invitationUrl length:', invitationUrl.length);
+  console.log('[Connection IPC] invitationUrl prefix:', invitationUrl.substring(0, 80) + '...');
   const handler = getHandler();
-  return await handler.acceptPairingInvitation({ invitationUrl });
+  try {
+    const result = await handler.acceptPairingInvitation({ invitationUrl });
+    console.log('[Connection IPC] acceptPairingInvitation result:', {
+      success: result.success,
+      message: result.message,
+      error: result.error
+    });
+    return result;
+  } catch (error) {
+    console.error('[Connection IPC] ❌ acceptPairingInvitation error:', error);
+    throw error;
+  }
 }
 
 /**

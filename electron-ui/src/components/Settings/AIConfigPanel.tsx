@@ -102,32 +102,19 @@ export const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onNavigate }) => {
 
     setOllamaStatus('testing');
     try {
-      const result = await window.electronAPI?.invoke('llm:updateConfig', {
-        provider: 'ollama',
-        config: { baseUrl: ollamaUrl }
+      // Test connection and discover models at the specified URL
+      const testResult = await window.electronAPI?.invoke('llm:testConnectionAndDiscoverModels', {
+        server: ollamaUrl
       });
 
-      if (result?.success) {
+      if (testResult?.success) {
         setOllamaStatus('valid');
+        // NOTE: Do NOT auto-create contacts here
+        // Contacts are created on-demand when user clicks "Start Chat" on a model
         await loadModels();
-
-        // Discover and create AI contacts for Ollama models
-        const discoveryResult = await window.electronAPI?.invoke('ai:discoverOllamaModels');
-        if (discoveryResult?.success && discoveryResult.data?.models) {
-          const ollamaModels = discoveryResult.data.models;
-          for (const model of ollamaModels) {
-            try {
-              await window.electronAPI?.invoke('ai:getOrCreateContact', {
-                modelId: model.id
-              });
-            } catch (err) {
-              console.warn(`Failed to create contact for ${model.name}:`, err);
-            }
-          }
-          await loadModels();
-        }
       } else {
         setOllamaStatus('invalid');
+        console.error('Ollama connection test failed:', testResult?.error);
       }
     } catch (error) {
       console.error('Failed to save Ollama config:', error);
@@ -156,24 +143,11 @@ export const AIConfigPanel: React.FC<AIConfigPanelProps> = ({ onNavigate }) => {
 
         if (testResult?.success) {
           setApiKeyStatus('valid');
-
-          // Discover and create AI contacts for Claude models
-          const discoveryResult = await window.electronAPI?.invoke('ai:discoverClaudeModels', {
+          // Discover Claude models (registers them in memory) but do NOT create contacts
+          // Contacts are created on-demand when user clicks "Start Chat" on a model
+          await window.electronAPI?.invoke('ai:discoverClaudeModels', {
             apiKey: claudeApiKey
           });
-
-          if (discoveryResult?.success && discoveryResult.data?.models) {
-            const claudeModels = discoveryResult.data.models;
-            for (const model of claudeModels) {
-              try {
-                await window.electronAPI?.invoke('ai:getOrCreateContact', {
-                  modelId: model.id
-                });
-              } catch (err) {
-                console.warn(`Failed to create contact for ${model.name}:`, err);
-              }
-            }
-          }
           await loadModels();
         } else {
           setApiKeyStatus('invalid');

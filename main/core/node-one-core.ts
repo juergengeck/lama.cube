@@ -22,8 +22,9 @@ import type { NodeOneCore as INodeOneCore } from '../types/one-core.js';
 
 // Import extracted Plans
 import { CoreInstanceInitializationPlan } from '../plans/CoreInstanceInitializationPlan.js';
-import { ModelInitializationPlan, topicGroupManagerHolder } from '../plans/ModelInitializationPlan.js';
+// ModelInitializationPlan REMOVED - CoreModule is THE single source of model creation
 // CHUM handlers removed - CHUM is handled automatically by ConnectionsModel in one.core
+// topicGroupManagerHolder REMOVED - ConnectionModule creates ConnectionsModel with proper TopicGroupManager filters
 // TEMP: MemoryInitializationPlan disabled - MemoryServicesPlan not exported from memory.core
 // import { MemoryInitializationPlan } from '../plans/MemoryInitializationPlan.js';
 // LEGACY REMOVED: AIDiscoveryPlan and MessageListenersPlan - now handled by ModuleRegistry/AIModule
@@ -87,7 +88,7 @@ class NodeOneCore implements INodeOneCore {
 
   // Extracted Plans for focused responsibilities
   private coreInitPlan: CoreInstanceInitializationPlan;
-  private modelInitPlan: ModelInitializationPlan;
+  // ModelInitializationPlan REMOVED - CoreModule is THE single source of model creation
   // CHUM handlers removed - handled automatically by ConnectionsModel
   // TEMP: MemoryInitializationPlan disabled
   // private memoryInitPlan: MemoryInitializationPlan;
@@ -122,6 +123,8 @@ class NodeOneCore implements INodeOneCore {
   assemblyManager?: any  // AssemblyManager for knowledge assembly infrastructure
   knowledgeAssembly?: any  // KnowledgeAssembly for knowledge extraction
   caPlan?: CAPlan  // Certificate Authority Plan for device certificates with journal visibility
+  trustPlan?: any  // TrustPlan for implied trust on group receive
+  paranoiaLevel?: 0 | 1  // 0 = implied trust (default), 1 = manual confirmation required
 
   // Additional properties
   oneAuth: SingleUserNoAuth
@@ -169,7 +172,7 @@ class NodeOneCore implements INodeOneCore {
 
     // Instantiate Plans
     this.coreInitPlan = new CoreInstanceInitializationPlan();
-    this.modelInitPlan = new ModelInitializationPlan();
+    // ModelInitializationPlan REMOVED - CoreModule creates models
     // CHUM handlers removed - ConnectionsModel handles CHUM automatically
     // TEMP: MemoryInitializationPlan disabled
     // this.memoryInitPlan = new MemoryInitializationPlan();
@@ -368,6 +371,7 @@ class NodeOneCore implements INodeOneCore {
       // Set initialized AFTER models are ready to prevent race conditions
       // (Services like QuicVCDiscovery wait for this flag)
       this.initialized = true
+      // Note: TrustPlan wiring is handled by ChatModule via the module registry demand/supply system
 
       // Progress: Complete
       onProgress?.('complete', 100, 'Initialization complete')
@@ -632,33 +636,56 @@ class NodeOneCore implements INodeOneCore {
    * @param onProgress Optional callback for progress updates
    */
   async initializeModels(onProgress?: (stage: string, percent: number, message: string) => void): Promise<any> {
-    console.log('[NodeOneCore] Initializing models using Plans...')
+    console.log('[NodeOneCore] Initializing models via CoreModule...')
 
     // Use commserver URL from config (supports local testing)
     const commServerUrl = global.lamaConfig?.network?.commServer?.url || 'wss://comm10.dev.refinio.one'
     this.commServerUrl = commServerUrl  // Store as property for node-provisioning to access
     console.log('[NodeOneCore] Using CommServer URL:', commServerUrl)
 
-    // Use ModelInitializationPlan to initialize models
-    const models = await this.modelInitPlan.execute({
-      ownerId: this.ownerId,
-      email: this.email,
-      commServerUrl: this.commServerUrl,
-      onProgress
-    })
+    // CONSOLIDATED ARCHITECTURE: CoreModule is THE single source of model creation
+    // Initialize ModuleRegistry and let CoreModule create all models
+    const { initializeModuleRegistry, getCoreModule, getAIModule, getModuleRegistry } = await import('../registry/module-registry-init.js')
+    await initializeModuleRegistry(this)
 
-    // Assign models to instance
-    this.leuteModel = models.leuteModel
-    this.connectionsModel = models.connectionsModel
-    this.channelManager = models.channelManager
-    this.topicModel = models.topicModel
-    this.llmObjectManager = models.llmObjectManager
-    this.ttsObjectManager = models.ttsObjectManager
-    this.sttObjectManager = models.sttObjectManager
+    const coreModule = getCoreModule()
+    if (!coreModule) {
+      throw new Error('[NodeOneCore] CoreModule not available after ModuleRegistry init')
+    }
+
+    // Get models from CoreModule
+    this.leuteModel = coreModule.leuteModel
+    this.channelManager = coreModule.channelManager
+    this.topicModel = coreModule.topicModel
+    console.log('[NodeOneCore] ✅ Core models assigned from CoreModule')
+
+    // Get ConnectionsModel from ConnectionModule (created there with proper TopicGroupManager filters)
+    const registry = getModuleRegistry()
+    const connectionModule = registry?.getModule('ConnectionModule') as any
+    if (connectionModule?.connectionsModel) {
+      this.connectionsModel = connectionModule.connectionsModel
+      console.log('[NodeOneCore] ✅ ConnectionsModel assigned from ConnectionModule')
+    } else {
+      // Fallback to oneCore.connectionsModel if already set by ConnectionModule.init()
+      console.log('[NodeOneCore] ConnectionModule.connectionsModel not yet available, using oneCore.connectionsModel')
+    }
+
+    // Get LLMObjectManager from AIModule
+    const aiModule = getAIModule()
+    if (aiModule?.llmObjectManager) {
+      this.llmObjectManager = aiModule.llmObjectManager
+      console.log('[NodeOneCore] ✅ LLMObjectManager assigned from AIModule')
+    }
+
+    // TTS/STT object managers are created here (Electron-specific)
+    await this.initializeTTSObjectManager(onProgress)
+    await this.initializeSTTObjectManager(onProgress)
 
     // Wire up TTSObjectManager to TTS IPC handlers
-    const { setTTSObjectManager } = await import('../ipc/plans/tts.js');
-    setTTSObjectManager(models.ttsObjectManager);
+    if (this.ttsObjectManager) {
+      const { setTTSObjectManager } = await import('../ipc/plans/tts.js');
+      setTTSObjectManager(this.ttsObjectManager);
+    }
 
     // STTObjectManager will be wired up when STT IPC handlers are implemented
 
@@ -677,30 +704,9 @@ class NodeOneCore implements INodeOneCore {
       console.log('[NodeOneCore] ✅ Topic Analysis Model initialized')
     }
 
-    // Initialize TopicGroupManager with objectFilter/importFilter
-    // IMPORTANT: Must be initialized BEFORE ConnectionsModel
-    // to provide filter functions for CHUM sync
-    if (!this.topicGroupManager) {
-      this.topicGroupManager = new TopicGroupManager(this, {
-        storeVersionedObject,
-        storeUnversionedObject,
-        getObjectByIdHash,
-        getAllOfType: async (type: string) => {
-          // Stub implementation - return empty array for now
-          return [];
-        },
-        getObject,
-        calculateIdHashOfObj,
-        calculateHashOfObj,
-        createAccess
-      })
-
-      // CRITICAL: Wire TopicGroupManager to the holder for CHUM filter delegation
-      // The holder is used by ModelInitializationPlan's objectFilter/importFilter
-      // to delegate Access/IdAccess decisions to TopicGroupManager
-      topicGroupManagerHolder.manager = this.topicGroupManager;
-      console.log('[NodeOneCore] ✅ TopicGroupManager initialized and wired to holder for CHUM filters')
-    }
+    // NOTE: TopicGroupManager is created by ChatModule (via ModuleRegistry)
+    // ChatModule sets oneCore.topicGroupManager for ChatPlan access
+    // ConnectionModule demands TopicGroupManager and uses it for CHUM filters
 
     // Initialize ONE PlanRegistry with core ONE Plans
     // NOTE: Using inline implementation for now - will migrate to refinio.api package later
@@ -738,8 +744,56 @@ class NodeOneCore implements INodeOneCore {
   }
 
   /**
-   * Create channels for existing conversations so Node participates in CHUM sync
+   * Initialize TTSObjectManager for TTS model configuration storage
+   * Electron-specific - manages voice models and settings in ONE.core
    */
+  private async initializeTTSObjectManager(onProgress?: (stage: string, percent: number, message: string) => void): Promise<void> {
+    console.log('[NodeOneCore] Initializing TTSObjectManager...');
+    onProgress?.('tts', 75, 'TTS configuration loading');
+
+    const { storeVersionedObject, getObjectByIdHash } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
+    const { storeArrayBufferAsBlob, readBlobAsArrayBuffer } = await import('@refinio/one.core/lib/storage-blob.js');
+    const { TTSObjectManager } = await import('@lama/core/models/TTSObjectManager.js');
+
+    const ownerId = this.ownerId;
+
+    this.ttsObjectManager = new TTSObjectManager({
+      storeVersionedObject,
+      getObjectByIdHash,
+      storeArrayBufferAsBlob,
+      readBlobAsArrayBuffer,
+      getOwnerId: async () => ownerId
+    });
+
+    await this.ttsObjectManager.initialize();
+    console.log('[NodeOneCore] ✅ TTSObjectManager initialized');
+  }
+
+  /**
+   * Initialize STTObjectManager for STT/Whisper model configuration storage
+   * Electron-specific - manages transcription models and settings in ONE.core
+   */
+  private async initializeSTTObjectManager(onProgress?: (stage: string, percent: number, message: string) => void): Promise<void> {
+    console.log('[NodeOneCore] Initializing STTObjectManager...');
+    onProgress?.('stt', 80, 'STT configuration loading');
+
+    const { storeVersionedObject, getObjectByIdHash } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
+    const { storeArrayBufferAsBlob, readBlobAsArrayBuffer } = await import('@refinio/one.core/lib/storage-blob.js');
+    const { STTObjectManager } = await import('@lama/core/models/STTObjectManager.js');
+
+    const ownerId = this.ownerId;
+
+    this.sttObjectManager = new STTObjectManager({
+      storeVersionedObject,
+      getObjectByIdHash,
+      storeArrayBufferAsBlob,
+      readBlobAsArrayBuffer,
+      getOwnerId: async () => ownerId
+    });
+
+    await this.sttObjectManager.initialize();
+    console.log('[NodeOneCore] ✅ STTObjectManager initialized');
+  }
 
   /**
    * Create channels for existing conversations so Node participates in CHUM sync

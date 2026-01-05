@@ -104,7 +104,7 @@ export const PrivacySettingsPanel: React.FC<PrivacySettingsPanelProps> = ({
             <div style="font-size: 14px; opacity: 0.8;">Removing all ONE.core data...</div>
           `;
 
-          const result = await window.electronAPI.invoke('system:clearAllData', {});
+          const result = await window.electronAPI.invoke('app:clearData', {});
 
           if (result?.success) {
             console.log('[PrivacySettings] App data cleared successfully, app will restart...');

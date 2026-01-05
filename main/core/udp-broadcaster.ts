@@ -1,63 +1,43 @@
 /**
- * UDP Broadcaster - Adapts QuicVCDiscovery to DiscoveryBroadcaster interface
+ * UDP Broadcaster - Re-exports platform-agnostic UDPBroadcaster with Node.js socket
+ *
+ * This module provides a convenience factory for creating UDPBroadcaster
+ * instances with the Node.js dgram socket implementation.
  */
 
-import type { DiscoveryBroadcaster, DiscoveryPacket } from '@lama/connection.core';
-import { QuicVCDiscovery, type LocalPeerInfo } from './quicvc-discovery.js';
+import { UDPBroadcaster as CoreUDPBroadcaster } from '@lama/connection.core';
+import type { DiscoveryIdentityProvider, DiscoveryIdentity } from '@lama/connection.core';
+import { NodeUDPSocketService } from './node-udp-socket-service.js';
 
-export class UdpBroadcaster implements DiscoveryBroadcaster {
-  readonly type = 'udp' as const;
+/**
+ * Create a UDPBroadcaster with Node.js dgram socket implementation
+ */
+export function createNodeUDPBroadcaster(
+  identityProvider: DiscoveryIdentityProvider
+): { broadcaster: CoreUDPBroadcaster; getIdentity: () => Promise<DiscoveryIdentity> } {
+  const socketService = new NodeUDPSocketService();
 
-  private discovery: QuicVCDiscovery | null = null;
-  private deviceId: string;
-  private deviceName: string;
-  private broadcasting: boolean = false;
+  // Get identity synchronously for broadcaster constructor
+  // (broadcaster needs deviceId and deviceName upfront)
+  let currentIdentity: DiscoveryIdentity | null = null;
 
-  constructor(deviceId: string, deviceName: string) {
-    this.deviceId = deviceId;
-    this.deviceName = deviceName;
-  }
-
-  async startBroadcasting(packet: DiscoveryPacket): Promise<void> {
-    if (this.broadcasting) {
-      return;
+  const getIdentity = async (): Promise<DiscoveryIdentity> => {
+    if (!currentIdentity) {
+      currentIdentity = await identityProvider.getDiscoveryIdentity();
     }
+    return currentIdentity;
+  };
 
-    // Create discovery instance with pubKey as deviceId for now
-    // TODO: Include pubKey in discovery packet
-    this.discovery = new QuicVCDiscovery(this.deviceId, this.deviceName);
+  // Create broadcaster with placeholder values - will be updated on start
+  const broadcaster = new CoreUDPBroadcaster(
+    socketService,
+    'pending', // Will be set from identity
+    'pending'  // Will be set from identity
+  );
 
-    await this.discovery.start();
-    this.broadcasting = true;
-    console.log('[UdpBroadcaster] Started UDP broadcasting');
-  }
-
-  async stopBroadcasting(): Promise<void> {
-    if (!this.broadcasting || !this.discovery) {
-      return;
-    }
-
-    await this.discovery.stop();
-    this.discovery = null;
-    this.broadcasting = false;
-    console.log('[UdpBroadcaster] Stopped UDP broadcasting');
-  }
-
-  isBroadcasting(): boolean {
-    return this.broadcasting;
-  }
-
-  /**
-   * Get discovered devices (for demand side)
-   */
-  getDiscoveredDevices() {
-    return this.discovery?.getDiscoveredDevices() || [];
-  }
-
-  /**
-   * Register callback for peer discovery
-   */
-  onPeerDiscovered(callback: (peer: LocalPeerInfo) => void): void {
-    this.discovery?.onPeerDiscovered(callback);
-  }
+  return { broadcaster, getIdentity };
 }
+
+// Re-export the core broadcaster type for convenience
+export { CoreUDPBroadcaster as UDPBroadcaster };
+export type { DiscoveryIdentityProvider };

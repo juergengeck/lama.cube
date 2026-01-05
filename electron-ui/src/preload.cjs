@@ -106,28 +106,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cancelWebRTCInvite: (params) => ipcRenderer.invoke('transport:cancelWebRTCInvite', params),
   },
 
-  // Navigation from menu
+  // IPC Event Whitelist
+  // IMPORTANT: Event names must match @lama/core/events registry (source of truth)
+  // See: lama.core/events/index.ts for canonical event definitions and types
   on: (channel, callback) => {
     const validChannels = [
       'navigate',
       'update:mainProcessLog',
-      'message:updated',
-      'message:thinking',
-      'message:stream',
-      'llm:message-update',
-      'llm:thinking-update',
-      'llm:thinking-status',
-      'llm:stream-chunk',
-      'llm:progress',
-      'llm:error',
+      // AI assistant events
+      'ai:responding',      // AI is working on response
+      'ai:error',           // AI error
+      // Analysis data events
+      'subjects:updated',   // Subjects extracted/changed
+      'keywords:updated',   // Keywords extracted/changed
+      // LLM model events
+      'llm:stream',         // Streaming text chunk
+      'llm:complete',       // Generation finished
+      'llm:thinking',       // Reasoning/thinking stream
+      'llm:status',         // Processing status
+      // TTS model events
+      'tts:progress',
+      'tts:complete',
+      'tts:error',
+      // Contact events
       'contact:added',
       'contacts:updated',
       'contacts:pending:new',
       'contacts:accepted',
       'contacts:vc:received',
+      // Chat events
       'chat:conversationCreated',
       'chat:messageSent',
       'chat:newMessages',
+      'channel:updated',
+      // System events
       'node-log',
       'onecore:init-progress',
       'localModels:textGenProgress',
@@ -148,23 +160,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const validChannels = [
       'navigate',
       'update:mainProcessLog',
-      'message:updated',
-      'message:thinking',
-      'message:stream',
-      'llm:message-update',
-      'llm:thinking-update',
-      'llm:thinking-status',
-      'llm:stream-chunk',
-      'llm:progress',
-      'llm:error',
-      'contact:added',
-      'contacts:updated',
-      'contacts:pending:new',
-      'contacts:accepted',
-      'contacts:vc:received',
-      'chat:conversationCreated',
-      'chat:messageSent',
-      'chat:newMessages',
+      // AI assistant events
+      'ai:responding', 'ai:error',
+      // Analysis data events
+      'subjects:updated', 'keywords:updated',
+      // LLM model events
+      'llm:stream', 'llm:complete', 'llm:thinking', 'llm:status',
+      // TTS model events
+      'tts:progress', 'tts:complete', 'tts:error',
+      // Contact events
+      'contact:added', 'contacts:updated', 'contacts:pending:new',
+      'contacts:accepted', 'contacts:vc:received',
+      // Chat events
+      'chat:conversationCreated', 'chat:messageSent', 'chat:newMessages', 'channel:updated',
+      // System events
       'node-log'
     ]
     if (validChannels.includes(channel)) {
@@ -175,30 +184,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const validChannels = [
       'navigate',
       'update:mainProcessLog',
-      'message:updated',
-      'message:thinking',
-      'message:stream',
-      'llm:message-update',
-      'llm:thinking-update',
-      'llm:thinking-status',
-      'llm:stream-chunk',
-      'llm:progress',
-      'llm:error',
-      'contact:added',
-      'contacts:updated',
-      'contacts:pending:new',
-      'contacts:accepted',
-      'contacts:vc:received',
-      'chat:conversationCreated',
-      'chat:messageSent',
-      'chat:newMessages',
+      // AI assistant events
+      'ai:responding', 'ai:error',
+      // Analysis data events
+      'subjects:updated', 'keywords:updated',
+      // LLM model events
+      'llm:stream', 'llm:complete', 'llm:thinking', 'llm:status',
+      // TTS model events
+      'tts:progress', 'tts:complete', 'tts:error',
+      // Contact events
+      'contact:added', 'contacts:updated', 'contacts:pending:new',
+      'contacts:accepted', 'contacts:vc:received',
+      // Chat events
+      'chat:conversationCreated', 'chat:messageSent', 'chat:newMessages', 'channel:updated',
+      // System events
       'node-log'
     ]
     if (validChannels.includes(channel)) {
       ipcRenderer.removeListener(channel, callback)
     }
   },
-  
+
   // Generic IPC invoke for platform bridge
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args)
 })

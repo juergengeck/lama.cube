@@ -103,11 +103,21 @@ interface MeaningDimensionValue {
 declare module '@OneObjectInterfaces' {
     // Subject represents a distinct discussion topic within a conversation
     // References content (topics, memories) that discusses this subject
+    // Forms abstraction hierarchy via parent/child relationships (computed from embeddings)
     export interface Subject {
         $type$: 'Subject';
         keywords?: SHA256IdHash<Keyword>[]; // Array of Keyword ID hashes - THIS IS THE ID PROPERTY (isId: true in recipe)
         description?: string; // LLM-generated description
-        abstractionLevel?: number; // 1-42 scale
+        abstractionLevel?: number; // Tree depth (root = max abstract, leaves = concrete)
+
+        // Abstraction hierarchy - parent/child relationships
+        // Parent embeddings approximate centroid of children embeddings
+        parent?: SHA256IdHash<Subject>; // More abstract concept this subject is an instance of
+        children?: SHA256IdHash<Subject>[]; // More concrete instances of this subject
+
+        // Embedding for computing parent/child relationships empirically
+        embedding?: number[];
+        embeddingModel?: string; // Model used to generate embedding
 
         // References - content that discusses this subject
         topics: string[];  // Array of topic/channel IDs
@@ -295,10 +305,16 @@ declare module '@OneObjectInterfaces' {
         updatedAt: number;
     }
 
-    // UserSettings - Unified user settings (consolidates GlobalLLMSettings, WordCloudSettings, ProposalConfig)
+    // UserSettings - Unified user settings (aligned with @settings/core)
     export interface UserSettings {
         $type$: 'UserSettings';
+
+        // Metadata
         userEmail: string; // ID field - user identifier
+        instanceId?: string; // Optional instance identifier for multi-device support
+        updatedAt: number;
+
+        // Core categories (required)
         ai: {
             defaultModelId?: string;
             temperature: number;
@@ -333,7 +349,54 @@ declare module '@OneObjectInterfaces' {
             minJaccard: number;
             maxProposals: number;
         };
-        updatedAt: number;
+
+        // Additional categories (optional - not all platforms use these)
+        device?: {
+            discoveryEnabled: boolean;
+            discoveryPort: number;
+            autoConnect: boolean;
+            addOnlyConnectedDevices: boolean;
+            showOfflineDevices: boolean;
+            discoveryTimeout: number;
+        };
+        network?: {
+            commServerUrl: string;
+            autoReconnect: boolean;
+            connectionTimeout: number;
+            enableWebSocket: boolean;
+            enableQUIC: boolean;
+            enableBluetooth: boolean;
+        };
+        privacy?: {
+            encryptStorage: boolean;
+            requirePINOnStartup: boolean;
+            autoLockTimeout: number;
+            sendAnalytics: boolean;
+            sendCrashReports: boolean;
+        };
+        chat?: {
+            enterToSend: boolean;
+            showReadReceipts: boolean;
+            groupMessagesBy: 'none' | 'hour' | 'day';
+            maxHistoryDays: number;
+            autoDownloadMedia: boolean;
+            maxMediaSize: number;
+        };
+
+        // Platform-specific (optional)
+        electron?: {
+            trayEnabled: boolean;
+            autoLaunch: boolean;
+            hardwareAcceleration: boolean;
+        };
+        ios?: {
+            haptics: boolean;
+            backgroundRefresh: boolean;
+            vibrationEnabled: boolean;
+        };
+        browser?: {
+            offlineMode: boolean;
+        };
     }
 
     // AvatarPreference - Stores avatar color preference for a person
@@ -345,17 +408,39 @@ declare module '@OneObjectInterfaces' {
         updatedAt: number; // Unix timestamp
     }
 
-    // Memory - Discrete memory/insight stored by AI or user
+    // Memory - Synthesized knowledge document from memory.core
     export interface Memory {
         $type$: 'Memory';
-        content: string; // Memory content
-        memoryType: string; // conversation, fact, reference, note, summary, milestone
-        timestamp: string; // ISO 8601 date string
-        importance?: number; // 0-1 relevance score
-        tags?: string[]; // Optional tags
-        author?: string; // Person reference (owner of this memory)
-        topicRef?: string; // Topic ID back-reference
-        contextRef?: string; // Optional conversation context
+        // Identity (isId: true)
+        title: string;
+        author: string;  // SHA256IdHash<Person>
+        // Structured content
+        facts: Array<{
+            statement: string;
+            confidence: number;
+            sourceRef?: string;
+        }>;
+        entities: Array<{
+            name: string;
+            type: 'person' | 'place' | 'thing' | 'concept' | 'event';
+            description?: string;
+        }>;
+        relationships: Array<{
+            fromEntity: string;
+            toEntity: string;
+            relationType: string;
+        }>;
+        // Prose content
+        prose: string;
+        // Summary
+        summary?: string;
+        // Source subjects this memory was constructed from
+        sourceSubjects: string[];
+        // Related subjects - semantically linked but not sources
+        relatedSubjects?: string[];
+        // Semantic embedding
+        embedding?: number[];
+        embeddingModel?: string;
     }
 
     // Import AffirmationCertificate from ONE.models - it's already defined there

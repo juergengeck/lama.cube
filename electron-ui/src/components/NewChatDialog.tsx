@@ -33,7 +33,7 @@ export function NewChatDialog({
   const [chatName, setChatName] = useState('');
   const [modelType, setModelType] = useState<'cloud' | 'local'>('cloud');
   const [selectedLocalModel, setSelectedLocalModel] = useState<string>('');
-  const { textGenModels, loading: loadingModels, downloadModel } = useLocalModels();
+  const { textGenModels, textGenStatus, loading: loadingModels, downloadModel } = useLocalModels();
   const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
 
   // Reset state when dialog opens
@@ -45,9 +45,15 @@ export function NewChatDialog({
     }
   }, [open]);
 
-  // Auto-select first installed local model
+  // Auto-select first available local model (prefer currently loaded one)
   useEffect(() => {
     if (modelType === 'local' && !selectedLocalModel) {
+      // Prefer currently loaded model
+      if (textGenStatus?.loaded && textGenStatus.modelId) {
+        setSelectedLocalModel(textGenStatus.modelId);
+        return;
+      }
+      // Fall back to first installed model
       const installedModel = textGenModels.find(m =>
         m.status === 'installed' || m.status === 'ready'
       );
@@ -55,7 +61,7 @@ export function NewChatDialog({
         setSelectedLocalModel(installedModel.id);
       }
     }
-  }, [modelType, textGenModels, selectedLocalModel]);
+  }, [modelType, textGenModels, textGenStatus, selectedLocalModel]);
 
   const handleSubmit = () => {
     if (!chatName.trim()) return;
@@ -92,12 +98,12 @@ export function NewChatDialog({
     }
   };
 
-  const installedModels = textGenModels.filter(m =>
-    m.status === 'installed' || m.status === 'ready'
-  );
-  const notInstalledModels = textGenModels.filter(m =>
-    m.status !== 'installed' && m.status !== 'ready'
-  );
+  // Consider model installed if status says so OR if it's currently loaded
+  const isModelAvailable = (m: typeof textGenModels[0]) =>
+    m.status === 'installed' || m.status === 'ready' || textGenStatus?.modelId === m.id;
+
+  const installedModels = textGenModels.filter(isModelAvailable);
+  const notInstalledModels = textGenModels.filter(m => !isModelAvailable(m));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

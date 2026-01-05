@@ -156,17 +156,42 @@ export class ConnectionModule implements Module {
       },
 
       // Channel manager for group chat channels
+      // Note: Adapts old (channelId, owner) signature to new participants-based API
       channelManager: {
         getOrCreateChannel: async (channelId: string, owner: any) => {
-          // Get existing channels
-          const existingChannels = await this.deps.channelManager!.channels();
-          const existing = existingChannels.find((ch: any) => ch.id === channelId && ch.owner === owner);
-          if (existing) return existing;
-          // Create new channel
-          return this.deps.channelManager!.createChannel(channelId, owner);
+          // Determine participants from channelId pattern
+          // For P2P channels (id1<->id2), extract both person IDs
+          // For other channels, use [owner] as participants
+          let participants: any[];
+          if (channelId.includes('<->')) {
+            const [id1, id2] = channelId.split('<->');
+            participants = id1 < id2 ? [id1, id2] : [id2, id1];
+          } else {
+            // Single owner channel (each participant has their own)
+            participants = [owner];
+          }
+
+          // Create participantsHash for query
+          const hashGroup = {
+            $type$: 'HashGroup' as const,
+            person: new Set(participants)
+          };
+          const result = await storeUnversionedObject(hashGroup);
+          const participantsHash = result.hash;
+
+          // Get existing channels by participants
+          const existingChannels = await this.deps.channelManager!.getMatchingChannelInfos({
+            participants: participantsHash,
+            owner: owner
+          });
+          if (existingChannels && existingChannels.length > 0) {
+            return existingChannels[0];
+          }
+          // Create new channel with participants array
+          return this.deps.channelManager!.createChannel(participants, owner);
         },
-        postToChannel: (topicId: string, message: any, owner?: any) =>
-          this.deps.channelManager!.postToChannel(topicId, message, owner)
+        postToChannel: (participantsHash: any, message: any, owner?: any) =>
+          this.deps.channelManager!.postToChannel(participantsHash, message, owner)
       }
     };
 

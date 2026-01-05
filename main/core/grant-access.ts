@@ -58,14 +58,15 @@ async function grantAccessRights(nodeOneCore: any, targetPersonId: any): Promise
     try {
       const channels = await nodeOneCore.channelManager.getAllChannelInfos()
       console.log(`[GrantAccess] Granting access to ${(channels as any).length} channels...`)
-      
+
       for (const channel of channels) {
-        const channelId = await calculateIdHashOfObj({
-          $type$: 'ChannelInfo',
-          id: channel.id,
-          owner: channel.owner || nodeOneCore.ownerId
-        })
-        
+        // Use channelInfoIdHash directly from the channel
+        const channelId = channel.channelInfoIdHash || channel.idHash
+        if (!channelId) {
+          console.warn('[GrantAccess] Channel has no idHash, skipping')
+          continue
+        }
+
         await createAccess([{
           id: channelId,
           person: [targetPersonId],
@@ -73,7 +74,7 @@ async function grantAccessRights(nodeOneCore: any, targetPersonId: any): Promise
           mode: SET_ACCESS_MODE.ADD
         }])
       }
-      
+
       console.log('[GrantAccess] ✅ Granted access to channels')
     } catch (error) {
       console.warn('[GrantAccess] Failed to grant channel access:', (error as Error).message)

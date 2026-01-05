@@ -4,17 +4,17 @@
  * Uses usePlans() for platform-agnostic access to topicAnalysis plan
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { usePlans } from '@ui/core';
 import type { Subject } from '../types/topic-analysis';
 
-export function useChatSubjects(topicId: string) {
-  console.log('[useChatSubjects] Hook called with topicId:', topicId);
+// Stable empty array to prevent re-renders
+const EMPTY_SUBJECTS: Subject[] = [];
 
-  // Use Plans for platform-agnostic operations
+export function useChatSubjects(topicId: string) {
   const { topicAnalysis } = usePlans();
 
-  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>(EMPTY_SUBJECTS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,7 +52,7 @@ export function useChatSubjects(topicId: string) {
           setError(null);
         } else {
           console.log('[useChatSubjects] ❌ No subjects in response:', response);
-          setSubjects([]);
+          setSubjects(EMPTY_SUBJECTS);
         }
       } else {
         console.log('[useChatSubjects] Ignoring stale response');
@@ -102,7 +102,7 @@ export function useChatSubjects(topicId: string) {
     setError(null);
 
     if (!topicId) {
-      setSubjects([]);
+      setSubjects(EMPTY_SUBJECTS);
       return;
     }
 

@@ -5,15 +5,23 @@
  * Based on one.leute's LeuteAccessRightsManager.trustPairingKeys implementation.
  *
  * Integrates with CAPlan for journal/audit trail visibility when certificates are issued.
+ * Creates AccessCertificate for certificate-based access control (filter.core).
  */
 
 import { getAllEntries } from '@refinio/one.core/lib/reverse-map-query.js'
 import { getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js'
+import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js'
 import ProfileModel from '@refinio/one.models/lib/models/Leute/ProfileModel.js'
 import { createAccess } from '@refinio/one.core/lib/access.js'
 import { SET_ACCESS_MODE } from '@refinio/one.core/lib/storage-base-common.js'
 import { wait } from '@refinio/one.core/lib/util/promise.js'
 import type { CAPlan } from '@trust/core/plans/CAPlan.js'
+import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js'
+import type { Person } from '@refinio/one.core/lib/recipes.js'
+import {
+  createPairingCertificate,
+  type PairingCertificateResult
+} from '@filter/core'
 
 /**
  * Trust the keys of a newly paired remote peer.
@@ -221,6 +229,8 @@ export async function completePairingTrust(params: any): Promise<any> {
     remotePerson: remotePersonId?.substring(0, 8)
   })
 
+  let accessCertificate: PairingCertificateResult | undefined
+
   try {
     // Step 1: Trust the remote peer's keys (with optional CA certificate for journal)
     const trustResult = await trustPairingKeys(
@@ -239,6 +249,30 @@ export async function completePairingTrust(params: any): Promise<any> {
       // Continue anyway - profile sharing can still work
     }
 
+    // Step 1.5: Create AccessCertificate for certificate-based access control
+    try {
+      console.log('[PairingTrust] 📜 Creating AccessCertificate for remote peer...')
+      accessCertificate = await createPairingCertificate({
+        localPersonId: localPersonId as SHA256IdHash<Person>,
+        remotePersonId: remotePersonId as SHA256IdHash<Person>,
+        storeObject: async (obj) => {
+          // Cast to any since AccessCertificate is defined in filter.core
+          // The recipe must be registered at initialization time
+          const result = await storeVersionedObject(obj as any)
+          return { hash: result.hash, idHash: result.idHash }
+        },
+        // Default pairing grants
+        trustLevel: 'medium',
+        contexts: ['*'],
+        permissions: ['read', 'write'],
+        delegationAllowed: true
+      })
+      console.log('[PairingTrust] ✅ AccessCertificate created:', accessCertificate.certHash.substring(0, 8))
+    } catch (certError) {
+      console.warn('[PairingTrust] ⚠️ Failed to create AccessCertificate (non-fatal):', (certError as Error).message)
+      // Non-fatal - trust is still established via TrustKeysCertificate
+    }
+
     // Step 2: Share our profile with the remote peer
     const shareResult = await shareMainProfileWithPeer(leuteModel, remotePersonId)
 
@@ -250,6 +284,10 @@ export async function completePairingTrust(params: any): Promise<any> {
     return {
       success: true,
       keyTrust: trustResult,
+      accessCertificate: accessCertificate ? {
+        certHash: accessCertificate.certHash,
+        certId: accessCertificate.certId
+      } : undefined,
       profileShare: shareResult
     }
 

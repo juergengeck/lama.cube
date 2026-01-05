@@ -175,17 +175,17 @@ class IoPSyncManager {
     // Listen for new channels
     if (this.nodeOneCore.channelManager) {
       this.nodeOneCore.channelManager.onChannelCreated(async (channel: any) => {
-        console.log(`[IoPSync] New channel created: ${channel.id}, granting access...`)
+        console.log(`[IoPSync] New channel created, participants: ${channel.participants?.substring(0, 8)}, granting access...`)
         const { createAccess } = await import('@refinio/one.core/lib/access.js')
         const { SET_ACCESS_MODE } = await import('@refinio/one.core/lib/storage-base-common.js')
-        const { calculateIdHashOfObj } = await import('@refinio/one.core/lib/util/object.js')
-        
-        const channelInfoId = await calculateIdHashOfObj({
-          $type$: 'ChannelInfo',
-          id: channel.id,
-          owner: channel.owner || this.nodePersonId
-        })
-        
+
+        // Use channelInfoIdHash directly from the channel
+        const channelInfoId = channel.channelInfoIdHash || channel.idHash
+        if (!channelInfoId) {
+          console.warn('[IoPSync] Channel has no idHash, skipping')
+          return
+        }
+
         if (this.browserPersonId) {
           await createAccess([{
             id: channelInfoId,
@@ -194,8 +194,8 @@ class IoPSyncManager {
             mode: SET_ACCESS_MODE.ADD
           }])
         }
-        
-        console.log(`[IoPSync] ✅ Access granted to new channel: ${channel.id}`)
+
+        console.log(`[IoPSync] ✅ Access granted to new channel, participants: ${channel.participants?.substring(0, 8)}`)
       })
     }
     

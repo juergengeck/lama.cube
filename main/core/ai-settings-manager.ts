@@ -64,16 +64,50 @@ export class AISettingsManager {
 }
 
   /**
-   * Get settings ID hash - GlobalLLMSettings has no ID properties,
-   * so all instances have the same ID hash (singleton pattern)
+   * Get settings ID hash - GlobalLLMSettings uses 'default' as the name
+   * to ensure consistency regardless of instance name timing
+   * (instanceName may be '' early, then 'lama-node-xxx' later)
    */
   async getSettingsIdHash(): Promise<SHA256IdHash<GlobalLLMSettings>> {
-    const instanceName = this.nodeOneCore?.instanceName || 'default'
+    // Always use 'default' to ensure consistent ID hash across app lifecycle
+    // This is app-level settings, not user-specific
     const idHash = await calculateIdHashOfObj({
       $type$: 'GlobalLLMSettings' as const,
-      name: instanceName
+      name: 'default'
     } as any)
     return idHash as SHA256IdHash<GlobalLLMSettings>
+  }
+
+  /**
+   * Try to find legacy settings stored with instanceName
+   * Returns the settings if found, null otherwise
+   */
+  private async findLegacySettings(): Promise<GlobalLLMSettings | null> {
+    // Try common instanceName patterns - always include 'lama-node-demo' as it's the common case
+    // Note: instanceName may be empty string during early initialization
+    const instanceName = this.nodeOneCore?.instanceName
+    const namesToTry = [
+      'lama-node-demo',  // Most common, check first
+      instanceName,
+      instanceName ? `lama-node-${instanceName.replace('lama-node-', '')}` : null,
+    ].filter((name): name is string => Boolean(name) && name !== 'default')
+
+    for (const name of namesToTry) {
+      try {
+        const legacyIdHash = await calculateIdHashOfObj({
+          $type$: 'GlobalLLMSettings' as const,
+          name
+        } as any)
+        const result = await getObjectByIdHash(legacyIdHash)
+        if (result && isAISettings(result.obj) && result.obj.defaultModelId) {
+          console.log(`[AISettingsManager] Found legacy settings with name: ${name}`)
+          return result.obj as GlobalLLMSettings
+        }
+      } catch {
+        // Try next name
+      }
+    }
+    return null
   }
 
   /**
@@ -83,30 +117,61 @@ export class AISettingsManager {
     try {
       const idHash = await this.getSettingsIdHash()
 
-      // Try to get existing settings
+      // Try to get existing settings with 'default' name
       try {
         const result = await getObjectByIdHash(idHash)
         if (result && isAISettings(result.obj)) {
-          console.log('[AISettingsManager] Found existing settings')
+          console.log('[AISettingsManager] Found existing settings, defaultModelId:', result.obj.defaultModelId, 'name:', result.obj.name)
+          // If defaultModelId is missing, check for legacy settings to migrate
+          if (!result.obj.defaultModelId) {
+            console.log('[AISettingsManager] No defaultModelId in settings, checking for legacy...')
+            const legacy = await this.findLegacySettings()
+            console.log('[AISettingsManager] Legacy search result:', legacy ? `found with modelId=${legacy.defaultModelId}` : 'not found')
+            if (legacy?.defaultModelId) {
+              console.log('[AISettingsManager] Migrating defaultModelId from legacy settings:', legacy.defaultModelId)
+              const updated = {
+                ...result.obj,
+                defaultModelId: legacy.defaultModelId
+              }
+              delete (updated as any).idHash
+              delete (updated as any).hash
+              delete (updated as any).$prevVersionHash$
+              const stored = await storeVersionedObject(updated)
+              return stored.obj as GlobalLLMSettings
+            }
+          }
           return result.obj as GlobalLLMSettings
         }
       } catch (error: unknown) {
-        // Settings don't exist yet, will create below
-        console.log('[AISettingsManager] No existing settings found, creating defaults')
+        // Settings don't exist yet - check for legacy before creating new
+        console.log('[AISettingsManager] No existing settings found with default name')
       }
 
-      // Create and store default settings
-      const instanceName = this.nodeOneCore?.instanceName || 'default'
-      const defaultSettings = createAISettings(instanceName)
+      // Before creating defaults, check for legacy settings to migrate
+      const legacy = await this.findLegacySettings()
+      if (legacy) {
+        console.log('[AISettingsManager] Migrating legacy settings to default name')
+        const migratedSettings = {
+          ...legacy,
+          name: 'default'
+        }
+        delete (migratedSettings as any).idHash
+        delete (migratedSettings as any).hash
+        delete (migratedSettings as any).$prevVersionHash$
+        const storeResult = await storeVersionedObject(migratedSettings)
+        return storeResult.obj as GlobalLLMSettings
+      }
+
+      // Create and store default settings - always use 'default' for consistency
+      const defaultSettings = createAISettings('default')
       const storeResult = await storeVersionedObject(defaultSettings)
 
       console.log('[AISettingsManager] Created default settings')
       return storeResult.obj as GlobalLLMSettings
     } catch (error: unknown) {
       console.error('[AISettingsManager] Error getting settings:', error)
-      // Return defaults without storing
-      const instanceName = this.nodeOneCore?.instanceName || 'default'
-      return createAISettings(instanceName) as GlobalLLMSettings
+      // Return defaults without storing - always use 'default' for consistency
+      return createAISettings('default') as GlobalLLMSettings
     }
   }
 

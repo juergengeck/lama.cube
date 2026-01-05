@@ -13,23 +13,26 @@
 import type { SHA256IdHash, SHA256Hash } from '@refinio/one.core/lib/util/type-checks.js';
 import type { TopicAnalysisPlan } from '@lama/core/plans/TopicAnalysisPlan.js';
 import type { Supply, Demand, Assembly } from '@assembly/core';
+import type { Memory, Fact, Entity, Relationship } from '@memory/core/types/Memory';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-export interface Memory {
-    $type$: 'Memory';
-    content: string;
-    author: SHA256IdHash<any>;
-    memoryType: string;
-    timestamp: string;
-    importance?: number;
-    tags?: string[];
-    topicRef?: string;
-    filename: string;
-}
-
 export interface StoreMemoryParams {
+    /** Title for the memory (becomes part of ID) */
+    title: string;
+    /** Main prose content */
     content: string;
+    /** Optional summary (auto-generated if not provided) */
+    summary?: string;
+    /** Source subject IDs this memory is constructed from */
+    sourceSubjects?: string[];
+    /** Related subject IDs (semantically linked) */
+    relatedSubjects?: string[];
+    /** Pre-computed embedding (optional - can be computed later) */
+    embedding?: number[];
+    /** Embedding model used */
+    embeddingModel?: string;
+    // Legacy fields for backwards compatibility
     memoryType?: string;
     category?: string;
     importance?: number;
@@ -349,12 +352,13 @@ export class MemoryStorageHandler {
     async storeMemory(params: StoreMemoryParams): Promise<StoreMemoryResult> {
         try {
             const {
+                title,
                 content,
-                memoryType = 'note',
-                category,
-                importance,
-                tags = [],
-                topicRef
+                summary,
+                sourceSubjects = [],
+                relatedSubjects,
+                embedding,
+                embeddingModel
             } = params;
 
             if (!this.nodeOneCore.initialized || !this.nodeOneCore.ownerId) {
@@ -362,24 +366,24 @@ export class MemoryStorageHandler {
             }
 
             const timestamp = new Date();
-            const filename = generateMemoryFilename(content, timestamp);
+            const filename = generateMemoryFilename(title || content, timestamp);
             const authorId = this.nodeOneCore.ownerId;
 
-            // Add category as tag if provided
-            const allTags = category ? [...tags, category] : tags;
-
-            // Step 1: Create Memory object (versioned)
+            // Step 1: Create Memory object (versioned) using memory.core type
             console.log('[MemoryStorage] Creating Memory object...');
             const memory: Memory = {
                 $type$: 'Memory',
-                content,
+                title: title || content.substring(0, 100),
                 author: authorId,
-                memoryType,
-                timestamp: timestamp.toISOString(),
-                importance,
-                tags: allTags.length > 0 ? allTags : undefined,
-                topicRef,
-                filename
+                facts: [],  // Will be populated by analysis
+                entities: [],  // Will be populated by analysis
+                relationships: [],  // Will be populated by analysis
+                prose: content,
+                summary,
+                sourceSubjects,
+                relatedSubjects,
+                embedding,
+                embeddingModel: embeddingModel as any
             };
 
             const memoryHash = await this.nodeOneCore.storeVersionedObject(memory);

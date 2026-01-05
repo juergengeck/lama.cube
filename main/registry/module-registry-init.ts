@@ -7,8 +7,29 @@
 
 import { ModuleRegistry } from '@refinio/api/plan-system';
 import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
+import { getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
+import { createMessageBus } from '@refinio/one.core/lib/message-bus.js';
 import { ExportPlan } from '@lama/core/plans/ExportPlan.js';
+
+// Set up MessageBus listener for AI debug messages
+// This captures MessageBus.send('debug', ...) calls from AITopicManager, AIMessageProcessor, etc.
+const debugBus = createMessageBus('module-registry-init');
+debugBus.on('debug', (src: string, ...messages: unknown[]) => {
+  // Filter to AI and LLM-related modules only to avoid noise
+  if (src.startsWith('AI') || src.startsWith('LLM') || src === 'AITopicManager' || src === 'AIMessageProcessor' || src === 'AIAssistantPlan') {
+    console.log(`[${src}]`, ...messages);
+  }
+});
+
+// Also capture error messages
+debugBus.on('error', (src: string, ...messages: unknown[]) => {
+  if (src.startsWith('AI') || src.startsWith('LLM') || src === 'AITopicManager' || src === 'AIMessageProcessor' || src === 'AIAssistantPlan') {
+    console.error(`[${src}] ERROR:`, ...messages);
+  }
+});
 import {
+  // CoreModule IS the single source of model creation
+  // It also sets up the shared channel update listener (onTopicUpdated)
   CoreModule,
   AIModule,
   ChatModule,
@@ -21,13 +42,145 @@ import {
 } from '@lama/core/modules';
 import { InstancePlan } from '@lama/core/plans/InstancePlan.js';
 import { ElectronLLMPlatform, createElectronLLMConfigAdapter } from '../../adapters/electron-llm-platform.js';
+import { UserSettingsManager } from '../core/user-settings-manager.js';
+import { FilterGate, ChumFilterAdapter, type EffectiveAccess } from '@filter/core';
 import type { NodeOneCore } from '../types/one-core.js';
+import type { SHA256Hash, SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { Person } from '@refinio/one.core/lib/recipes.js';
 
 // Singleton registry instance
 let moduleRegistry: ModuleRegistry | null = null;
 
-// Store AIModule instance for later access (e.g., to start message listener)
+// Store module instances for later access
+let coreModuleInstance: CoreModule | null = null;
 let aiModuleInstance: AIModule | null = null;
+
+/**
+ * Create FilterGate with ChumFilterAdapter for CHUM filtering
+ * FilterGate runs in SHADOW MODE - logs decisions without affecting actual filtering
+ * This allows observing what FilterGate WOULD decide with real certificate data
+ */
+function createFilterGateFactories(): {
+  objectFilterFactory: (remotePersonId: SHA256IdHash<Person>) => (hash: SHA256Hash | SHA256IdHash, type: string) => Promise<boolean>;
+  importFilterFactory: (remotePersonId: SHA256IdHash<Person>) => (hash: SHA256Hash | SHA256IdHash, type: string) => Promise<boolean>;
+} {
+  // Create FilterGate in SHADOW MODE for parallel evaluation
+  const filterGate = new FilterGate({
+    getEffectiveAccess: async (subject: SHA256IdHash<Person>): Promise<EffectiveAccess | undefined> => {
+      // TODO: Replace with FilterModel.getEffectiveAccess once certificates are deployed
+      // For now, return a permissive default access that allows everything
+      // This lets us observe what FilterGate WOULD decide with real certificate data
+      return {
+        $type$: 'EffectiveAccess',
+        id: subject,
+        subject,
+        trustLevel: 'high', // Default to high trust in shadow mode
+        contextPermissions: JSON.stringify({ '*': ['read', 'write'] }),
+        delegationAllowed: true,
+        computedAt: Date.now(),
+        basedOn: '[]',
+        chainDepth: 0,
+        source: 'direct'
+      };
+    },
+    shadowMode: true // Enable shadow mode - log but don't enforce
+  });
+  console.log('[ModuleRegistryInit] FilterGate created in SHADOW MODE');
+
+  // Create ChumFilterAdapter wrapping FilterGate
+  const filterAdapter = new ChumFilterAdapter({
+    filterGate,
+    loadObject: async (hash: SHA256Hash | SHA256IdHash) => {
+      try {
+        const obj = await getObject(hash as SHA256Hash);
+        return obj as any;
+      } catch (error) {
+        return undefined;
+      }
+    },
+    logDecisions: true // Enable logging for shadow mode observation
+  });
+
+  // LEGACY: Filter factories are no longer needed here.
+  // ConnectionModule creates ConnectionsModel with proper TopicGroupManager filters.
+  // These permissive filters are kept only for FilterGate shadow mode observation.
+  const defaultObjectFilter = async (hash: any, type: string): Promise<boolean> => {
+    // Allow all - actual filtering is done by ConnectionModule's filters
+    return true;
+  };
+
+  const defaultImportFilter = async (hash: any, type: string): Promise<boolean> => {
+    // Allow all - actual filtering is done by ConnectionModule's filters
+    return true;
+  };
+
+  // Factory functions that create per-peer filters with FilterGate shadow evaluation
+  const objectFilterFactory = (remotePersonId: SHA256IdHash<Person>) => {
+    const filterGateFilter = filterAdapter.createExportFilter(remotePersonId);
+
+    return async (hash: SHA256Hash | SHA256IdHash, type: string): Promise<boolean> => {
+      // Run FilterGate in shadow mode (logs but doesn't affect decision)
+      filterGateFilter(hash, type).catch(err => {
+        console.log(`[FilterGate:Shadow] Error evaluating export for ${type}: ${err.message}`);
+      });
+
+      return defaultObjectFilter(hash, type);
+    };
+  };
+
+  const importFilterFactory = (remotePersonId: SHA256IdHash<Person>) => {
+    const filterGateFilter = filterAdapter.createImportFilter(remotePersonId);
+
+    return async (hash: SHA256Hash | SHA256IdHash, type: string): Promise<boolean> => {
+      // Run FilterGate in shadow mode (logs but doesn't affect decision)
+      filterGateFilter(hash, type).catch(err => {
+        console.log(`[FilterGate:Shadow] Error evaluating import for ${type}: ${err.message}`);
+      });
+
+      return defaultImportFilter(hash, type);
+    };
+  };
+
+  return { objectFilterFactory, importFilterFactory };
+}
+
+// DISABLED: TTS moved to renderer process with WebGPU for better performance
+// Node.js ONNX runs on CPU only (~13s for 9s audio)
+// Browser WebGPU can use GPU acceleration
+// See: electron-ui/src/hooks/useTTS.ts and workers/tts.worker.ts
+/*
+// TTS Provider singleton (pre-loaded during init)
+let ttsProvider: any = null;
+
+async function preloadTTSModel(): Promise<void> {
+  try {
+    const { ONNXTTSProvider } = await import('../adapters/local/ONNXTTSProvider.js');
+    const modelId = 'chatterbox-turbo';
+
+    console.log(`[ModuleRegistryInit] Pre-loading TTS model: ${modelId}`);
+    ttsProvider = new ONNXTTSProvider(modelId as any);
+
+    let lastLoggedPercent = -10;
+    ttsProvider.onProgress = (progress: any) => {
+      const percent = Math.floor(progress.percent ?? 0);
+      if (percent >= lastLoggedPercent + 10) {
+        lastLoggedPercent = percent;
+        console.log(`[ModuleRegistryInit] TTS download: ${percent}%`);
+      }
+    };
+
+    await ttsProvider.load();
+    console.log(`[ModuleRegistryInit] ✅ TTS model pre-loaded: ${modelId}`);
+  } catch (error) {
+    console.error('[ModuleRegistryInit] TTS pre-load failed:', error);
+    ttsProvider = null;
+  }
+}
+
+export function getPreloadedTTSProvider(): any {
+  return ttsProvider;
+}
+*/
 
 /**
  * Initialize ModuleRegistry with shared modules from lama.core
@@ -59,26 +212,37 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   moduleRegistry.supply('OllamaValidator', llmConfigAdapter.ollamaValidator);
   moduleRegistry.supply('LLMConfigManager', llmConfigAdapter.configManager);
 
-  // Supply NodeOneCore and its dependencies
+  // Supply NodeOneCore as OneCore - CoreModule will create the other models
+  // CONSOLIDATED ARCHITECTURE: CoreModule is THE single source of model creation
+  // Models (LeuteModel, ChannelManager, TopicModel, ConnectionsModel, Settings)
+  // are created by CoreModule and supplied via emitSupplies()
   moduleRegistry.supply('OneCore', nodeOneCore);
-  moduleRegistry.supply('LeuteModel', nodeOneCore.leuteModel);
-  moduleRegistry.supply('ChannelManager', nodeOneCore.channelManager);
-  moduleRegistry.supply('TopicModel', nodeOneCore.topicModel);
-  moduleRegistry.supply('ConnectionsModel', nodeOneCore.connectionsModel);
 
-  // Supply TopicAnalysisModel if available
+  // Supply TopicAnalysisModel if available (not managed by CoreModule)
   if ((nodeOneCore as any).topicAnalysisModel) {
     moduleRegistry.supply('TopicAnalysisModel', (nodeOneCore as any).topicAnalysisModel);
   }
 
-  // Supply TopicGroupManager if available
-  if ((nodeOneCore as any).topicGroupManager) {
-    moduleRegistry.supply('TopicGroupManager', (nodeOneCore as any).topicGroupManager);
-  }
+  // NOTE: TopicGroupManager is created by ChatModule and set on oneCore
+  // ChatModule.emitSupplies() supplies it to the registry
 
-  // Supply Settings (PropertyTreeStore) if available
-  if ((nodeOneCore as any).settingsStore) {
-    moduleRegistry.supply('Settings', (nodeOneCore as any).settingsStore);
+  // NOTE: Settings is now created by CoreModule (not duplicated here)
+
+  // CRITICAL: Create and attach UserSettingsManager for API key management
+  // This is needed for LLMManager to inject API keys into cloud provider calls
+  if (!(nodeOneCore as any).userSettingsManager && nodeOneCore.email) {
+    console.log('[ModuleRegistryInit] Creating UserSettingsManager...');
+    const userSettingsManager = new UserSettingsManager(
+      nodeOneCore,
+      nodeOneCore.email,
+      nodeOneCore.ownerId
+    );
+    (nodeOneCore as any).userSettingsManager = userSettingsManager;
+    console.log('[ModuleRegistryInit] ✅ UserSettingsManager created and attached to nodeOneCore');
+  } else if ((nodeOneCore as any).userSettingsManager) {
+    console.log('[ModuleRegistryInit] UserSettingsManager already exists on nodeOneCore');
+  } else {
+    console.warn('[ModuleRegistryInit] Cannot create UserSettingsManager - email not available');
   }
 
   // Supply ExportPlan (required by ChatModule)
@@ -95,9 +259,37 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
     console.warn('[ModuleRegistryInit] MCPManager not available:', error);
   }
 
-  // Register shared modules from lama.core
+  // Supply the singleton LLMManager (already initialized with Ollama models in app.ts)
+  // This ensures AIModule uses the same LLMManager instance with discovered models
+  try {
+    const { default: llmManager } = await import('../services/llm-manager-singleton.js');
+    moduleRegistry.supply('LLMManager', llmManager);
+    console.log('[ModuleRegistryInit] Singleton LLMManager supplied (has discovered models)');
+  } catch (error) {
+    console.warn('[ModuleRegistryInit] LLMManager singleton not available:', error);
+  }
+
+  // DISABLED: TTS moved to renderer with WebGPU
+  // Pre-load TTS model so it's ready when UI needs it (non-blocking)
+  // This avoids "Model not ready" errors when user clicks TTS button
+  // console.log('[ModuleRegistryInit] Pre-loading TTS model (async)...');
+  // preloadTTSModel().catch(error => {
+  //   console.warn('[ModuleRegistryInit] TTS pre-load failed (non-critical):', error);
+  // });
+
+  // Create FilterGate-based filter factories for CHUM filtering (Electron-specific)
+  // These are supplied to CoreModule so it can use them when creating ConnectionsModel
+  console.log('[ModuleRegistryInit] Creating FilterGate-based CHUM filters...');
+  const { objectFilterFactory, importFilterFactory } = createFilterGateFactories();
+  moduleRegistry.supply('ObjectFilterFactory', objectFilterFactory);
+  moduleRegistry.supply('ImportFilterFactory', importFilterFactory);
+  console.log('[ModuleRegistryInit] ✅ FilterGate-based CHUM filters supplied');
+
+  // Register CoreModule - THE single source of model creation
+  // CoreModule also sets up the shared channel update listener (onTopicUpdated)
   console.log('[ModuleRegistryInit] Registering CoreModule...');
-  moduleRegistry.register(new CoreModule(commServerUrl));
+  coreModuleInstance = new CoreModule(commServerUrl);
+  moduleRegistry.register(coreModuleInstance);
 
   console.log('[ModuleRegistryInit] Registering AIModule...');
   aiModuleInstance = new AIModule(llmPlatform, llmConfigAdapter);
@@ -111,7 +303,8 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
 
   console.log('[ModuleRegistryInit] Registering ConnectionModule...');
   // ConnectionModule needs commServerUrl and webUrl for Discovery and invitations
-  const webUrl = 'https://app.lama.chat'; // Default web URL for invitations
+  // webUrl from config, or undefined to let ConnectionPlan use its fallback (https://lama.one)
+  const webUrl = (global as any).lamaConfig?.web?.url;
   moduleRegistry.register(new ConnectionModule(commServerUrl, webUrl));
 
   console.log('[ModuleRegistryInit] Registering AnalysisModule...');
@@ -141,6 +334,33 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   console.log('[ModuleRegistryInit] Initializing all modules...');
   await moduleRegistry.initAll();
   console.log('[ModuleRegistryInit] ✅ All modules initialized successfully');
+
+  // CRITICAL: Set nodeOneCore.topicGroupManager from ChatModule
+  // ChatModule creates TopicGroupManager but doesn't set it on nodeOneCore
+  // ChatPlan checks nodeOneCore.topicGroupManager for group chat creation
+  const chatModule = moduleRegistry.getModule<ChatModule>('ChatModule');
+  if (chatModule?.topicGroupManager) {
+    (nodeOneCore as any).topicGroupManager = chatModule.topicGroupManager;
+    console.log('[ModuleRegistryInit] ✅ TopicGroupManager set on nodeOneCore');
+  } else {
+    console.warn('[ModuleRegistryInit] ChatModule.topicGroupManager not available');
+  }
+
+  // CRITICAL: Wire userSettingsManager to AIModule's llmManager for API key injection
+  // AIModule creates its own llmManager, but userSettingsManager is Electron-specific
+  // This enables Claude API key auto-injection in llmManager.chat()
+  const userSettingsManager = (nodeOneCore as any).userSettingsManager;
+  if (userSettingsManager && aiModuleInstance?.llmManager) {
+    console.log('[ModuleRegistryInit] Wiring userSettingsManager to AIModule llmManager...');
+    aiModuleInstance.llmManager.updateSystemPromptDependencies(
+      userSettingsManager,
+      (nodeOneCore as any).topicAnalysisModel,
+      nodeOneCore.channelManager
+    );
+    console.log('[ModuleRegistryInit] ✅ UserSettingsManager wired to AIModule llmManager');
+  } else {
+    console.warn('[ModuleRegistryInit] Cannot wire userSettingsManager - userSettingsManager:', !!userSettingsManager, 'llmManager:', !!aiModuleInstance?.llmManager);
+  }
 
   // Create retroactive Assemblies for Instance and Owner (bootstrap problem: created before StoryFactory)
   // Now that StoryFactory is ready, record instance creation in journal
@@ -208,6 +428,13 @@ export function getModuleRegistry(): ModuleRegistry | null {
 }
 
 /**
+ * Get the CoreModule instance (for onTopicUpdated events)
+ */
+export function getCoreModule(): CoreModule | null {
+  return coreModuleInstance;
+}
+
+/**
  * Get the AIModule instance (for starting message listener after init)
  */
 export function getAIModule(): AIModule | null {
@@ -222,6 +449,7 @@ export async function shutdownModuleRegistry(): Promise<void> {
     console.log('[ModuleRegistryInit] Shutting down module registry...');
     await moduleRegistry.shutdownAll();
     moduleRegistry = null;
+    coreModuleInstance = null;
     aiModuleInstance = null;
     console.log('[ModuleRegistryInit] Module registry shutdown complete');
   }

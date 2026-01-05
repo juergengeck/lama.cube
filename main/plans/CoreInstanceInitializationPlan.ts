@@ -120,8 +120,8 @@ export class CoreInstanceInitializationPlan {
 
     // Always use the LOGIN credentials, not stored credentials
     // This ensures we use the credentials the user actually entered
-    const instanceName = `lama-node-${username}`;
-    const email = `node-${username}@lama.local`;
+    const instanceName = `lama-${username}`;
+    const email = `${username}@lama.local`;
 
     // Check if this exact instance already exists (for isNewInstance flag)
     const storedInstanceName = await SettingsStore.getItem('instance');
@@ -158,6 +158,9 @@ export class CoreInstanceInitializationPlan {
     // Import meaning.core recipes for semantic embedding dimension
     const { MeaningCoreRecipes } = await import('@meaning/core/recipes/index.js');
 
+    // Import trust.core recipes for TrustRelationship etc.
+    const { AllRecipes: TrustCoreRecipes } = await import('@trust/core/recipes/index.js');
+
     // Import reverse maps
     const { ReverseMapsStable, ReverseMapsForIdObjectsStable } = await import('@refinio/one.models/lib/recipes/reversemaps-stable.js');
     const { ReverseMapsExperimental, ReverseMapsForIdObjectsExperimental } = await import('@refinio/one.models/lib/recipes/reversemaps-experimental.js');
@@ -167,10 +170,16 @@ export class CoreInstanceInitializationPlan {
       ...RecipesExperimental,
       ...(LamaRecipes || []),
       ...(CubeCoreRecipes || []),
-      ...(MeaningCoreRecipes || [])
+      ...(MeaningCoreRecipes || []),
+      ...(TrustCoreRecipes || [])
     ] as Recipe[];
 
     console.log('[CoreInstanceInitializationPlan] Loaded', allRecipes.length, 'recipes');
+    // Debug: List recipe names to verify AIList is included
+    const recipeNames = allRecipes.map((r: any) => r.name).filter(Boolean);
+    console.log('[CoreInstanceInitializationPlan] Recipe names:', recipeNames.join(', '));
+    const hasAIList = recipeNames.includes('AIList');
+    console.log('[CoreInstanceInitializationPlan] AIList recipe present:', hasAIList);
 
     return {
       recipes: allRecipes,

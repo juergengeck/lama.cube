@@ -84,7 +84,7 @@ class AIMessageListener {
     try {
       const channels = await this.channelManager.getMatchingChannelInfos({})
       console.log(`[AIMessageListener] Known channels at startup:`, channels.map(c => ({
-        id: c.id,
+        participants: c.participants?.substring(0, 8),
         owner: c.owner?.substring(0, 8),
         isOurChannel: c.owner === ownerId
       })))
@@ -123,6 +123,13 @@ class AIMessageListener {
       const isAIChannel = channelOwner && this.aiAssistantModel && this.aiAssistantModel.isAIPerson(channelOwner)
       if (isAIChannel) {
         console.log(`[AIMessageListener] ⏭️  Ignoring update from AI channel: ${channelId}`)
+        return
+      }
+
+      // Skip local channel updates - AI is triggered directly from ChatPlan.sendMessage()
+      // This listener only handles REMOTE messages (from P2P sync)
+      if (isOurChannel) {
+        console.log(`[AIMessageListener] ⏭️  Ignoring local channel update (AI triggered directly): ${channelId}`)
         return
       }
 

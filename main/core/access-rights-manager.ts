@@ -1,4 +1,6 @@
 import type { ChannelManager } from '@refinio/one.models/lib/models/index.js';
+import { getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
+import type { HashGroup, Person } from '@refinio/one.core/lib/recipes.js';
 /**
  * Access Rights Manager for Node.js ONE.core instance
  * Based on one.leute LeuteAccessRightsManager pattern
@@ -20,17 +22,32 @@ class NodeAccessRightsManager {
     this.leuteModel = leuteModel
     this.connectionsModel = connectionsModel
     this.groupConfig = {}
-    
+
     // Set up automatic access rights for new channels
-    this.channelManager.onUpdated(async (channelInfoIdHash: any, channelId: string, channelOwner: string, timeOfEarliestChange: number, data: any) => {
+    // New callback signature: (channelInfoIdHash, participantsHash, channelOwner, time, data)
+    this.channelManager.onUpdated(async (channelInfoIdHash: any, participantsHash: any, channelOwner: any, timeOfEarliestChange: number, data: any) => {
       if (channelInfoIdHash && this.groupConfig.federation) {
         // CRITICAL: Check channel type before granting access
-        const isP2PChannel = channelId.includes('<->')
-        const isPrivateChannel = channelId === 'contacts' // Note: 'lama' and 'hi' are user-visible channels
+        // Determine if P2P by checking number of participants in HashGroup
+        let isP2PChannel = false
+        let participantCount = 0
+        try {
+          const hashGroup = await getObject(participantsHash) as HashGroup<Person> | undefined
+          if (hashGroup && hashGroup.person) {
+            participantCount = hashGroup.person.size || Array.from(hashGroup.person).length
+            // P2P channels have exactly 2 participants and null owner
+            isP2PChannel = participantCount === 2 && channelOwner === null
+          }
+        } catch {
+          // If we can't fetch the HashGroup, we can't determine channel type
+        }
+
+        // For single-participant channels, check if private (contacts channel)
+        const isPrivateChannel = participantCount === 1 && channelOwner !== null // Single owner channels are private by nature
 
         // Skip automatic access for P2P and private channels
         if (isP2PChannel || isPrivateChannel) {
-          console.log(`[NodeAccessRights] Skipping automatic access for ${isPrivateChannel ? 'private' : 'P2P'} channel: ${channelId}`)
+          console.log(`[NodeAccessRights] Skipping automatic access for ${isPrivateChannel ? 'private' : 'P2P'} channel, participants: ${participantsHash?.substring(0, 8)}`)
 
           // For private channels, only grant federation access (browser only)
           if (isPrivateChannel) {
@@ -45,7 +62,7 @@ class NodeAccessRightsManager {
                 mode: SET_ACCESS_MODE.ADD
 }])
 
-              console.log(`[NodeAccessRights] ✅ Federation-only access granted for private channel: ${channelId}`)
+              console.log(`[NodeAccessRights] ✅ Federation-only access granted for private channel, participants: ${participantsHash?.substring(0, 8)}`)
             } catch (error) {
               if (!(error as Error).message?.includes('already exists')) {
                 console.error('[NodeAccessRights] Failed to grant federation access:', (error as Error).message)
@@ -68,7 +85,7 @@ class NodeAccessRightsManager {
             mode: SET_ACCESS_MODE.ADD
           }])
 
-          console.log(`[NodeAccessRights] ✅ Access granted for channel: ${channelId}`)
+          console.log(`[NodeAccessRights] ✅ Access granted for channel, participants: ${participantsHash?.substring(0, 8)}`)
         } catch (error) {
           // Access might already exist, that's ok
           if (!(error as Error).message?.includes('already exists')) {
@@ -153,7 +170,7 @@ class NodeAccessRightsManager {
       const { serializeWithType } = await import('@refinio/one.core/lib/util/promise.js')
       const { createAccess } = await import('@refinio/one.core/lib/access.js')
       const { SET_ACCESS_MODE } = await import('@refinio/one.core/lib/storage-base-common.js')
-      const { calculateIdHashOfObj } = await import('@refinio/one.core/lib/util/object.js')
+      const { getObject } = await import('@refinio/one.core/lib/storage-unversioned-objects.js')
 
       const me = await this.leuteModel.me()
       const mainId = await me.mainIdentity()
@@ -166,34 +183,44 @@ class NodeAccessRightsManager {
         // Apply access rights to channels selectively
         await Promise.all(
           channels.map(async (channel: any) => {
-            // CRITICAL: Don't share "lama" or other private channels with everyone!
-            // Only share P2P channels (format: id1<->id2) and specific shared channels
-            const isP2PChannel = channel.id.includes('<->')
-            const isPrivateChannel = channel.id === 'contacts' // Note: 'lama' and 'hi' are user-visible channels
+            // CRITICAL: Determine channel type from participants
+            let participantCount = 0
+            let isP2PChannel = false
+            try {
+              const hashGroup = await getObject(channel.participants) as HashGroup<Person> | undefined
+              if (hashGroup && hashGroup.person) {
+                participantCount = hashGroup.person.size || Array.from(hashGroup.person).length
+                // P2P channels have exactly 2 participants and null owner
+                isP2PChannel = participantCount === 2 && channel.owner === null
+              }
+            } catch {
+              // If we can't fetch the HashGroup, skip this channel
+              return
+            }
+
+            // Private channels are single-participant with an owner
+            const isPrivateChannel = participantCount === 1 && channel.owner !== null
 
             if (isPrivateChannel) {
-              console.log(`[NodeAccessRights] Skipping private channel: ${channel.id}`)
+              console.log(`[NodeAccessRights] Skipping private channel, participants: ${channel.participants?.substring(0, 8)}`)
               // Only share with federation (browser), NOT with everyone
-              await this.channelManager.createChannel(channel.id, channel.owner)
+              // Channel already exists, just grant access using its idHash
+              const channelInfoIdHash = channel.channelInfoIdHash || channel.idHash
 
-              const channelIdHash = await calculateIdHashOfObj({
-                $type$: 'ChannelInfo',
-                id: channel.id,
-                owner: channel.owner
-              })
-
-              await createAccess([{
-                id: channelIdHash,
-                person: [],
-                group: this.getGroups('federation'), // ONLY federation, not everyone!
-                mode: SET_ACCESS_MODE.ADD
-              }])
+              if (channelInfoIdHash) {
+                await createAccess([{
+                  id: channelInfoIdHash,
+                  person: [],
+                  group: this.getGroups('federation'), // ONLY federation, not everyone!
+                  mode: SET_ACCESS_MODE.ADD
+                }])
+              }
               return
             }
 
             // For P2P channels, handle specially
             if (isP2PChannel) {
-              console.log(`[NodeAccessRights] P2P channel detected: ${channel.id}`)
+              console.log(`[NodeAccessRights] P2P channel detected, participants: ${channel.participants?.substring(0, 8)}`)
               // P2P channels should only be accessible to the participants
               // Access should be granted per-person when the channel is created
               // Not to everyone group!
@@ -201,21 +228,18 @@ class NodeAccessRightsManager {
             }
 
             // For other channels (future shared channels), grant broader access
-            await this.channelManager.createChannel(channel.id, channel.owner)
+            // Channel already exists, just grant access using its idHash
+            const channelInfoIdHash = channel.channelInfoIdHash || channel.idHash
 
-            const channelIdHash = await calculateIdHashOfObj({
-              $type$: 'ChannelInfo',
-              id: channel.id,
-              owner: channel.owner
-            })
-
-            // Only share with federation and replicant, not everyone
-            await createAccess([{
-              id: channelIdHash,
-              person: [],
-              group: this.getGroups('federation', 'replicant'),
-              mode: SET_ACCESS_MODE.ADD
-            }])
+            if (channelInfoIdHash) {
+              // Only share with federation and replicant, not everyone
+              await createAccess([{
+                id: channelInfoIdHash,
+                person: [],
+                group: this.getGroups('federation', 'replicant'),
+                mode: SET_ACCESS_MODE.ADD
+              }])
+            }
           })
         )
       })
@@ -228,29 +252,23 @@ class NodeAccessRightsManager {
   
   /**
    * Grant access to a specific channel for federation
+   * @param channelInfoIdHash - The channel info ID hash
    */
-  async grantChannelAccess(channelId: any, owner: any): Promise<any> {
+  async grantChannelAccess(channelInfoIdHash: any): Promise<any> {
     try {
       const { createAccess } = await import('@refinio/one.core/lib/access.js')
       const { SET_ACCESS_MODE } = await import('@refinio/one.core/lib/storage-base-common.js')
-      const { calculateIdHashOfObj } = await import('@refinio/one.core/lib/util/object.js')
-      
-      const channelIdHash = await calculateIdHashOfObj({
-        $type$: 'ChannelInfo',
-        id: channelId,
-        owner: owner
-      })
-      
+
       await createAccess([{
-        id: channelIdHash,
+        id: channelInfoIdHash,
         person: [],
         group: this.getGroups('federation', 'replicant', 'everyone'),
         mode: SET_ACCESS_MODE.ADD
       }])
-      
-      console.log(`[NodeAccessRights] ✅ Granted federation access to channel: ${channelId}`)
+
+      console.log(`[NodeAccessRights] ✅ Granted federation access to channel: ${String(channelInfoIdHash).substring(0, 8)}`)
     } catch (error) {
-      console.error(`[NodeAccessRights] Failed to grant channel access for ${channelId}:`, error)
+      console.error(`[NodeAccessRights] Failed to grant channel access for ${String(channelInfoIdHash).substring(0, 8)}:`, error)
     }
   }
 }

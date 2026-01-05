@@ -1,32 +1,25 @@
 /**
  * Peer Message Listener for Node.js instance
- * 
- * Listens for ALL channel updates (not just AI) and notifies
- * the UI when new messages arrive from peers via CHUM sync.
+ *
+ * Subscribes to CoreModule's onTopicUpdated event and notifies
+ * the UI when messages change in any topic (via CHUM sync or local).
  */
 
+import { getCoreModule } from '../registry/module-registry-init.js';
+
 class PeerMessageListener {
-  public channelManager: any;
   public topicModel: any;
-  public unsubscribe: any;
-  public debounceTimers: any;
-  public DEBOUNCE_MS: any;
+  public unsubscribe: (() => void) | null = null;
   public mainWindow: any;
+  public ownerId: any;
+  public lastMessageCounts: Map<string, number> = new Map();
+  public pendingNotifications: Array<{ topicId: string; messages: any[] }> = [];
 
-  ownerId: any;
-  lastMessageCounts: any;
-  pendingNotifications: any;
-  constructor(channelManager: any, topicModel: any) {
-
-    this.channelManager = channelManager
-    this.topicModel = topicModel
-    this.unsubscribe = null
-    this.debounceTimers = new Map()
-    this.DEBOUNCE_MS = 100 // Faster than AI listener
-    this.mainWindow = null
-    this.ownerId = null
-    this.lastMessageCounts = new Map() // Track message counts per channel
-    this.pendingNotifications = [] // Queue for notifications when webContents not ready
+  constructor(_channelManager: any, topicModel: any) {
+    // Note: channelManager not needed - we use CoreModule's onTopicUpdated
+    this.topicModel = topicModel;
+    this.mainWindow = null;
+    this.ownerId = null;
 }
   
   /**
@@ -47,15 +40,15 @@ class PeerMessageListener {
   /**
    * Flush any pending notifications that were queued while webContents was loading
    */
-  flushPendingNotifications(): any {
-    if (this.pendingNotifications.length === 0) return
+  flushPendingNotifications(): void {
+    if (this.pendingNotifications.length === 0) return;
 
-    console.log(`[PeerMessageListener] Flushing ${this.pendingNotifications.length} pending notifications`)
-    const pending = [...this.pendingNotifications]
-    this.pendingNotifications = []
+    console.log(`[PeerMessageListener] Flushing ${this.pendingNotifications.length} pending notifications`);
+    const pending = [...this.pendingNotifications];
+    this.pendingNotifications = [];
 
-    for (const { channelId, messages } of pending) {
-      this.notifyUI(channelId, messages)
+    for (const { topicId, messages } of pending) {
+      this.notifyUI(topicId, messages);
     }
   }
   
@@ -68,114 +61,86 @@ class PeerMessageListener {
   }
 
   /**
-   * Start listening for peer messages
+   * Start listening for peer messages via CoreModule's onTopicUpdated
    */
-  async start(): Promise<any> {
-    console.log('[PeerMessageListener] Starting peer message listener...')
-    
-    if (!this.channelManager) {
-      console.error('[PeerMessageListener] Cannot start - channelManager is undefined')
-      return
+  async start(): Promise<void> {
+    console.log('[PeerMessageListener] Starting peer message listener...');
+
+    const coreModule = getCoreModule();
+    if (!coreModule) {
+      console.error('[PeerMessageListener] Cannot start - CoreModule not initialized');
+      return;
     }
-    
-    if (!this.channelManager.onUpdated) {
-      console.error('[PeerMessageListener] Cannot start - channelManager.onUpdated is undefined')
-      return
-    }
-    
-    console.log('[PeerMessageListener] 🎯 Setting up channel update listener for peer messages...')
-    
-    // Subscribe to ALL channel updates
-    this.unsubscribe = this.channelManager.onUpdated(async (
-      channelInfoIdHash: any,
-      channelId: any, 
-      channelOwner: any,
-      timeOfEarliestChange: any,
-      data: any
-    ) => {
-      // Debounce frequent updates
-      const existingTimer = this.debounceTimers.get(channelId)
-      if (existingTimer) {
-        clearTimeout(existingTimer)
+
+    console.log('[PeerMessageListener] 🎯 Subscribing to CoreModule.onTopicUpdated...');
+
+    // Subscribe to CoreModule's topic update events
+    this.unsubscribe = coreModule.onTopicUpdated(async (topicId: string) => {
+      try {
+        await this.handleTopicUpdate(topicId);
+      } catch (error) {
+        console.error(`[PeerMessageListener] Error processing topic update:`, error);
       }
-      
-      const timerId = setTimeout(async () => {
-        this.debounceTimers.delete(channelId)
-        
-        try {
-          await this.handleChannelUpdate(channelId, channelOwner, data)
-        } catch (error) {
-          console.error(`[PeerMessageListener] Error processing channel update:`, error)
-        }
-      }, this.DEBOUNCE_MS)
-      
-      this.debounceTimers.set(channelId, timerId)
-    })
-    
-    console.log('[PeerMessageListener] ✅ Peer message listener started successfully')
+    });
+
+    console.log('[PeerMessageListener] ✅ Peer message listener started successfully');
   }
   
   /**
-   * Handle channel updates and detect new peer messages
+   * Handle topic updates and detect new peer messages
    */
-  async handleChannelUpdate(channelId: any, channelOwner: any, data: any): Promise<any> {
+  async handleTopicUpdate(topicId: string): Promise<void> {
     // Skip if no main window to notify
     if (!this.mainWindow) {
-      return
+      return;
     }
-    
-    console.log(`[PeerMessageListener] 📨 Channel update for: ${channelId}`)
-    
+
+    console.log(`[PeerMessageListener] 📨 Topic update for: ${topicId}`);
+
     try {
-      // Check if this is a topic/conversation channel
       if (!this.topicModel) {
-        console.log('[PeerMessageListener] TopicModel not available yet')
-        return
+        console.log('[PeerMessageListener] TopicModel not available yet');
+        return;
       }
-      
-      // Try to get the topic room to check for new messages
-      const topicRoom = await this.topicModel.enterTopicRoom(channelId)
+
+      // Get the topic room to check for new messages
+      const topicRoom = await this.topicModel.enterTopicRoom(topicId);
       if (!topicRoom) {
-        // Not a chat topic, skip
-        return
+        return;
       }
-      
+
       // Get all messages in the topic
-      const messages = await topicRoom.retrieveAllMessages()
-      const validMessages = messages.filter((msg: any) => 
+      const messages = await topicRoom.retrieveAllMessages();
+      const validMessages = messages.filter((msg: any) =>
         msg.data?.text && typeof msg.data.text === 'string' && msg.data.text.trim() !== ''
-      )
-      
+      );
+
       // Check if we have new messages
-      const previousCount = (this.lastMessageCounts as any).get(channelId) || 0
-      const currentCount = validMessages.length
-      
+      const previousCount = this.lastMessageCounts.get(topicId) || 0;
+      const currentCount = validMessages.length;
+
       if (currentCount > previousCount) {
-        console.log(`[PeerMessageListener] 🆕 New messages detected in ${channelId}: ${currentCount - previousCount} new`)
-        
+        console.log(`[PeerMessageListener] 🆕 New messages in ${topicId}: ${currentCount - previousCount} new`);
+
         // Get the new messages
-        const newMessages = validMessages.slice(previousCount)
-        
+        const newMessages = validMessages.slice(previousCount);
+
         // Check if any new messages are from peers (not from us)
         const peerMessages = newMessages.filter((msg: any) => {
-          const senderId = msg.data?.sender || msg.data?.author || msg.author
-          return senderId !== this.ownerId
-        })
-        
+          const senderId = msg.data?.sender || msg.data?.author || msg.author;
+          return senderId !== this.ownerId;
+        });
+
         if (peerMessages.length > 0) {
-          console.log(`[PeerMessageListener] 📬 ${peerMessages.length} new peer messages in ${channelId}`)
-          
-          // Notify the UI about new messages
-          this.notifyUI(channelId, peerMessages)
+          console.log(`[PeerMessageListener] 📬 ${peerMessages.length} peer messages in ${topicId}`);
+          this.notifyUI(topicId, peerMessages);
         }
-        
-        // Update the count
-        (this.lastMessageCounts as any).set(channelId, currentCount)
+
+        this.lastMessageCounts.set(topicId, currentCount);
       }
     } catch (error) {
-      // Silently skip non-topic channels
       if (!(error as Error).message?.includes('not found')) {
-        console.error(`[PeerMessageListener] Error checking channel ${channelId}:`, (error as Error).message)
+        console.error(`[PeerMessageListener] Error checking topic ${topicId}:`, (error as Error).message);
       }
     }
   }
@@ -183,66 +148,61 @@ class PeerMessageListener {
   /**
    * Notify the UI about new peer messages
    */
-  notifyUI(channelId: any, newMessages: any): any {
+  notifyUI(topicId: string, newMessages: any[]): void {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) {
-      return
+      return;
     }
 
-    // Normalize P2P channel IDs to match what the UI expects
-    // The UI normalizes P2P IDs by sorting them alphabetically
-    let normalizedChannelId = channelId
-    if (channelId.includes('<->')) {
-      const parts = channelId.split('<->')
-      normalizedChannelId = parts.sort().join('<->')
-      console.log(`[PeerMessageListener] Normalized P2P channel ID: ${channelId} -> ${normalizedChannelId}`)
+    // Normalize P2P topic IDs to match what the UI expects
+    let normalizedTopicId = topicId;
+    if (topicId.includes('<->')) {
+      const parts = topicId.split('<->');
+      normalizedTopicId = parts.sort().join('<->');
+      console.log(`[PeerMessageListener] Normalized P2P topic ID: ${topicId} -> ${normalizedTopicId}`);
     }
 
-    console.log(`[PeerMessageListener] 📤 Sending new message notification to UI for ${normalizedChannelId}`)
+    console.log(`[PeerMessageListener] 📤 Sending notification to UI for ${normalizedTopicId}`);
 
     // Ensure webContents is ready - if not, queue the notification
     if (!this.mainWindow.webContents || this.mainWindow.webContents.isLoading()) {
-      console.log('[PeerMessageListener] WebContents not ready, queuing notification')
-      this.pendingNotifications.push({ channelId, messages: newMessages })
-      return
+      console.log('[PeerMessageListener] WebContents not ready, queuing notification');
+      this.pendingNotifications.push({ topicId: normalizedTopicId, messages: newMessages });
+      return;
     }
 
-    // Send IPC event to renderer with normalized channel ID
+    // Send IPC event to renderer
     const eventData = {
-      conversationId: normalizedChannelId,
-      messages: newMessages.map((msg: any, index: any) => ({
+      conversationId: normalizedTopicId,
+      messages: newMessages.map((msg: any, index: number) => ({
         id: msg.id || msg.channelEntryHash || `msg-${Date.now()}-${index}`,
-        conversationId: normalizedChannelId,
+        conversationId: normalizedTopicId,
         text: msg.data?.text || '',
         sender: msg.data?.sender || msg.data?.author || msg.author,
         timestamp: msg.creationTime ? new Date(msg.creationTime).toISOString() : new Date().toISOString(),
         status: 'received',
         isAI: false
       }))
-    }
+    };
 
-    console.log(`[PeerMessageListener] 📤📤📤 Sending chat:newMessages event with conversationId: ${eventData.conversationId}`)
-    this.mainWindow.webContents.send('chat:newMessages', eventData)
+    console.log(`[PeerMessageListener] 📤📤📤 Sending chat:newMessages for: ${eventData.conversationId}`);
+    this.mainWindow.webContents.send('chat:newMessages', eventData);
   }
   
   /**
    * Stop listening for messages
    */
-  stop(): any {
-    console.log('[PeerMessageListener] Stopping peer message listener...')
-    
+  stop(): void {
+    console.log('[PeerMessageListener] Stopping peer message listener...');
+
     if (this.unsubscribe) {
-      this.unsubscribe()
-      this.unsubscribe = null
+      this.unsubscribe();
+      this.unsubscribe = null;
     }
-    
-    // Clear all timers
-    for (const timer of this.debounceTimers.values()) {
-      clearTimeout(timer)
-    }
-    this.debounceTimers.clear();
-    (this.lastMessageCounts as any).clear();
-    
-    console.log('[PeerMessageListener] Peer message listener stopped')
+
+    this.lastMessageCounts.clear();
+    this.pendingNotifications = [];
+
+    console.log('[PeerMessageListener] Peer message listener stopped');
   }
 }
 

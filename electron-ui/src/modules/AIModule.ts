@@ -233,7 +233,23 @@ export class AIModule implements Module {
         trustPlan: trustPlan!,              // For assigning 'high' trust to AI contacts
         journalPlan: journalPlan!,          // For recording AI contact creation as assemblies
         aiObjectManager: this.aiObjectManager,  // For creating AI storage objects
-        llmObjectManager: this.llmObjectManager // For creating/updating LLM storage objects
+        llmObjectManager: this.llmObjectManager, // For creating/updating LLM storage objects
+        // queryAllAIObjects for AIManager.loadExisting() - uses getAllEntries to find AI objects
+        queryAllAIObjects: async function* () {
+          console.log('[AIModule/storageDeps/queryAllAIObjects] Querying AI objects...');
+          const myId = await leuteModel!.myMainIdentity();
+          const aiEntries = await getAllEntries(myId, 'AI');
+          console.log(`[AIModule/storageDeps/queryAllAIObjects] Found ${aiEntries.length} AI entries`);
+
+          for (const entry of aiEntries) {
+            const objectHash = (entry as any).obj || (entry as any).hash || entry;
+            const aiObject = await getObject(objectHash);
+            if (aiObject && aiObject.$type$ === 'AI') {
+              console.log(`[AIModule/storageDeps/queryAllAIObjects] Yielding AI: ${aiObject.displayName}`);
+              yield aiObject;
+            }
+          }
+        }
       }
     });
 
@@ -367,6 +383,13 @@ export class AIModule implements Module {
     });
     await this.aiMessageListener.start();
     console.log('[AIModule] AIMessageListener started');
+
+    // CRITICAL: Scan existing conversations AFTER ChannelManager is fully loaded
+    // This registers all AI topics so the message listener knows which topics have AI
+    // Without this, isAITopic() returns false and AI doesn't respond
+    console.log('[AIModule] Scanning existing conversations for AI topics...');
+    const registeredCount = await this.aiAssistantPlan.scanExistingConversations();
+    console.log(`[AIModule] Registered ${registeredCount} AI topics from existing conversations`);
   }
 
   async shutdown(): Promise<void> {

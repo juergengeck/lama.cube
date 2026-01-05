@@ -7,7 +7,7 @@
  * NEW: Uses Assembly-based queries (Task 7: Journal-Assembly Integration)
  */
 
-import { AssemblyJournalView } from '@lama/ui'
+import { AssemblyJournalView, type EntityType } from '@lama/ui'
 import type { AssemblyQueryOptions, AssemblyWithStory } from '@assembly/core'
 
 interface JournalViewWrapperProps {
@@ -21,6 +21,10 @@ interface JournalViewWrapperProps {
   }>
   /** Add space for macOS traffic lights */
   trafficLightSpace?: boolean
+  /** Navigate to an entity (contact, chat, etc.) */
+  onNavigateToEntity?: (entityId: string, entityType: EntityType, item: AssemblyWithStory) => void
+  /** Resolve entity ID to display name */
+  resolveEntityName?: (entityId: string, entityType: EntityType) => string | undefined
 }
 
 /**
@@ -47,7 +51,9 @@ async function queryAssemblies(options: AssemblyQueryOptions): Promise<AssemblyW
 export function JournalViewWrapper({
   onSetToolbarControls,
   appMenuItems = [],
-  trafficLightSpace = false
+  trafficLightSpace = false,
+  onNavigateToEntity,
+  resolveEntityName
 }: JournalViewWrapperProps) {
   return (
     <AssemblyJournalView
@@ -67,6 +73,8 @@ export function JournalViewWrapper({
         console.log('[JournalViewWrapper] View Assembly:', item)
         // TODO: Open Assembly view
       }}
+      onNavigateToEntity={onNavigateToEntity}
+      resolveEntityName={resolveEntityName}
     />
   )
 }

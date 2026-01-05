@@ -109,14 +109,19 @@ export async function getOrCreateTopicForContact(
     const localPersonId = myPersonId;
 
     // Also get the remote Person ID for CHUM sync and permissions
-    let remotePersonId = contactId;
+    // Someone objects don't have .personId - must use mainIdentity()
+    let remotePersonId: string | null = null;
     if (nodeInstance.leuteModel) {
       const others = await nodeInstance.leuteModel.others();
       const contact = others.find((c: any) => c.id === contactId);
-      if (contact && (contact as any).personId) {
-        remotePersonId = (contact as any).personId;
-        console.log(`[Topics IPC] Found Person ID ${remotePersonId} for Someone ${contactId}`);
+      if (contact) {
+        remotePersonId = await contact.mainIdentity();
+        console.log(`[Topics IPC] Found Person ID ${remotePersonId?.substring(0, 8)} for Someone ${contactId.substring(0, 8)}`);
       }
+    }
+
+    if (!remotePersonId) {
+      throw new Error(`Could not find Person ID for contact ${contactId.substring(0, 8)}`);
     }
 
     // Create P2P topic ID (lexicographically sorted)
@@ -131,9 +136,19 @@ export async function getOrCreateTopicForContact(
     // Ensure P2P topic and channels exist
     if (nodeInstance.topicModel) {
       try {
-        // Try to enter existing topic
-        await nodeInstance.topicModel.enterTopicRoom(p2pTopicId);
-        console.log('[Topics IPC] P2P topic already exists');
+        // Try to find existing topic by channel ID (legacy P2P format)
+        const allTopics = await nodeInstance.topicModel.topics.all();
+        const existingTopic = allTopics.find((t: any) => {
+          // Check for legacy P2P format in the channel
+          const channelId = `${t.owner}:${t.name}`;
+          return channelId === p2pTopicId || t.name === `p2p:${remotePersonId}`;
+        });
+
+        if (existingTopic) {
+          console.log('[Topics IPC] P2P topic already exists');
+        } else {
+          throw new Error('Topic not found');
+        }
       } catch (error) {
         // Topic doesn't exist, create it via ChatPlan (eating our own dogfood)
         console.log('[Topics IPC] Creating new P2P topic via ChatPlan...');

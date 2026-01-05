@@ -6,7 +6,6 @@
 import { IpcMainInvokeEvent, app } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
-import os from 'os';
 import { MODELS, getTextGenerationModels } from '@local/core';
 import type { ModelId, TextGenModelId, ChatMessage, TextGenerationOptions } from '@local/core';
 import { ONNXTextGenerationProvider } from '../../adapters/local/ONNXTextGenerationProvider.js';
@@ -16,7 +15,7 @@ import { ONNXWhisperProvider } from '../../adapters/local/ONNXWhisperProvider.js
 interface LocalModelState {
   id: string;
   name: string;
-  type: 'embedding' | 'whisper' | 'text-generation';
+  type: 'embedding' | 'whisper' | 'text-generation' | 'tts';
   sizeBytes: number;
   status: 'not_installed' | 'downloading' | 'installed' | 'loading' | 'ready' | 'error';
   downloadProgress?: number;
@@ -47,10 +46,27 @@ function getBundledModelsDir(): string {
 }
 
 // transformers.js cache directory (where models are actually stored)
+// In Node.js/Electron, transformers.js caches to: node_modules/@huggingface/transformers/.cache/
 function getTransformersCacheDir(): string {
-  // transformers.js uses ~/.cache/huggingface/hub by default
-  const homeDir = os.homedir();
-  return path.join(homeDir, '.cache', 'huggingface', 'hub');
+  // Find the @huggingface/transformers package cache directory
+  // Using process.cwd() to find the project root, then navigate to the cache
+  try {
+    const isDev = !app.isPackaged;
+
+    if (isDev) {
+      // Dev mode: go up from packages/lama.cube to find node_modules at root
+      // e.g., /Users/gecko/src/lama/packages/lama.cube -> /Users/gecko/src/lama
+      const cwd = process.cwd();
+      const projectRoot = path.resolve(cwd, '..', '..');
+      return path.join(projectRoot, 'node_modules', '@huggingface', 'transformers', '.cache');
+    } else {
+      // Production: use userData path
+      return path.join(app.getPath('userData'), 'models');
+    }
+  } catch {
+    // Fallback to userData path if something fails
+    return path.join(app.getPath('userData'), 'models');
+  }
 }
 
 /**
@@ -86,26 +102,33 @@ async function ensureModelsDir(): Promise<void> {
 
 /**
  * Check if a model is installed in the transformers.js cache
- * Models are stored as: models--{org}--{model-name}
+ * In Node.js, models are stored as: {org}/{model-name}/ with onnx/ subdirectory
  */
 async function checkModelInTransformersCache(huggingFaceRepo: string): Promise<boolean> {
   try {
     const cacheDir = getTransformersCacheDir();
-    // transformers.js stores models as: models--Xenova--whisper-tiny
-    const cacheDirName = `models--${huggingFaceRepo.replace('/', '--')}`;
-    const modelCachePath = path.join(cacheDir, cacheDirName);
+    // transformers.js stores models as: {org}/{model-name}/
+    // e.g., onnx-community/granite-4.0-350m-ONNX-web/onnx/
+    const [org, name] = huggingFaceRepo.split('/');
+    const modelCachePath = path.join(cacheDir, org, name);
 
     const stat = await fs.stat(modelCachePath);
     if (!stat.isDirectory()) return false;
 
-    // Check if there are actual model files (snapshots directory with content)
-    const snapshotsPath = path.join(modelCachePath, 'snapshots');
+    // Check if there's an onnx/ directory with model files
+    const onnxPath = path.join(modelCachePath, 'onnx');
     try {
-      const snapshots = await fs.readdir(snapshotsPath);
-      return snapshots.length > 0;
+      const onnxStat = await fs.stat(onnxPath);
+      if (onnxStat.isDirectory()) {
+        const files = await fs.readdir(onnxPath);
+        return files.some(f => f.endsWith('.onnx'));
+      }
     } catch {
-      return false;
+      // Try checking for .onnx files directly in the model directory
+      const files = await fs.readdir(modelCachePath);
+      return files.some(f => f.endsWith('.onnx'));
     }
+    return false;
   } catch {
     return false;
   }
@@ -228,7 +251,7 @@ const localModelsPlans = {
       console.log(`[LocalModels] Starting download: ${modelId} from ${modelInfo.huggingFaceRepo}`);
 
       // Import transformers.js dynamically
-      const { pipeline, env } = await import('@xenova/transformers');
+      const { pipeline, env } = await import('@huggingface/transformers');
 
       // Configure transformers.js
       env.allowLocalModels = true;
@@ -262,6 +285,9 @@ const localModelsPlans = {
         await pipeline('automatic-speech-recognition', modelInfo.huggingFaceRepo, {
           progress_callback: progressCallback
         });
+      } else if (modelInfo.type === 'tts') {
+        // TTS models are handled via tts:download IPC handler in tts.ts
+        throw new Error('Use tts:download instead of localModels:download for TTS models');
       }
 
       state.status = 'installed';
@@ -449,6 +475,10 @@ const localModelsPlans = {
       for (const model of textGenModels) {
         const state = modelStates.get(model.id);
         if (state) {
+          // Ensure loaded model shows as 'ready', not just 'installed'
+          if (loadedTextGenModelId === model.id && textGenProvider?.status === 'ready') {
+            state.status = 'ready';
+          }
           models.push(state);
         }
       }
@@ -659,3 +689,65 @@ const localModelsPlans = {
 };
 
 export default localModelsPlans;
+
+/**
+ * Direct chat function for use by ElectronLLMPlatform (bypasses IPC)
+ * This allows llm-manager to call local text generation directly
+ */
+export async function chatWithLocalDirect(
+  modelId: string,
+  messages: ChatMessage[],
+  options: {
+    onStream?: (chunk: string) => void;
+    temperature?: number;
+    maxTokens?: number;
+  } = {}
+): Promise<string> {
+  // Load model if needed
+  if (!textGenProvider || loadedTextGenModelId !== modelId) {
+    console.log(`[LocalModels] Loading text gen model for direct chat: ${modelId}`);
+
+    const modelInfo = MODELS[modelId as ModelId];
+    if (!modelInfo || modelInfo.type !== 'text-generation') {
+      throw new Error(`Invalid text generation model: ${modelId}`);
+    }
+
+    // Unload existing model if different
+    if (textGenProvider && loadedTextGenModelId !== modelId) {
+      await textGenProvider.unload();
+      textGenProvider = null;
+      loadedTextGenModelId = null;
+    }
+
+    textGenProvider = new ONNXTextGenerationProvider(modelId as TextGenModelId);
+    await textGenProvider.load();
+    loadedTextGenModelId = modelId;
+  }
+
+  if (!textGenProvider || textGenProvider.status !== 'ready') {
+    throw new Error('Text generation model not ready');
+  }
+
+  // Reset unload timeout
+  if (textGenUnloadTimeout) {
+    clearTimeout(textGenUnloadTimeout);
+  }
+  textGenUnloadTimeout = setTimeout(async () => {
+    console.log('[LocalModels] Auto-unloading text gen model due to inactivity');
+    if (textGenProvider) {
+      await textGenProvider.unload();
+      textGenProvider = null;
+      loadedTextGenModelId = null;
+    }
+  }, TEXT_GEN_UNLOAD_DELAY_MS);
+
+  console.log(`[LocalModels] Direct chat with ${modelId}, ${messages.length} messages`);
+
+  const response = await textGenProvider.chat(messages, {
+    temperature: options.temperature,
+    maxTokens: options.maxTokens,
+    onStream: options.onStream
+  });
+
+  return response;
+}

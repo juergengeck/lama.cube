@@ -8,7 +8,7 @@
 import { app } from 'electron';
 import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { pipeline, env, type FeatureExtractionPipeline } from '@xenova/transformers';
+import { pipeline, env, type FeatureExtractionPipeline } from '@huggingface/transformers';
 import type {
   LocalEmbeddingProvider,
   ModelId,
@@ -140,7 +140,8 @@ export class ONNXEmbeddingProvider implements LocalEmbeddingProvider {
 
       this.onProgress?.({ stage: 'load', percent: 0 });
 
-      this.extractor = await pipeline('feature-extraction', hfModel, {
+      // Note: Type cast needed due to complex union types in transformers.js v3
+      this.extractor = await (pipeline as any)('feature-extraction', hfModel, {
         progress_callback: (progress: { status: string; progress?: number; loaded?: number; total?: number }) => {
           if (progress.status === 'download') {
             this._status = 'downloading';
@@ -154,7 +155,7 @@ export class ONNXEmbeddingProvider implements LocalEmbeddingProvider {
             this.onProgress?.({ stage: 'load', percent: 100 });
           }
         }
-      });
+      }) as FeatureExtractionPipeline;
 
       this._status = 'ready';
       this.onProgress?.({ stage: 'warmup', percent: 100 });

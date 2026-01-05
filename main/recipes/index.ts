@@ -22,8 +22,15 @@ import { AvatarPreferenceRecipe } from './avatar-recipes.js'
 // LLM Recipe - represents an AI model/assistant
 import { LLMRecipe } from '@lama/core/recipes/LLMRecipe.js'
 
+// TTS Recipe - represents a Text-to-Speech model with blob storage
+import { TTSRecipe } from '@chat/core/recipes/TTSRecipe.js'
+
+// STT Recipe - represents a Speech-to-Text model (Whisper) with blob storage
+import { STTRecipe } from '@chat/core/recipes/STTRecipe.js'
+
 // AI Recipe - represents AI assistant identities
-import { AIRecipe } from '@lama/core/recipes/AIRecipe.js'
+// AIList Recipe - tracks all AI objects for enumeration
+import { AIRecipe, AIListRecipe } from '@lama/core/recipes/AIRecipe.js'
 
 // AISettings Recipe - AI assistant application settings per instance
 import { AISettingsRecipe } from '@lama/core/recipes/AISettingsRecipe.js'
@@ -31,8 +38,8 @@ import { AISettingsRecipe } from '@lama/core/recipes/AISettingsRecipe.js'
 // Chat Memory Config - memory extraction configuration per topic
 import { ChatMemoryConfigRecipe } from './chat-memory-config.js'
 
-// Memory Recipe - discrete memory/insight owned by a Person
-import { MemoryRecipe } from './memory-recipe.js'
+// Memory Recipe - synthesized knowledge document from memory.core
+import { MemoryRecipe } from '@memory/core/recipes/MemoryRecipe'
 
 // UserSettings Recipe - consolidated user settings (AI, UI, proposals)
 import { UserSettingsRecipe } from './user-settings-recipe.js'
@@ -169,7 +176,10 @@ const GlobalLLMSettingsRecipe = {
 // Note: Group recipe is already in CORE_RECIPES, don't duplicate it
 const LamaRecipes = [
     LLMRecipe,
+    TTSRecipe,
+    STTRecipe,
     AIRecipe,
+    AIListRecipe,
     AISettingsRecipe,
     LLMSettingsRecipe,
     GlobalLLMSettingsRecipe,

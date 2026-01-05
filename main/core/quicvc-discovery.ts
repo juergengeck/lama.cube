@@ -4,11 +4,12 @@
  * Implements discovery for QuicVC devices (ESP32, other lama instances)
  * using UDP broadcast on port 49497 (QuicVC discovery port).
  *
- * Based on QuicVC protocol discovery patterns with HEARTBEAT frames.
+ * Identity comes from DiscoveryIdentityProvider (user-configurable).
  */
 
 import dgram from 'dgram';
 import { EventEmitter } from 'events';
+import type { DiscoveryIdentityProvider, DiscoveryIdentity } from '@lama/connection.core';
 
 // Define local types since connection.core doesn't export these yet
 export interface LocalPeerInfo {
@@ -16,6 +17,7 @@ export interface LocalPeerInfo {
   name: string;
   address: string;
   port?: number;
+  publicKey?: string;
   lastSeen?: number;
   capabilities: string[];
   discoveredAt: number;
@@ -61,15 +63,14 @@ export class QuicVCDiscovery extends EventEmitter implements LocalDiscoveryProvi
   private broadcastInterval: NodeJS.Timeout | null = null;
   private expirationInterval: NodeJS.Timeout | null = null;
   private discoveredDevices: Map<string, QuicVCDevice> = new Map();
-  private ownDeviceId: string;
-  private ownDeviceName: string;
+  private identityProvider: DiscoveryIdentityProvider;
+  private currentIdentity: DiscoveryIdentity | null = null;
   private peerDiscoveredCallbacks: ((peer: LocalPeerInfo) => void)[] = [];
   private peerLostCallbacks: ((peerId: string) => void)[] = [];
 
-  constructor(ownDeviceId: string, ownDeviceName: string) {
+  constructor(identityProvider: DiscoveryIdentityProvider) {
     super();
-    this.ownDeviceId = ownDeviceId;
-    this.ownDeviceName = ownDeviceName;
+    this.identityProvider = identityProvider;
   }
 
   /**
@@ -137,6 +138,12 @@ export class QuicVCDiscovery extends EventEmitter implements LocalDiscoveryProvi
     if (!this.socket) {
       throw new Error('Discovery not initialized');
     }
+
+    // Fetch current identity from provider
+    this.currentIdentity = await this.identityProvider.getDiscoveryIdentity();
+    console.log('[QuicVCDiscovery] Using identity:', this.currentIdentity.displayName,
+                'pubKey:', this.currentIdentity.pubKey.substring(0, 8) + '...',
+                'deviceId:', this.currentIdentity.deviceId.substring(0, 8) + '...');
 
     console.log('[QuicVCDiscovery] Started listening for devices');
 
@@ -223,13 +230,14 @@ export class QuicVCDiscovery extends EventEmitter implements LocalDiscoveryProvi
    * Send discovery broadcast
    */
   private async sendDiscoveryBroadcast(): Promise<void> {
-    if (!this.socket) return;
+    if (!this.socket || !this.currentIdentity) return;
 
-    // Create discovery announcement (simple JSON for now)
+    // Create discovery announcement with identity from provider
     const announcement = {
       type: 'discovery',
-      deviceId: this.ownDeviceId,
-      deviceName: this.ownDeviceName,
+      pubKey: this.currentIdentity.pubKey,
+      deviceId: this.currentIdentity.deviceId,
+      deviceName: this.currentIdentity.displayName,
       timestamp: Date.now(),
       capabilities: ['quicvc', 'websocket'],
       port: QUICVC_PORT,
@@ -288,7 +296,7 @@ export class QuicVCDiscovery extends EventEmitter implements LocalDiscoveryProvi
       }
 
       // Ignore our own broadcasts
-      if (data.deviceId === this.ownDeviceId) {
+      if (this.currentIdentity && data.deviceId === this.currentIdentity.deviceId) {
         return;
       }
 
@@ -296,6 +304,7 @@ export class QuicVCDiscovery extends EventEmitter implements LocalDiscoveryProvi
       const deviceId = data.deviceId || data.device_id || data.id || `unknown-${rinfo.address}`;
       const deviceName = data.deviceName || data.device_name || data.name || deviceId;
       const deviceType = data.deviceType || data.type || 'unknown';
+      const pubKey = data.pubKey || data.pub_key || '';
 
       const device: QuicVCDevice = {
         id: deviceId,
@@ -304,6 +313,7 @@ export class QuicVCDiscovery extends EventEmitter implements LocalDiscoveryProvi
         address: rinfo.address,
         port: data.port || QUICVC_PORT,
         capabilities: data.capabilities || ['quicvc'],
+        credential: pubKey ? { pubKey } : undefined,
         mac: data.mac,
         lastSeen: Date.now(),
         discoveredAt: this.discoveredDevices.get(deviceId)?.discoveredAt || Date.now(),
@@ -433,6 +443,7 @@ export class QuicVCDiscovery extends EventEmitter implements LocalDiscoveryProvi
       id: device.id,
       name: device.name,
       address: `${device.address}:${device.port}`,
+      publicKey: device.credential?.pubKey,
       capabilities: device.capabilities,
       discoveredAt: device.discoveredAt,
       lastSeenAt: device.lastSeen,

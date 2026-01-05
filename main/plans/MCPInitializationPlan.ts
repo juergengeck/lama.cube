@@ -135,7 +135,7 @@ export class MCPInitializationPlan {
     console.log('[MCPInitializationPlan] Registering memory tools with MCP Manager...');
 
     const { mcpManager } = await import('@mcp/core/local');
-    mcpManager.setNodeOneCore(nodeOneCore);
+    await mcpManager.setNodeOneCore(nodeOneCore);  // NOW ASYNC - waits for tool registration
 
     console.log('[MCPInitializationPlan] ✅ Memory tools registered');
     return mcpManager;

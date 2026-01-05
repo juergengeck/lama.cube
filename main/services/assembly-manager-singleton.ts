@@ -5,10 +5,14 @@
  *
  * Uses direct Assembly creation (no Plan required) for simple chat tracking.
  * Full Demand/Supply/Plan matching can be added later.
+ *
+ * IMPORTANT: Must call setAssemblyDimension() after JournalModule initializes
+ * so assemblies are indexed and visible in the journal.
  */
 
 import type { SHA256IdHash, SHA256Hash } from '@refinio/one.core/lib/util/type-checks'
 import { AssemblyPlan } from '@assembly/core'
+import type { AssemblyDimension } from '@assembly/core'
 import { storeVersionedObject, getObjectByIdHash } from '@refinio/one.core/lib/storage-versioned-objects.js'
 import { getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js'
 import nodeOneCore from '../core/node-one-core.js'
@@ -16,6 +20,8 @@ import nodeOneCore from '../core/node-one-core.js'
 class AssemblyManagerSingleton {
   private initialized = false
   private assemblyPlan: AssemblyPlan | null = null
+  private assemblyDimension: AssemblyDimension | null = null
+  private onIndexed: (() => Promise<void>) | null = null
 
   /**
    * Initialize AssemblyManager with assembly.core handler
@@ -61,6 +67,21 @@ class AssemblyManagerSingleton {
   }
 
   /**
+   * Set the AssemblyDimension for indexing
+   *
+   * Must be called after JournalModule initializes so assemblies
+   * are indexed and visible in the journal.
+   *
+   * @param dimension - AssemblyDimension from JournalModule
+   * @param onIndexed - Callback to trigger persistence after indexing
+   */
+  setAssemblyDimension(dimension: AssemblyDimension, onIndexed?: () => Promise<void>): void {
+    this.assemblyDimension = dimension
+    this.onIndexed = onIndexed || null
+    console.log('[AssemblyManager] AssemblyDimension connected for indexing')
+  }
+
+  /**
    * Create Assembly for a chat topic
    *
    * Called when a new chat is created. Uses entity-centric assembly creation
@@ -103,7 +124,8 @@ class AssemblyManagerSingleton {
       // Create Assembly with entity=topicId (tracks the topic over time)
       const assemblyResult = await this.assemblyPlan.createAssembly({
         entity: topicId,  // The topic is the entity being tracked
-        storyRef: storyResult.idHash
+        storyRef: storyResult.idHash,
+        title: `Create Chat: ${topicName}`
       })
 
       console.log(`[AssemblyManager] Assembly created:`, {
@@ -111,9 +133,120 @@ class AssemblyManagerSingleton {
         storyId: storyResult.idHash
       })
 
+      // Index into AssemblyDimension so it shows in journal
+      if (this.assemblyDimension) {
+        try {
+          this.assemblyDimension.indexAssembly(
+            assemblyResult.idHash,
+            assemblyResult.hash,
+            assemblyResult.assembly,
+            storyResult.story,
+            planResult.plan
+          )
+          console.log(`[AssemblyManager] Indexed chat assembly into AssemblyDimension`)
+
+          // Trigger persistence
+          if (this.onIndexed) {
+            await this.onIndexed()
+          }
+        } catch (indexErr) {
+          console.error('[AssemblyManager] Failed to index chat assembly:', indexErr)
+        }
+      }
+
       return assemblyResult.idHash
     } catch (error) {
       console.error('[AssemblyManager] Failed to create chat Assembly:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Create Assembly for AI contact creation
+   *
+   * Called when a new AI contact is created.
+   * Creates a journal entry documenting the AI's creation.
+   *
+   * @param aiPersonId - AI Person ID hash (used as entity)
+   * @param displayName - AI display name
+   * @param modelId - Model ID associated with this AI
+   * @returns Assembly ID hash
+   */
+  async createAIContactAssembly(
+    aiPersonId: SHA256IdHash<any>,
+    displayName: string,
+    modelId: string
+  ): Promise<SHA256IdHash<any> | null> {
+    if (!this.assemblyPlan) {
+      console.warn('[AssemblyManager] Plan not initialized - skipping AI Assembly creation')
+      return null
+    }
+
+    try {
+      console.log(`[AssemblyManager] Creating Assembly for AI creation: ${displayName} (${modelId})`)
+
+      const myIdentityId = nodeOneCore.ownerId
+
+      // Create a Plan for AI contact tracking
+      // Use 'AIPlan' so it shows up under "AI Assistants" in journal filter
+      const planResult = await this.assemblyPlan.createPlan({
+        id: 'AIPlan',
+        name: 'AI Assistant',
+        description: `AI assistant operations`,
+        demandPatterns: [],
+        supplyPatterns: [],
+        domain: 'ai'
+      })
+
+      // Create a Story documenting the AI contact creation
+      // Story id format: PlanId.operation(entity) - used for journal filtering
+      const storyResult = await this.assemblyPlan.createStory({
+        id: `AIPlan.createAI(${aiPersonId})`,
+        title: `AI Created: ${displayName} (model: ${modelId})`,
+        plan: planResult.idHash,
+        product: aiPersonId as unknown as SHA256Hash<any>,
+        instanceVersion: aiPersonId as string,
+        owner: myIdentityId
+      })
+
+      // Create Assembly with entity=aiPersonId (tracks the AI contact over time)
+      const assemblyResult = await this.assemblyPlan.createAssembly({
+        entity: aiPersonId,
+        storyRef: storyResult.idHash,
+        title: `AI Created: ${displayName}`
+      })
+
+      console.log(`[AssemblyManager] AI Assembly created:`, {
+        assemblyId: assemblyResult.idHash,
+        storyId: storyResult.idHash,
+        displayName,
+        modelId
+      })
+
+      // Index into AssemblyDimension so it shows in journal
+      if (this.assemblyDimension) {
+        try {
+          this.assemblyDimension.indexAssembly(
+            assemblyResult.idHash,
+            assemblyResult.hash,
+            assemblyResult.assembly,
+            storyResult.story,
+            planResult.plan
+          )
+          console.log(`[AssemblyManager] Indexed AI assembly into AssemblyDimension`)
+
+          // Trigger persistence
+          if (this.onIndexed) {
+            await this.onIndexed()
+          }
+        } catch (indexErr) {
+          console.error('[AssemblyManager] Failed to index AI assembly:', indexErr)
+        }
+      }
+
+      return assemblyResult.idHash
+    } catch (error) {
+      console.error('[AssemblyManager] Failed to create AI Assembly:', error)
       throw error
     }
   }

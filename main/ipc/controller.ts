@@ -42,6 +42,7 @@ import { registerDirectAssemblyPlans } from './plans/assembly-direct.js';
 import * as transportPlans from './plans/transport.js';
 import localModelsPlans from './plans/local-models.js';
 import ttsPlans from './plans/tts.js';
+import registerIngestionHandlers from './plans/ingestion.js';
 
 // Node error type
 interface NodeError extends Error {
@@ -143,6 +144,7 @@ class IPCController {
     this.handle('chat:getMessageHistory', chatPlans.getMessageHistory);
     this.handle('chat:exportMessageCredential', chatPlans.exportMessageCredential);
     this.handle('chat:verifyMessageAssertion', chatPlans.verifyMessageAssertion);
+    this.handle('chat:getTopicHistory', chatPlans.getTopicHistory);
 
     // Audit plans
     this.handle('audit:generateQR', auditPlans.generateQR);
@@ -247,6 +249,7 @@ class IPCController {
     this.handle('ai:getDefaultModel', aiPlans['ai:getDefaultModel']);
     this.handle('ai:isAITopic', aiPlans.isAITopic);
     this.handle('ai:switchAIModel', aiPlans.switchAIModel);
+    this.handle('ai:setAISettings', aiPlans.setAISettings);
     this.handle('ai:getAIPersonForTopic', aiPlans.getAIPersonForTopic);
     this.handle('ai:generateAIName', aiPlans.generateAIName);
 
@@ -287,6 +290,9 @@ class IPCController {
 
     // Chat Memory plans
     registerMemoryPlans(ipcMain, nodeOneCore);
+
+    // Document Ingestion plans
+    registerIngestionHandlers(ipcMain);
 
     // Knowledge Graph plans
     registerKnowledgeGraphHandlers(ipcMain, nodeOneCore);
@@ -359,6 +365,7 @@ class IPCController {
     this.handle('onecore:clearStorage', oneCorePlans.clearStorage);
     this.handle('onecore:hasPersonName', oneCorePlans.hasPersonName);
     this.handle('onecore:setPersonName', oneCorePlans.setPersonName);
+    this.handle('onecore:getMood', oneCorePlans.getMood);
     this.handle('onecore:updateMood', oneCorePlans.updateMood);
     this.handle('onecore:getOwnerId', oneCorePlans.getOwnerId);
 

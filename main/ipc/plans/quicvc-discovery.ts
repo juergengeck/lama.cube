@@ -4,15 +4,18 @@
  * Provides IPC interface for QuicVC device discovery in the UI
  * Supports both UDP and BTLE transports for local discovery
  * Includes DiscoveryCollectionService for verified peer collection
+ *
+ * Identity comes from CubeDiscoveryIdentityProvider (user-configurable via settings).
  */
 
 import electron from 'electron';
 const { ipcMain } = electron;
-import { DiscoveryService, DiscoveryStart, BTLEBroadcaster, DiscoveryCollectionService } from '@lama/connection.core';
-import type { DiscoveryCollectionDependencies, CollectedPeer } from '@lama/connection.core';
+import { DiscoveryService, DiscoveryStart, BTLEBroadcaster, DiscoveryCollectionService, UDPBroadcaster } from '@lama/connection.core';
+import type { DiscoveryCollectionDependencies, CollectedPeer, DiscoveryIdentityProvider } from '@lama/connection.core';
 import { handshakeService } from '@trust/core/services/HandshakeService.js';
 import { CompositeLocalDiscovery } from '../../core/composite-local-discovery.js';
-import { UdpBroadcaster } from '../../core/udp-broadcaster.js';
+import { CubeDiscoveryIdentityProvider } from '../../core/discovery-identity-provider.js';
+import { NodeUDPSocketService } from '../../core/node-udp-socket-service.js';
 import { RelayBroadcaster } from '../../core/relay-broadcaster.js';
 import { createTransportFactory } from '../../core/udp-transport-factory.js';
 import { getBTLEBroadcastService } from '../../core/node-btle-service.js';
@@ -32,25 +35,42 @@ let discoveryService: DiscoveryService | null = null;
 let compositeDiscovery: CompositeLocalDiscovery | null = null;
 let discoveryStart: DiscoveryStart | null = null;
 let discoveryCollectionService: DiscoveryCollectionService | null = null;
+let identityProvider: DiscoveryIdentityProvider | null = null;
 let isCollectionActive = false;
+
+/**
+ * Get or create the shared identity provider
+ */
+function getIdentityProvider(): DiscoveryIdentityProvider {
+  if (!identityProvider) {
+    identityProvider = new CubeDiscoveryIdentityProvider({
+      nodeOneCore,
+      instanceId: nodeOneCore.instanceId || 'unknown',
+    });
+  }
+  return identityProvider;
+}
 
 /**
  * Initialize QuicVC discovery service
  * Uses CompositeLocalDiscovery to support both UDP and BTLE transports
+ * Identity comes from CubeDiscoveryIdentityProvider (user-configurable via settings)
  */
 async function initializeDiscoveryService(): Promise<void> {
   if (discoveryService) {
     return; // Already initialized
   }
 
-  // Get own device info from nodeOneCore
-  const ownDeviceId = nodeOneCore.ownerId || 'unknown';
-  const ownDeviceName = nodeOneCore.instanceName || 'lama-electron';
+  // Get identity provider (creates if not exists)
+  const provider = getIdentityProvider();
+  const identity = await provider.getDiscoveryIdentity();
 
-  console.log('[QuicVCDiscovery] Initializing with device ID:', ownDeviceId, 'name:', ownDeviceName);
+  console.log('[QuicVCDiscovery] Initializing with identity:', identity.displayName,
+              'pubKey:', identity.pubKey.substring(0, 8) + '...',
+              'deviceId:', identity.deviceId.substring(0, 8) + '...');
 
   // Create composite discovery provider (UDP + BTLE)
-  compositeDiscovery = new CompositeLocalDiscovery(ownDeviceId, ownDeviceName);
+  compositeDiscovery = new CompositeLocalDiscovery(provider);
 
   // Create discovery service
   discoveryService = new DiscoveryService();
@@ -93,16 +113,15 @@ async function initializeDiscoveryService(): Promise<void> {
 /**
  * Initialize multi-transport discovery broadcasting
  * Registers UDP, BTLE, and optionally relay broadcasters
+ * Identity comes from shared CubeDiscoveryIdentityProvider
  */
-async function initializeDiscoveryStart(
-  pubKey: string,
-  deviceId: string,
-  deviceName: string,
-  commServerUrl?: string
-): Promise<void> {
+async function initializeDiscoveryStart(commServerUrl?: string): Promise<void> {
   if (discoveryStart) {
     await discoveryStart.stop();
   }
+
+  // Get identity provider (creates if not exists)
+  const provider = getIdentityProvider();
 
   // Build list of enabled transports
   const enabledTransports: ('udp' | 'btle' | 'relay')[] = ['udp', 'btle'];
@@ -110,13 +129,15 @@ async function initializeDiscoveryStart(
     enabledTransports.push('relay');
   }
 
-  discoveryStart = new DiscoveryStart(pubKey, {
+  discoveryStart = new DiscoveryStart(provider, {
     enabledTransports,
     commServerUrl,
   });
 
-  // Register UDP broadcaster
-  const udpBroadcaster = new UdpBroadcaster(deviceId, deviceName);
+  // Register UDP broadcaster with Node.js socket
+  const identity = await provider.getDiscoveryIdentity();
+  const udpSocketService = new NodeUDPSocketService();
+  const udpBroadcaster = new UDPBroadcaster(udpSocketService, identity.deviceId, identity.displayName);
   discoveryStart.registerBroadcaster(udpBroadcaster);
 
   // Register BTLE broadcaster
@@ -385,27 +406,28 @@ export function initializeQuicVCDiscoveryPlans(): void {
 
   /**
    * Start multi-transport discovery broadcasting
+   * Identity is now sourced from CubeDiscoveryIdentityProvider (user-configurable)
    */
-  ipcMain.handle('discovery:start', async (event: IpcMainInvokeEvent, params: {
-    pubKey: string;
-    deviceId: string;
-    deviceName: string;
+  ipcMain.handle('discovery:start', async (event: IpcMainInvokeEvent, params?: {
     commServerUrl?: string;
   }): Promise<IpcResponse> => {
     try {
       console.log('[DiscoveryStart] Starting discovery via IPC');
 
-      await initializeDiscoveryStart(
-        params.pubKey,
-        params.deviceId,
-        params.deviceName,
-        params.commServerUrl
-      );
+      await initializeDiscoveryStart(params?.commServerUrl);
       await discoveryStart?.start();
+
+      // Get current identity for response
+      const currentIdentity = discoveryStart?.getCurrentIdentity();
 
       return {
         success: true,
         transports: discoveryStart?.getActiveBroadcasters() || [],
+        identity: currentIdentity ? {
+          pubKey: currentIdentity.pubKey.substring(0, 8) + '...',
+          deviceId: currentIdentity.deviceId.substring(0, 8) + '...',
+          displayName: currentIdentity.displayName,
+        } : undefined,
       };
     } catch (error) {
       console.error('[DiscoveryStart] Failed to start discovery:', error);
@@ -529,6 +551,38 @@ export function initializeQuicVCDiscoveryPlans(): void {
       };
     } catch (error) {
       console.error('[DiscoveryCollection] Failed to set collection active:', error);
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
+  });
+
+  /**
+   * Set trust level for a collected peer
+   */
+  ipcMain.handle('discovery:setCollectedPeerTrustLevel', async (
+    event: IpcMainInvokeEvent,
+    params: { peerId: string; trustLevel: string }
+  ): Promise<IpcResponse> => {
+    try {
+      console.log('[DiscoveryCollection] Setting trust level for peer:', params.peerId, 'to', params.trustLevel);
+
+      if (!discoveryCollectionService) {
+        return {
+          success: false,
+          error: 'Discovery collection service not initialized',
+        };
+      }
+
+      // TODO: Implement trust level setting on collected peers
+      // This would integrate with the TrustPlan to set trust for the peer's identity
+
+      return {
+        success: true,
+      };
+    } catch (error) {
+      console.error('[DiscoveryCollection] Failed to set trust level:', error);
       return {
         success: false,
         error: (error as Error).message,

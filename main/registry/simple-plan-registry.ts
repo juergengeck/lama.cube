@@ -111,11 +111,11 @@ export function createSimplePlanRegistry(deps: { leuteModel: any; channelManager
 
   // one.channels - Channel management
   const OneChannelsPlan = {
-    async createChannel(id: string) {
-      return await deps.channelManager.createChannel(id);
+    async createChannel(participants: any[], owner?: any) {
+      return await deps.channelManager.createChannel(participants, owner);
     },
-    async postToChannel(channelId: string, obj: any) {
-      return await deps.channelManager.postToChannel(channelId, obj);
+    async postToChannel(participantsHash: any, obj: any, owner?: any) {
+      return await deps.channelManager.postToChannel(participantsHash, obj, owner);
     },
     async listChannels() {
       return await deps.channelManager.getChannelInfos();

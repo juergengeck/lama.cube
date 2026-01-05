@@ -1,4 +1,14 @@
 console.log('[MAIN] Starting LAMA app...')
+
+// Global error handler
+window.onerror = (msg, url, line, col, error) => {
+  console.error('[MAIN] Global error:', msg, url, line, col, error)
+  document.body.innerHTML = `<pre style="color:red;padding:20px;">GLOBAL ERROR: ${msg}\n${url}:${line}:${col}\n${error?.stack || ''}</pre>`
+}
+window.onunhandledrejection = (event) => {
+  console.error('[MAIN] Unhandled rejection:', event.reason)
+  document.body.innerHTML = `<pre style="color:red;padding:20px;">UNHANDLED REJECTION: ${event.reason}\n${event.reason?.stack || ''}</pre>`
+}
 console.log('[MAIN] window.electronAPI available?', typeof window !== 'undefined' && !!window.electronAPI)
 if (typeof window !== 'undefined' && window.electronAPI) {
   console.log('[MAIN] ✅ electronAPI is available with methods:', Object.keys(window.electronAPI))
@@ -18,38 +28,50 @@ if (typeof window !== 'undefined' && window.electronAPI) {
 
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.tsx'
 import './index.css'
 
-// Initialize platform FIRST
-import './initialization/platform'
+console.log('[MAIN] Before imports...')
 
-// Initialize browser ONE.CORE instance (simple version)
-import { browserInit as browserInit } from './services/browser-init.ts'
+// Create root once and reuse it
+const rootElement = document.getElementById('root')
+const reactRoot = rootElement ? ReactDOM.createRoot(rootElement) : null
 
-async function startApp() {
-  try {
-    console.log('[MAIN] Checking if ready to show login screen...')
-    const initResult = await browserInit.initialize()
-
-    if (initResult.ready) {
-      console.log('[MAIN] ✅ Ready to show UI (NO ONE.CORE initialized yet)')
-    } else {
-      console.error('[MAIN] ❌ Browser ONE.CORE initialization failed')
-    }
-
-  } catch (error) {
-    console.error('[MAIN] Fatal initialization error:', error)
-  }
-
-  // Always render the app exactly once, regardless of initialization outcome
-  ReactDOM.createRoot(document.getElementById('root')!).render(
-    <App />
+if (reactRoot) {
+  console.log('[MAIN] Rendering loading component...')
+  reactRoot.render(
+    <div style={{color: 'white', padding: 20}}>
+      <h1>Loading...</h1>
+      <p>If you see this, React works. Loading full app...</p>
+    </div>
   )
 }
 
-// Start the application
-startApp()
+// Now load the real app
+Promise.all([
+  import('./App.tsx'),
+  import('./initialization/platform'),
+  import('./services/browser-init.ts')
+]).then(async ([{ default: App }, _, { browserInit }]) => {
+  console.log('[MAIN] Modules loaded, initializing...')
+
+  try {
+    const initResult = await browserInit.initialize()
+    console.log('[MAIN] Init result:', initResult)
+  } catch (error) {
+    console.error('[MAIN] Init error:', error)
+  }
+
+  console.log('[MAIN] Rendering full App...')
+  if (reactRoot) {
+    reactRoot.render(<App />)
+  }
+  console.log('[MAIN] ✅ Done')
+}).catch(err => {
+  console.error('[MAIN] ❌ Module load failed:', err)
+  if (rootElement) {
+    rootElement.innerHTML = `<pre style="color:red;padding:20px;">MODULE LOAD ERROR:\n${err}\n${err.stack}</pre>`
+  }
+})
 
 // Development: Restart Node.js instance when HMR reloads the page
 if (import.meta.hot) {

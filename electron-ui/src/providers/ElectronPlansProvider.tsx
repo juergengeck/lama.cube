@@ -13,8 +13,8 @@
  * See: ui.core/ARCHITECTURE.md for complete architecture documentation
  */
 
-import { ReactNode, useState, useEffect } from 'react'
-import { PlansProvider, type LAMAPlansContext, type MemoryPlan, type LocalModelsPlan } from '@ui/core'
+import { ReactNode, useState, useEffect, useMemo, useCallback } from 'react'
+import { PlansProvider, type LAMAPlansContext, type MemoryPlan, type LocalModelsPlan, type IngestionPlan } from '@ui/core'
 import type { ContactsPlan } from '@chat/core/plans/ContactsPlan.js'
 import type { ChatPlan } from '@chat/core/plans/ChatPlan.js'
 import type { AIPlan } from '@lama/core/plans/AIPlan.js'
@@ -191,13 +191,32 @@ const aiPlan: AIPlan = {
     return await window.electronAPI.invoke('ai:getDefaultModel')
   },
 
-  async setDefaultModel(modelId: string) {
-    return await window.electronAPI.invoke('ai:setDefaultModel', modelId)
+  async setDefaultModel(modelId: string, displayName?: string, email?: string) {
+    return await window.electronAPI.invoke('ai:setDefaultModel', { modelId, displayName, email })
   },
 
   async isAITopic(topicId: string) {
     const response = await window.electronAPI.invoke('ai:isAITopic', { topicId })
     return response.success ? response.isAI : false
+  },
+
+  async generateAIName(modelId: string, provider?: string) {
+    const response = await window.electronAPI.invoke('ai:generateAIName', { modelId, provider })
+    if (response.success && response.data) {
+      return {
+        success: true,
+        name: response.data.name,
+        email: response.data.email
+      }
+    }
+    return {
+      success: false,
+      error: response.error || 'Failed to generate name'
+    }
+  },
+
+  async getModels(params?: any) {
+    return await window.electronAPI.invoke('ai:getModels', params || {})
   }
 } as AIPlan
 
@@ -621,6 +640,21 @@ const localModelsPlan: LocalModelsPlan = {
 }
 
 /**
+ * IPC Wrapper for IngestionPlan
+ * Creates topics for document knowledge extraction
+ */
+const ingestionPlan: IngestionPlan = {
+  async startIngestion(params) {
+    // Convert ArrayBuffer to array for IPC serialization
+    const serializedParams = {
+      ...params,
+      documentBlob: params.documentBlob ? Array.from(new Uint8Array(params.documentBlob)) : undefined
+    }
+    return await window.electronAPI.invoke('ingestion:startIngestion', serializedParams)
+  }
+}
+
+/**
  * Complete LAMAPlans implementation for Electron
  * All Plans are IPC wrappers that match Plan interfaces
  */
@@ -654,6 +688,9 @@ export const electronPlans: LAMAPlans = {
 
   // Memory Plans (from memory.core)
   memory: memoryPlan,
+
+  // Document Ingestion Plan
+  ingestion: ingestionPlan,
 
   // Transport Plans (from transport.core)
   transport: transportPlan,
@@ -705,13 +742,15 @@ export function ElectronPlansProvider({ children }: { children: ReactNode }) {
     fetchOwnerId()
   }, [])
 
-  // Extend electronPlans with platform context
-  const plansWithContext: LAMAPlansContext = {
+  // Stable callback for isTopicLoading
+  const isTopicLoading = useCallback(() => false, [])
+
+  // Memoize plans context to prevent unnecessary re-renders of all consumers
+  const plansWithContext: LAMAPlansContext = useMemo(() => ({
     ...electronPlans,
     ownerId,
-    // TODO: Implement isTopicLoading via IPC if needed
-    isTopicLoading: () => false
-  }
+    isTopicLoading
+  }), [ownerId, isTopicLoading])
 
   return (
     <PlansProvider plans={plansWithContext}>

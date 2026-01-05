@@ -1,19 +1,27 @@
 /**
- * Hook for managing local text generation models
+ * Hook for managing local models (text generation, TTS, whisper, embeddings)
  */
 import { useState, useEffect, useCallback } from 'react';
 
 interface LocalModelState {
   id: string;
   name: string;
-  type: 'embedding' | 'whisper' | 'text-generation';
+  type: 'embedding' | 'whisper' | 'text-generation' | 'tts';
   sizeBytes: number;
   status: 'not_installed' | 'downloading' | 'installed' | 'loading' | 'ready' | 'error';
   downloadProgress?: number;
   error?: string;
-  bundled: boolean;
+  bundled?: boolean;
   familyName?: string;
   contextLength?: number;
+}
+
+interface TTSModelState {
+  id: string;
+  name: string;
+  sizeBytes: number;
+  status: 'not_installed' | 'downloading' | 'installed' | 'loading' | 'ready';
+  downloadProgress?: number;
 }
 
 interface TextGenStatus {
@@ -22,10 +30,21 @@ interface TextGenStatus {
   status: string;
 }
 
+interface TTSStatus {
+  status: string;
+  modelId: string | null;
+  sampleRate: number | null;
+}
+
 interface UseLocalModelsResult {
   // Text generation models
   textGenModels: LocalModelState[];
   textGenStatus: TextGenStatus | null;
+
+  // TTS models
+  ttsModels: TTSModelState[];
+  ttsStatus: TTSStatus | null;
+
   loading: boolean;
   error: string | null;
 
@@ -35,6 +54,11 @@ interface UseLocalModelsResult {
   downloadModel: (modelId: string) => Promise<void>;
   refreshModels: () => Promise<void>;
 
+  // TTS Actions
+  loadTTS: (modelId: string) => Promise<void>;
+  unloadTTS: () => Promise<void>;
+  downloadTTS: (modelId: string) => Promise<void>;
+
   // Chat with model
   chat: (modelId: string, messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>, options?: { temperature?: number; maxTokens?: number }) => Promise<string>;
 }
@@ -42,6 +66,8 @@ interface UseLocalModelsResult {
 export function useLocalModels(): UseLocalModelsResult {
   const [textGenModels, setTextGenModels] = useState<LocalModelState[]>([]);
   const [textGenStatus, setTextGenStatus] = useState<TextGenStatus | null>(null);
+  const [ttsModels, setTtsModels] = useState<TTSModelState[]>([]);
+  const [ttsStatus, setTtsStatus] = useState<TTSStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,10 +84,31 @@ export function useLocalModels(): UseLocalModelsResult {
         setTextGenModels(result.data);
       }
 
-      // Get current status
+      // Get current text gen status
       const statusResult = await window.electronAPI.invoke('localModels:getTextGenStatus');
       if (statusResult.success && statusResult.data) {
         setTextGenStatus(statusResult.data);
+      }
+
+      // Get TTS models
+      try {
+        const ttsModelsResult = await window.electronAPI.invoke('tts:listModels');
+        if (ttsModelsResult.success && ttsModelsResult.data) {
+          setTtsModels(ttsModelsResult.data);
+        }
+      } catch (e) {
+        console.debug('[useLocalModels] TTS models not available:', e);
+      }
+
+      // Get TTS status
+      try {
+        const ttsResult = await window.electronAPI.invoke('tts:getStatus');
+        if (ttsResult) {
+          setTtsStatus(ttsResult);
+        }
+      } catch (e) {
+        // TTS status may not be available
+        console.debug('[useLocalModels] TTS status not available:', e);
       }
     } catch (err) {
       setError((err as Error).message);
@@ -168,15 +215,83 @@ export function useLocalModels(): UseLocalModelsResult {
     return result.data.response;
   }, []);
 
+  // TTS Actions
+  const loadTTS = useCallback(async (modelId: string) => {
+    if (!window.electronAPI) throw new Error('Electron API not available');
+
+    const result = await window.electronAPI.invoke('tts:load', { modelId });
+
+    if (result.modelId) {
+      setTtsStatus({
+        status: 'ready',
+        modelId: result.modelId,
+        sampleRate: result.sampleRate
+      });
+    }
+  }, []);
+
+  const unloadTTS = useCallback(async () => {
+    if (!window.electronAPI) throw new Error('Electron API not available');
+
+    await window.electronAPI.invoke('tts:unload');
+    setTtsStatus({
+      status: 'unloaded',
+      modelId: null,
+      sampleRate: null
+    });
+  }, []);
+
+  const downloadTTS = useCallback(async (modelId: string) => {
+    if (!window.electronAPI) throw new Error('Electron API not available');
+
+    setTtsModels(prev => prev.map(m =>
+      m.id === modelId ? { ...m, status: 'downloading' as const, downloadProgress: 0 } : m
+    ));
+
+    const result = await window.electronAPI.invoke('tts:download', { modelId });
+
+    if (!result.success) {
+      setTtsModels(prev => prev.map(m =>
+        m.id === modelId ? { ...m, status: 'not_installed' as const, downloadProgress: undefined } : m
+      ));
+      throw new Error(result.error);
+    }
+
+    setTtsModels(prev => prev.map(m =>
+      m.id === modelId ? { ...m, status: 'installed' as const, downloadProgress: undefined } : m
+    ));
+  }, []);
+
+  // Listen for TTS download progress
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    const handleProgress = (data: { modelId: string; progress: number }) => {
+      setTtsModels(prev => prev.map(m =>
+        m.id === data.modelId
+          ? { ...m, downloadProgress: data.progress, status: 'downloading' as const }
+          : m
+      ));
+    };
+
+    const cleanup = window.electronAPI.on('tts:downloadProgress', handleProgress);
+    return cleanup;
+  }, []);
+
   return {
     textGenModels,
     textGenStatus,
+    ttsModels,
+    ttsStatus,
     loading,
     error,
     loadModel,
     unloadModel,
     downloadModel,
     refreshModels,
+    loadTTS,
+    unloadTTS,
+    downloadTTS,
     chat
   };
 }

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Users, UserPlus, Search, Bot, User, Edit } from 'lucide-react'
 import { useLama } from '@/hooks/useLama'
-import { usePlans, ProfileEditor, ContactCard, type TimelinePath } from '@lama/ui'
+import { usePlans, ProfileEditor, ContactCard, AddContactDialog, type TimelinePath } from '@lama/ui'
 
 interface ContactsViewProps {
   onNavigateToChat?: (topicId: string, contactName: string) => void
@@ -26,6 +26,7 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
   const [defaultModel, setDefaultModel] = useState<string | null>(null)
   const [selectedContact, setSelectedContact] = useState<any | null>(null)
   const [contactProfileOpen, setContactProfileOpen] = useState(false)
+  const [addContactDialogOpen, setAddContactDialogOpen] = useState(false)
 
   useEffect(() => {
     loadContacts()
@@ -259,11 +260,11 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
         return
       }
 
-      // Name is set, proceed with invitation
-      await createInvitation()
+      // Name is set, open the add contact dialog
+      setAddContactDialogOpen(true)
     } catch (error: any) {
-      console.error('[ContactsView] Failed to create invitation:', error)
-      alert(error.message || 'Failed to create invitation')
+      console.error('[ContactsView] Failed to open add contact dialog:', error)
+      alert(error.message || 'Failed to open add contact dialog')
     }
   }
 
@@ -294,10 +295,10 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
     // Reload contacts to get updated owner name
     loadContacts()
 
-    // If this was required for adding a contact, proceed with invitation
+    // If this was required for adding a contact, open the add contact dialog
     if (ownerProfileRequired) {
       setOwnerProfileRequired(false)
-      createInvitation()
+      setAddContactDialogOpen(true)
     }
   }
 
@@ -464,6 +465,16 @@ export function ContactsView({ onNavigateToChat }: ContactsViewProps) {
           mode="view"
         />
       )}
+
+      {/* Add Contact Dialog */}
+      <AddContactDialog
+        open={addContactDialogOpen}
+        onOpenChange={setAddContactDialogOpen}
+        onContactAdded={() => {
+          loadContacts()
+          setAddContactDialogOpen(false)
+        }}
+      />
     </div>
   )
 }

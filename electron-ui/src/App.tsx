@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
-import { Button, ModelOnboarding, BridgeProvider, ChatLayout, MemoryView, ContactsView, MobileBottomNav } from '@lama/ui'
+import { useState, useEffect, useRef } from 'react'
+import { Button, ModelOnboarding, BridgeProvider, ChatLayout, MemoryView, ContactsView, MobileBottomNav, AICreationLoader } from '@lama/ui'
 import { StatusBar } from '@/components/StatusBar'
-import { usePlans, NavigateHomeProvider } from '@ui/core'
+import { usePlans, NavigateHomeProvider, useEntityResolver } from '@ui/core'
 import { ElectronPlansProvider } from '@/providers/ElectronPlansProvider'
 import { SettingsView } from '@/components/SettingsView'
 import { DataDashboard } from '@/components/DataDashboard'
@@ -13,16 +13,24 @@ import { MessageSquare, BookOpen, Users, Settings, Loader2, Smartphone, BarChart
 import { useLamaInit } from '@/hooks/useLamaInit'
 import { lamaBridge } from '@/bridge/lama-bridge'
 import { ipcStorage } from '@/services/ipc-storage'
-import { createLLMConfigOperations, createAIOperations, CLOUD_MODEL_OPTIONS } from '@/adapters/llm-operations'
+import { createLLMConfigOperations, createAIOperations, ALL_MODEL_OPTIONS } from '@/adapters/llm-operations'
+import { useLocalModels } from '@/hooks/useLocalModels'
+import { SettingsProvider } from '@settings/core'
+import { IPCSettingsStorage } from '@/storage/IPCSettingsStorage'
+// TTS Worker - use Vite's ?worker&url syntax for WebGPU acceleration
+import ttsWorkerUrl from './workers/tts.worker.ts?worker&url'
 
 function AppContent() {
   const { chat, ai } = usePlans()
+  const resolveEntityName = useEntityResolver()
   const [activeTab, setActiveTab] = useState('chats')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [selectedConversationId, setSelectedConversationId] = useState<string | undefined>(undefined)
+  const [selectedContactId, setSelectedContactId] = useState<string | undefined>(undefined)
   const [toolbarControls, setToolbarControls] = useState<React.ReactNode>(null)
   const [hasTopics, setHasTopics] = useState<boolean | null>(null)
   const [hasDefaultModel, setHasDefaultModel] = useState<boolean | null>(null)
+  const [isCreatingAI, setIsCreatingAI] = useState(false)
   const [mcpApiStatus, setMcpApiStatus] = useState<{ running: boolean; requestCount: number }>({ running: false, requestCount: 0 })
   const [mcpReconnecting, setMcpReconnecting] = useState(false)
   const [memoryScanStatus, setMemoryScanStatus] = useState<{ scanning: boolean; progress?: string }>({ scanning: false })
@@ -30,8 +38,16 @@ function AppContent() {
   const [responseLengthPercent, setResponseLengthPercent] = useState<number>(0.2) // Response length: 20% default
   const [discoveryEnabled, setDiscoveryEnabled] = useState<boolean>(false)
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768)
+
+  // Ref to track if onboarding was completed in this session (prevents re-checking loop)
+  const onboardingCompletedRef = useRef(false)
+
+  // Local models hook for downloadable models
+  const localModels = useLocalModels()
   const { isInitialized, isAuthenticated, isLoading, login, logout, error, initProgress } = useLamaInit()
   // NO AppModel in browser - use IPC for everything
+
+  // TTS is handled by WebGPU worker via ChatLayout - no IPC needed
 
   // Update proposal config when sensitivity changes
   // Invert the scale: 0% sensitivity = high threshold (1.0), 100% sensitivity = low threshold (0.0)
@@ -86,7 +102,7 @@ function AppContent() {
     if (isAuthenticated) {
       chat.getConversations()
         .then((result: any) => {
-          const conversations = result?.conversations || []
+          const conversations = result?.data || result?.conversations || []
           setHasTopics(conversations.length > 0)
         })
         .catch(() => setHasTopics(false))
@@ -95,6 +111,11 @@ function AppContent() {
 
   // Check if a default model has been configured
   useEffect(() => {
+    // Skip if onboarding was already completed in this session
+    if (onboardingCompletedRef.current) {
+      console.log('[App] Skipping default model check - onboarding already completed')
+      return
+    }
     if (isAuthenticated) {
       console.log('[App] Checking for default model...')
       ai.getDefaultModel()
@@ -306,33 +327,82 @@ function AppContent() {
     />
   }
 
-  // Debug: Log all relevant state
-  console.log('[App] Render state:', {
-    isAuthenticated,
-    hasTopics,
-    hasDefaultModel,
-    isLoading,
-    isInitialized
-  })
+
+  // Show loading while creating AI identity (LLM inference for name generation)
+  if (isCreatingAI) {
+    return (
+      <AICreationLoader
+        logo={<img src="/assets/icons/lama_f_w.svg" alt="LAMA" className="h-24" />}
+      />
+    )
+  }
 
   // Check if we need to show model onboarding
   // Show onboarding only if no default model has been configured
   const shouldShowOnboarding = hasDefaultModel === false
-  console.log('[App] shouldShowOnboarding =', shouldShowOnboarding, '(hasDefaultModel:', hasDefaultModel, ')')
 
   if (shouldShowOnboarding) {
-    console.log('[App] ✅ Showing ModelOnboarding component because hasDefaultModel === false')
     return <ModelOnboarding
       llmConfig={createLLMConfigOperations()}
       aiPlan={createAIOperations()}
-      modelOptions={CLOUD_MODEL_OPTIONS}
+      modelOptions={ALL_MODEL_OPTIONS}
       allowSkip={true}
       logo={
         <img src="/assets/icons/lama_f_w.svg" alt="LAMA" className="h-16" />
       }
-      onComplete={async () => {
-        // Model has been selected and saved to settings
-        console.log('[App] ModelOnboarding completed, setting hasDefaultModel to true')
+      downloads={{
+        downloadModel: async ({ modelId, onProgress }) => {
+          // Model IDs no longer have 'local:' prefix - they are plain IDs now
+          // The inferenceType field in LLM datatype determines routing, not prefixes
+          await localModels.downloadModel(modelId)
+          // The hook updates textGenModels with progress via IPC listener
+        },
+        cancelDownload: async () => {
+          // Currently no cancel support in useLocalModels
+          console.warn('[App] Cancel download not yet implemented')
+        },
+        checkModelExists: async (modelId: string) => {
+          // Model IDs are plain IDs - no prefix stripping needed
+          const model = localModels.textGenModels.find(m => m.id === modelId)
+          return model?.status === 'installed' || model?.status === 'ready'
+        }
+      }}
+      onComplete={async (model) => {
+        console.log('[App] ModelOnboarding completed with model:', model)
+
+        // Mark onboarding as completed BEFORE any async operations
+        // This prevents the useEffect from re-checking and causing a loop
+        onboardingCompletedRef.current = true
+
+        // Skip AI Person creation if no model was selected (skip case)
+        if (!model.id) {
+          console.log('[App] No model selected, skipping AI Person creation')
+          setHasDefaultModel(true)
+          return
+        }
+
+        // Create AI identity and default chats BEFORE showing main UI
+        // This ensures topics are fetched AFTER AI is created
+        setIsCreatingAI(true)
+        try {
+          const response = await window.electronAPI.invoke('ai:generateAIName', { modelId: model.id, provider: model.provider })
+          if (response.success && response.data) {
+            const { name, email } = response.data
+            console.log('[App] AI identity generated:', name, email)
+            // Set the default model WITH the generated name and email
+            // This creates the AI Person in ONE.core with proper aiId
+            await ai.setDefaultModel(model.id, name, email)
+            console.log('[App] AI Person created with name:', name, 'for model:', model.id)
+          } else {
+            console.error('[App] Failed to generate AI identity:', response.error)
+          }
+        } catch (error) {
+          console.error('[App] Error generating AI identity:', error)
+        } finally {
+          setIsCreatingAI(false)
+        }
+
+        // Now show main UI - topics will be fetched with correct AI info
         setHasDefaultModel(true)
       }}
     />
@@ -340,7 +410,6 @@ function AppContent() {
 
   // Show loading while checking for default model
   if (hasDefaultModel === null) {
-    console.log('[App] ⏳ Still checking for default model (hasDefaultModel === null), showing loading...')
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center">
@@ -352,8 +421,6 @@ function AppContent() {
       </div>
     )
   }
-
-  console.log('[App] 📱 Showing main app (hasDefaultModel:', hasDefaultModel, ')')
 
   const tabs = [
     { id: 'chats', label: 'Chats', icon: MessageSquare },
@@ -383,13 +450,28 @@ function AppContent() {
         return <ChatLayout
           selectedConversationId={selectedConversationId}
           onSetToolbarControls={setToolbarControls}
-          onParticipantClick={(participantId) => {
-            console.log('[App] Participant clicked:', participantId)
+          onNavigateToContact={(participantId) => {
+            console.log('[App] Navigate to contact:', participantId)
+            setSelectedContactId(participantId)
             setActiveTab('contacts')
           }}
+          ttsWorkerUrl={ttsWorkerUrl}
         />
       case 'journal':
-        return <JournalViewWrapper onSetToolbarControls={setToolbarControls} />
+        return <JournalViewWrapper
+          onSetToolbarControls={setToolbarControls}
+          onNavigateToEntity={(entityId, entityType) => {
+            console.log('[App] Navigate to entity:', entityType, entityId)
+            if (entityType === 'contact') {
+              setSelectedContactId(entityId)
+              setActiveTab('contacts')
+            } else if (entityType === 'chat') {
+              setSelectedConversationId(entityId)
+              setActiveTab('chats')
+            }
+          }}
+          resolveEntityName={resolveEntityName}
+        />
       case 'contacts':
         return <ContactsView onNavigateToChat={async (topicId, contactName) => {
           // Add or update the conversation in browser localStorage (not IPC secure storage)
@@ -428,6 +510,7 @@ function AppContent() {
           setSelectedConversationId(topicId)
           setActiveTab('chats')
         }}
+        selectedContactId={selectedContactId}
         />
       case 'devices':
         return <DevicesView
@@ -442,10 +525,12 @@ function AppContent() {
         return <SettingsView onLogout={logout} onNavigate={handleNavigate} />
       default:
         return <ChatLayout
-          onParticipantClick={(participantId) => {
-            console.log('[App] Participant clicked:', participantId)
+          onNavigateToContact={(participantId) => {
+            console.log('[App] Navigate to contact:', participantId)
+            setSelectedContactId(participantId)
             setActiveTab('contacts')
           }}
+          ttsWorkerUrl={ttsWorkerUrl}
         />
     }
   }
@@ -470,13 +555,30 @@ function AppContent() {
           onSetToolbarControls={setToolbarControls}
           appMenuItems={appMenuItems}
           trafficLightSpace={isMac}
-          onParticipantClick={(participantId) => {
-            console.log('[App] Participant clicked:', participantId)
+          onNavigateToContact={(participantId) => {
+            console.log('[App] Navigate to contact:', participantId)
+            setSelectedContactId(participantId)
             setActiveTab('contacts')
           }}
+          ttsWorkerUrl={ttsWorkerUrl}
         />
       case 'journal':
-        return <JournalViewWrapper onSetToolbarControls={setToolbarControls} appMenuItems={appMenuItems} trafficLightSpace={isMac} />
+        return <JournalViewWrapper
+          onSetToolbarControls={setToolbarControls}
+          appMenuItems={appMenuItems}
+          trafficLightSpace={isMac}
+          onNavigateToEntity={(entityId, entityType) => {
+            console.log('[App] Navigate to entity:', entityType, entityId)
+            if (entityType === 'contact') {
+              setSelectedContactId(entityId)
+              setActiveTab('contacts')
+            } else if (entityType === 'chat') {
+              setSelectedConversationId(entityId)
+              setActiveTab('chats')
+            }
+          }}
+          resolveEntityName={resolveEntityName}
+        />
       case 'contacts':
         return <ContactsView onNavigateToChat={async (topicId, contactName) => {
           const savedConversations = localStorage.getItem('lama-conversations')
@@ -507,6 +609,7 @@ function AppContent() {
         }}
           appMenuItems={appMenuItems}
           trafficLightSpace={isMac}
+          selectedContactId={selectedContactId}
         />
       case 'devices':
         return <DevicesView
@@ -525,10 +628,12 @@ function AppContent() {
         return <ChatLayout
           appMenuItems={appMenuItems}
           trafficLightSpace={isMac}
-          onParticipantClick={(participantId) => {
-            console.log('[App] Participant clicked:', participantId)
+          onNavigateToContact={(participantId) => {
+            console.log('[App] Navigate to contact:', participantId)
+            setSelectedContactId(participantId)
             setActiveTab('contacts')
           }}
+          ttsWorkerUrl={ttsWorkerUrl}
         />
     }
   }
@@ -581,10 +686,15 @@ function AppContent() {
   )
 }
 
+// Singleton storage instance - created once
+const settingsStorage = new IPCSettingsStorage()
+
 function App() {
   return (
     <ElectronPlansProvider>
-      <AppContent />
+      <SettingsProvider storage={settingsStorage}>
+        <AppContent />
+      </SettingsProvider>
     </ElectronPlansProvider>
   )
 }

@@ -58,6 +58,9 @@ function getTrustPlan(): TrustPlan {
     return trustPlan;
 }
 
+// Export for internal use (e.g., TopicGroupManager implied trust)
+export { getTrustPlan };
+
 const trustHandlers = {
     /**
      * Set trust status for a device/person

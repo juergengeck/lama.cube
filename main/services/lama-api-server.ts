@@ -307,16 +307,17 @@ export class LamaAPIServer {
                 authorHash = nodeOneCore.ownerId as SHA256IdHash<Person>;
               }
 
-              // Create Memory object (versioned)
+              // Create Memory object (versioned) using memory.core type
               const memoryData = {
                 $type$: 'Memory' as const,
-                content: params.content,
-                author: authorHash, // Required: part of composite ID
-                memoryType: params.category || 'note',
-                timestamp: new Date().toISOString(),
-                importance: 0.8,
-                tags: params.category ? [params.category] : [],
-                topicRef: 'lama'
+                title: params.content.substring(0, 100),  // Title from content
+                author: authorHash,  // Required: part of composite ID
+                facts: [],
+                entities: [],
+                relationships: [],
+                prose: params.content,
+                summary: params.content.length > 100 ? params.content.substring(0, 97) + '...' : params.content,
+                sourceSubjects: []
               };
 
               // Store as versioned object using proper ONE.core function

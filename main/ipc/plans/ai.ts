@@ -117,6 +117,20 @@ const aiPlans = {
         console.log('[AI IPC] getModels: Ollama discovery failed:', err.message);
       }
 
+      // Auto-discover Claude models if API key is available
+      try {
+        const settingsModule = await import('./user-settings.js');
+        const handlers = settingsModule.default(nodeOneCore);
+        const apiKey = await handlers['settings:getApiKey'](event, { provider: 'anthropic' });
+        if (apiKey) {
+          console.log('[AI IPC] getModels: discovering Claude models...');
+          await llmManager.discoverClaudeModels(apiKey);
+          console.log('[AI IPC] getModels: Claude discovery complete');
+        }
+      } catch (err: any) {
+        console.log('[AI IPC] getModels: Claude discovery skipped:', err.message);
+      }
+
       // Get local text-gen models first - we need their IDs to filter storage results
       const localResult = await localModelsPlans.listTextGenModels(event);
       const localModels = (localResult.success && localResult.data) ? localResult.data : [];
@@ -325,32 +339,45 @@ const aiPlans = {
 
   /**
    * Get the default model ID from AI settings
+   * Returns null if model is not available (e.g., Claude without API key)
    */
   'ai:getDefaultModel': async (event: IpcMainInvokeEvent): Promise<string | null> => {
     try {
+      let modelId: string | null = null;
+
       // Get from AIAssistantHandler which loads from AISettingsManager
       if (nodeOneCore.aiAssistantModel?.getDefaultModel) {
         const model = await nodeOneCore.aiAssistantModel.getDefaultModel();
         if (model) {
           // Model can be string or object with id property
-          const modelId = typeof model === 'string' ? model : model.id;
-          // CRITICAL: Return null if modelId is undefined or empty
-          // This ensures ModelOnboarding shows when no model is configured
-          return modelId || null;
+          modelId = typeof model === 'string' ? model : model.id;
         }
       }
 
       // Fallback: Read directly from AISettingsManager if aiAssistantModel not available
-      // This handles the case where ModuleRegistry init failed but settings exist
-      const { AISettingsManager } = await import('@lama/core/models/settings/AISettingsManager.js');
-      const settingsManager = new AISettingsManager(nodeOneCore);
-      const settings = await settingsManager.getSettings();
-      if (settings?.defaultModelId) {
-        console.log('[AI IPC] getDefaultModel fallback - found modelId:', settings.defaultModelId);
-        return settings.defaultModelId;
+      if (!modelId) {
+        const { AISettingsManager } = await import('@lama/core/models/settings/AISettingsManager.js');
+        const settingsManager = new AISettingsManager(nodeOneCore);
+        const settings = await settingsManager.getSettings();
+        if (settings?.defaultModelId) {
+          console.log('[AI IPC] getDefaultModel fallback - found modelId:', settings.defaultModelId);
+          modelId = settings.defaultModelId;
+        }
       }
 
-      return null;
+      // CRITICAL: Verify the model is actually available
+      // If model was stored but is no longer available (e.g., Claude without API key),
+      // return null so ModelOnboarding shows again
+      if (modelId) {
+        const availableModels = await llmManager.getAvailableModels();
+        const modelExists = availableModels.some((m: any) => m.id === modelId || m.modelId === modelId);
+        if (!modelExists) {
+          console.log(`[AI IPC] getDefaultModel: stored model ${modelId} not available, returning null`);
+          return null;
+        }
+      }
+
+      return modelId || null;
     } catch (error: any) {
       console.error('[AI IPC] Error getting default model:', error);
       return null;
@@ -606,6 +633,82 @@ const aiPlans = {
       return { success: true, data: maxTokens };
     } catch (error: any) {
       console.error('[AI IPC] getResponseLength error:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Set AI settings for a specific AI participant in a topic
+   * Updates Topic.aiParticipants with the new setting value
+   */
+  async setAISettings(
+    event: IpcMainInvokeEvent,
+    { topicId, aiPersonId, setting, enabled }: {
+      topicId: string;
+      aiPersonId: string;
+      setting: 'analyse' | 'respond' | 'mute' | 'ignore';
+      enabled: boolean;
+    }
+  ) {
+    try {
+      console.log(`[AI IPC] setAISettings: topicId=${topicId}, aiPersonId=${aiPersonId.substring(0, 8)}..., ${setting}=${enabled}`);
+
+      // Get TopicModel from nodeOneCore
+      const topicModel = nodeOneCore.topicModel;
+      if (!topicModel) {
+        return { success: false, error: 'TopicModel not initialized' };
+      }
+
+      // Find the topic
+      const topic = await topicModel.findTopic(topicId);
+      if (!topic) {
+        return { success: false, error: `Topic not found: ${topicId}` };
+      }
+
+      // Initialize aiParticipants if it doesn't exist
+      if (!topic.aiParticipants) {
+        topic.aiParticipants = new Map();
+      }
+
+      // Get or create settings for this AI participant
+      let aiSettings = topic.aiParticipants.get(aiPersonId as any);
+      if (!aiSettings) {
+        aiSettings = {
+          analyse: true,  // Default: run analytics
+          respond: false, // Default: don't respond (unless first AI)
+          mute: false,
+          ignore: false,
+          joinedAt: Date.now()
+        };
+      }
+
+      // Update the specific setting
+      aiSettings[setting] = enabled;
+
+      // Store back in the map
+      topic.aiParticipants.set(aiPersonId as any, aiSettings);
+
+      // Store updated topic as new version using storeVersionedObject
+      const { storeVersionedObject } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
+      await storeVersionedObject({
+        $type$: 'Topic',
+        id: topic.id,
+        channel: topic.channel,
+        name: topic.name,
+        aiParticipants: topic.aiParticipants
+      });
+
+      console.log(`[AI IPC] ✅ AI settings updated: ${setting}=${enabled} for AI ${aiPersonId.substring(0, 8)}... in topic ${topicId.substring(0, 8)}...`);
+
+      // Notify UI of settings change
+      const windows = BrowserWindow.getAllWindows();
+      for (const win of windows) {
+        win.webContents.send('ai:settingsChanged', { topicId, aiPersonId, setting, enabled });
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('[AI IPC] setAISettings error:', error);
       return { success: false, error: error.message };
     }
   },

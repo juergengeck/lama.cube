@@ -142,13 +142,13 @@ class ContentSharingManager {
       
       for (const channelInfo of channelInfos) {
         try {
-          // Calculate the channel info ID
-          const channelInfoId = await calculateIdHashOfObj({
-            $type$: 'ChannelInfo',
-            id: channelInfo.id,
-            owner: channelInfo.owner
-          })
-          
+          // Use channelInfoIdHash directly from the channel info
+          const channelInfoId = channelInfo.channelInfoIdHash || channelInfo.idHash
+          if (!channelInfoId) {
+            console.warn(`[ContentSharing] Channel has no idHash, skipping`)
+            continue
+          }
+
           // Grant access to the channel
           await createAccess([{
             id: channelInfoId,
@@ -156,10 +156,10 @@ class ContentSharingManager {
             group: [],
             mode: SET_ACCESS_MODE.ADD
           }])
-          
-          console.log(`[ContentSharing] Granted access to channel: ${channelInfo.id}`)
+
+          console.log(`[ContentSharing] Granted access to channel, participants: ${channelInfo.participants?.substring(0, 8)}`)
         } catch (error) {
-          console.warn(`[ContentSharing] Failed to grant access to channel ${channelInfo.id}:`, (error as Error).message)
+          console.warn(`[ContentSharing] Failed to grant access to channel:`, (error as Error).message)
         }
       }
       
@@ -218,19 +218,18 @@ class ContentSharingManager {
       this.nodeOneCore.channelManager.onChannelCreated = this.nodeOneCore.channelManager.onChannelCreated || new OEvent()
       
       this.nodeOneCore.channelManager.onChannelCreated.listen(async (channelInfo: any) => {
-        console.log(`[ContentSharing] New channel created: ${channelInfo.id}`)
-        
+        console.log(`[ContentSharing] New channel created, participants: ${channelInfo.participants?.substring(0, 8)}`)
+
         const { createAccess } = await import('@refinio/one.core/lib/access.js')
         const { SET_ACCESS_MODE } = await import('@refinio/one.core/lib/storage-base-common.js')
-        const { calculateIdHashOfObj } = await import('@refinio/one.core/lib/util/object.js')
-        
-        // Calculate channel info ID
-        const channelInfoId = await calculateIdHashOfObj({
-          $type$: 'ChannelInfo',
-          id: channelInfo.id,
-          owner: channelInfo.owner
-        })
-        
+
+        // Use channelInfoIdHash directly from the channel info
+        const channelInfoId = channelInfo.channelInfoIdHash || channelInfo.idHash
+        if (!channelInfoId) {
+          console.warn(`[ContentSharing] New channel has no idHash, skipping`)
+          return
+        }
+
         // Grant access to the new channel
         if (this.browserPersonId) {
           await createAccess([{
@@ -240,7 +239,7 @@ class ContentSharingManager {
             mode: SET_ACCESS_MODE.ADD
           }])
         }
-        
+
         console.log(`[ContentSharing] ✅ Access granted to new channel`)
       })
     }

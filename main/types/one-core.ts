@@ -24,6 +24,10 @@ export interface NodeOneCore {
   instance: any; // Instance type from one.core
   topicModel: TopicModel;
 
+  // Trust configuration
+  trustPlan?: any; // TrustPlan for implied trust on group receive
+  paranoiaLevel?: 0 | 1; // 0 = implied trust (default), 1 = manual confirmation
+
   // Additional properties for backward compatibility
   [key: string]: any;
 }

@@ -1,24 +1,30 @@
 /**
  * Local Models Settings Panel
  *
- * Manages local text generation models for on-device AI inference.
+ * Manages local AI models for on-device inference (text generation, TTS, etc.)
  */
 import React, { useState } from 'react';
 import { useLocalModels, formatBytes } from '../../hooks/useLocalModels';
-import { Download, Trash2, Play, Square, Loader2, Check, AlertCircle, Cpu } from 'lucide-react';
+import { Download, Trash2, Play, Square, Loader2, Check, AlertCircle, Cpu, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
 
 export const LocalModelsPanel: React.FC = () => {
   const {
     textGenModels,
     textGenStatus,
+    ttsModels,
+    ttsStatus,
     loading,
     error,
     loadModel,
     unloadModel,
     downloadModel,
-    refreshModels
+    refreshModels,
+    loadTTS,
+    unloadTTS,
+    downloadTTS
   } = useLocalModels();
 
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
@@ -138,7 +144,66 @@ export const LocalModelsPanel: React.FC = () => {
         </div>
       )}
 
-      {/* Model list */}
+      {/* TTS Section */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <Volume2 className="w-5 h-5" />
+          Text-to-Speech
+        </h3>
+
+        {ttsModels.length === 0 ? (
+          <p className="text-gray-500 dark:text-gray-400 text-sm">
+            No TTS models available
+          </p>
+        ) : (
+          <div className="grid gap-3">
+            {ttsModels.map(model => (
+              <TTSModelCard
+                key={model.id}
+                model={model}
+                isLoaded={ttsStatus?.modelId === model.id && ttsStatus?.status === 'ready'}
+                sampleRate={ttsStatus?.modelId === model.id ? ttsStatus?.sampleRate : null}
+                isActionInProgress={actionInProgress === `tts-${model.id}`}
+                onDownload={async () => {
+                  try {
+                    setActionInProgress(`tts-${model.id}`);
+                    setActionError(null);
+                    await downloadTTS(model.id);
+                  } catch (err) {
+                    setActionError((err as Error).message);
+                  } finally {
+                    setActionInProgress(null);
+                  }
+                }}
+                onLoad={async () => {
+                  try {
+                    setActionInProgress(`tts-${model.id}`);
+                    setActionError(null);
+                    await loadTTS(model.id);
+                  } catch (err) {
+                    setActionError((err as Error).message);
+                  } finally {
+                    setActionInProgress(null);
+                  }
+                }}
+                onUnload={async () => {
+                  try {
+                    setActionInProgress(`tts-${model.id}`);
+                    setActionError(null);
+                    await unloadTTS();
+                  } catch (err) {
+                    setActionError((err as Error).message);
+                  } finally {
+                    setActionInProgress(null);
+                  }
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Text Generation Models */}
       <div className="space-y-3">
         <h3 className="text-lg font-semibold">Text Generation Models</h3>
 
@@ -200,7 +265,8 @@ const ModelCard: React.FC<ModelCardProps> = ({
   onDownload,
   onLoad
 }) => {
-  const isInstalled = model.status === 'installed' || model.status === 'ready';
+  // Consider model installed if status says so OR if it's currently loaded
+  const isInstalled = model.status === 'installed' || model.status === 'ready' || isLoaded;
   const isDownloading = model.status === 'downloading';
   const isLoading = model.status === 'loading';
   const hasError = model.status === 'error';
@@ -285,6 +351,133 @@ const ModelCard: React.FC<ModelCardProps> = ({
           <Progress value={model.downloadProgress} className="h-2" />
           <p className="text-xs text-gray-500 mt-1">
             {isDownloading ? 'Downloading' : 'Loading'}: {model.downloadProgress.toFixed(0)}%
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// TTS Model Card Component
+interface TTSModelCardProps {
+  model: {
+    id: string;
+    name: string;
+    sizeBytes: number;
+    status: string;
+    downloadProgress?: number;
+  };
+  isLoaded: boolean;
+  sampleRate: number | null;
+  isActionInProgress: boolean;
+  onDownload: () => void;
+  onLoad: () => void;
+  onUnload: () => void;
+}
+
+const TTSModelCard: React.FC<TTSModelCardProps> = ({
+  model,
+  isLoaded,
+  sampleRate,
+  isActionInProgress,
+  onDownload,
+  onLoad,
+  onUnload
+}) => {
+  const isInstalled = model.status === 'installed' || model.status === 'ready' || isLoaded;
+  const isDownloading = model.status === 'downloading';
+  const isLoading = model.status === 'loading';
+
+  return (
+    <div className={`p-4 border rounded-lg ${isLoaded ? 'border-green-500 bg-green-50/50 dark:bg-green-900/10' : 'border-gray-200 dark:border-gray-700'}`}>
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <h4 className="font-medium">{model.name}</h4>
+            <Badge variant="secondary" className="text-xs">{formatBytes(model.sizeBytes)}</Badge>
+            {isLoaded && (
+              <Badge variant="default" className="text-xs bg-green-500">Active</Badge>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            High-quality voice synthesis with voice cloning
+          </p>
+          {sampleRate && (
+            <p className="text-xs text-gray-400 mt-1">
+              Sample rate: {sampleRate} Hz
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {!isInstalled && !isDownloading && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onDownload}
+              disabled={isActionInProgress}
+            >
+              {isActionInProgress ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-1" />
+                  Download
+                </>
+              )}
+            </Button>
+          )}
+
+          {isInstalled && !isLoaded && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={onLoad}
+              disabled={isActionInProgress || isLoading}
+            >
+              {isActionInProgress || isLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Play className="w-4 h-4 mr-1" />
+                  Load
+                </>
+              )}
+            </Button>
+          )}
+
+          {isLoaded && (
+            <>
+              <span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
+                <Check className="w-4 h-4" />
+                Ready
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onUnload}
+                disabled={isActionInProgress}
+              >
+                {isActionInProgress ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Square className="w-4 h-4 mr-1" />
+                    Unload
+                  </>
+                )}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Download progress */}
+      {isDownloading && model.downloadProgress !== undefined && (
+        <div className="mt-3">
+          <Progress value={model.downloadProgress} className="h-2" />
+          <p className="text-xs text-gray-500 mt-1">
+            Downloading: {model.downloadProgress.toFixed(0)}%
           </p>
         </div>
       )}

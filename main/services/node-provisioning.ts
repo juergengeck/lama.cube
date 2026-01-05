@@ -10,15 +10,30 @@ import nodeOneCore from '../core/node-one-core.js';
 import stateManager from '../state/manager.js';
 import assemblyManagerSingleton from './assembly-manager-singleton.js';
 
+/**
+ * Initialize module registry with shared modules from lama.core
+ * TrustPlan wiring is handled by ChatModule via demand/supply system
+ */
+async function initModuleRegistry(): Promise<void> {
+  try {
+    const { initializeModuleRegistry } = await import('../registry/module-registry-init.js')
+    await initializeModuleRegistry(nodeOneCore)
+    console.log('[NodeProvisioning] ✅ Module Registry initialized')
+  } catch (error) {
+    console.error('[NodeProvisioning] Failed to initialize Module Registry:', error)
+  }
+}
+
 class NodeProvisioning {
   public user: any;
 
   commServerUrl: any;
   provisioned: boolean | undefined;
-  constructor() {
+  private isProvisioning: boolean = false;
 
+  constructor() {
     this.user = null
-}
+  }
 
   initialize(): any {
     // Listen for provisioning requests from browser
@@ -34,119 +49,29 @@ class NodeProvisioning {
 
   async provision(provisioningData: any): Promise<any> {
     console.log('[NodeProvisioning] Received provisioning request')
-    
-    // Check if Node is actually initialized WITH an owner ID
+
+    // Check if Node is already initialized - skip ONE.core init but run full module setup
     const nodeInfo = nodeOneCore.getInfo()
-    if (nodeInfo.initialized && nodeInfo.ownerId) {
-      console.log('[NodeProvisioning] Node already fully initialized')
-      
-      // Create profile with OneInstanceEndpoint for browser to discover
-      console.log('[NodeProvisioning] Creating profile with OneInstanceEndpoint for browser discovery')
-      
-      try {
-        const { getInstanceIdHash } = await import('@refinio/one.core/lib/instance.js')
-        const { getDefaultKeys } = await import('@refinio/one.core/lib/keychain/keychain.js')
-        const { default: ProfileModel } = await import('@refinio/one.models/lib/models/Leute/ProfileModel.js')
-        
-        const instanceId = getInstanceIdHash()
-        const personId = nodeInfo.ownerId
-        
-        // Create the OneInstanceEndpoint for the Node
-        const personKeys = await getDefaultKeys(personId)
-        const instanceKeys = await getDefaultKeys(instanceId)
-        
-        // Get commServerUrl from nodeOneCore directly
-        const commServerUrl = (nodeOneCore as any).commServerUrl || 'wss://comm10.dev.refinio.one'
-        
-        const endpoint = {
-          $type$: 'OneInstanceEndpoint' as const,
-          personId: personId,
-          instanceId: instanceId,
-          personKeys: personKeys,
-          instanceKeys: instanceKeys,
-          url: commServerUrl  // Use configured commserver URL
-        }
-        
-        // Get or create profile for the Node's owner
-        const me = await nodeOneCore.leuteModel.me()
-        console.log('[NodeProvisioning] Getting main profile for Node person:', personId)
-        let profile = await me.mainProfile()
-        
-        if (!profile) {
-          // Create profile on-the-fly
-          console.log('[NodeProvisioning] No existing profile found, creating new one...')
-          profile = await ProfileModel.constructWithNewProfile(personId, personId, 'default')
-          console.log('[NodeProvisioning] Created new profile for Node instance:', profile.idHash)
-        } else {
-          console.log('[NodeProvisioning] Using existing profile:', profile.idHash)
-        }
-        
-        // Ensure communicationEndpoints array exists
-        if (!profile.communicationEndpoints) {
-          profile.communicationEndpoints = []
-          console.log('[NodeProvisioning] Initialized empty communicationEndpoints array')
-        } else {
-          console.log('[NodeProvisioning] Existing communicationEndpoints:', profile.communicationEndpoints.length, 'endpoints')
-        }
-        
-        // Add or update the endpoint
-        const existingIndex = profile.communicationEndpoints.findIndex(
-          (ep: any) => ep.$type$ === 'OneInstanceEndpoint' && ep.instanceId === instanceId
-        )
-        
-        if (existingIndex >= 0) {
-          profile.communicationEndpoints[existingIndex] = endpoint
-          console.log('[NodeProvisioning] Updated existing OneInstanceEndpoint at index:', existingIndex)
-        } else {
-          profile.communicationEndpoints.push(endpoint)
-          console.log('[NodeProvisioning] Added new OneInstanceEndpoint to profile')
-          console.log('[NodeProvisioning] Total endpoints now:', profile.communicationEndpoints.length)
-        }
-        
-        console.log('[NodeProvisioning] Saving profile with endpoint...')
-        await profile.saveAndLoad()
-        console.log('[NodeProvisioning] ✅ Profile saved successfully with OneInstanceEndpoint')
-        console.log('[NodeProvisioning] Node person ID:', personId?.substring(0, 8))
-        console.log('[NodeProvisioning] Endpoint URL:', endpoint.url)
-        
-      } catch (error) {
-        console.error('[NodeProvisioning] Failed to create profile with endpoint:', error)
-      }
+    const skipOneCoreInit = nodeInfo.initialized && nodeInfo.ownerId
 
-      // Initialize Module System with shared modules from lama.core (if not already initialized)
-      try {
-        const { initializeModuleRegistry } = await import('../registry/module-registry-init.js')
-        await initializeModuleRegistry(nodeOneCore)
-        console.log('[NodeProvisioning] ✅ Module Registry initialized with shared modules')
-      } catch (error) {
-        console.error('[NodeProvisioning] Failed to initialize Module Registry:', error)
-        // Non-critical - allow app to continue
-      }
-
-      // Invitations are created on-demand via IPC, not automatically during init
-
-      return {
-        success: true,
-        nodeId: nodeInfo.ownerId,
-        endpoint: (nodeOneCore as any).commServerUrl || 'wss://comm10.dev.refinio.one'
-      }
-    } else if (nodeInfo.initialized && !nodeInfo.ownerId) {
-      console.log('[NodeProvisioning] Node initialized but no owner ID yet, re-initializing...')
-      // Continue with initialization
+    if (skipOneCoreInit) {
+      console.log('[NodeProvisioning] Node already initialized, skipping ONE.core init')
     }
-    
+
     try {
       // Simple validation - just need username and password
       if (!provisioningData?.user?.name || !provisioningData?.user?.password) {
         throw new Error('Username and password required for provisioning')
       }
-      
+
       // If we're already provisioning, don't start another one
-      if (this.user && this.user.name === provisioningData.user.name) {
-        console.log('[NodeProvisioning] Already provisioning for user:', provisioningData.user.name)
+      if (this.isProvisioning) {
+        console.log('[NodeProvisioning] Already provisioning, ignoring duplicate request')
         throw new Error('Provisioning already in progress')
       }
-      
+
+      this.isProvisioning = true;
+
       // Store user info (ID will be set after ONE.core initialization)
       this.user = provisioningData.user
       
@@ -159,7 +84,7 @@ class NodeProvisioning {
       console.log('[NodeProvisioning] Updated state manager with user:', this.user.name)
       
       // Initialize Node instance with provisioned identity
-      await this.initializeNodeInstance(provisioningData)
+      await this.initializeNodeInstance(provisioningData, skipOneCoreInit)
       
       console.log('[NodeProvisioning] Node instance provisioned successfully')
 
@@ -268,15 +193,19 @@ class NodeProvisioning {
       // See: lama.core/plans/AIAssistantPlan.ts → setDefaultModel() → createDefaultChats()
       console.log('[NodeProvisioning] Default chat creation handled by AIAssistantPlan via setDefaultModel()')
 
+      this.isProvisioning = false;
+      this.provisioned = true;
+
       return {
         success: true,
         nodeId: nodeOwnerId || 'node-' + Date.now(),
         endpoint: (nodeOneCore as any).commServerUrl || 'wss://comm10.dev.refinio.one'
       }
-      
+
     } catch (error) {
       console.error('[NodeProvisioning] Provisioning failed:', error)
       // Reset state on failure
+      this.isProvisioning = false;
       this.user = null
       return {
         success: false,
@@ -308,29 +237,12 @@ class NodeProvisioning {
     return true
   }
 
-  async initializeNodeInstance(provisioningData: any): Promise<any> {
+  async initializeNodeInstance(provisioningData: any, skipOneCoreInit = false): Promise<any> {
     const { user } = provisioningData || {}
 
     const t0 = performance.now();
     console.log('[NodeProvisioning] ⏱️ Starting Node instance initialization at', t0.toFixed(1), 'ms');
     console.log('[NodeProvisioning] Initializing Node instance for user:', user?.name)
-
-    // Check if Node is already initialized
-    const currentInfo = nodeOneCore.getInfo()
-    if (currentInfo.initialized) {
-      console.log('[NodeProvisioning] Node already initialized')
-      return
-    }
-
-    // Initialize Node.js with same credentials as browser
-    const username = user.name
-    const password = user.password
-
-    if (!username || !password) {
-      throw new Error('Username and password required for Node initialization')
-    }
-
-    console.log('[NodeProvisioning] Initializing Node.js with username:', username)
 
     // Create progress callback that sends IPC events to browser
     const onProgress = (stage: string, percent: number, message: string) => {
@@ -347,20 +259,35 @@ class NodeProvisioning {
       }
     }
 
-    const tBeforeInit = performance.now();
-    console.log('[NodeProvisioning] ⏱️ Calling nodeOneCore.initialize at +${(tBeforeInit - t0).toFixed(1)}ms');
-    const result = await nodeOneCore.initialize(username, password, onProgress)
-    const tAfterInit = performance.now();
-    console.log('[NodeProvisioning] ⏱️ nodeOneCore.initialize completed after', (tAfterInit - tBeforeInit).toFixed(1), 'ms');
-    if (!result.success) {
-      // If it's a decryption error, it means passwords don't match
-      if (result.error && result.error.includes('CYENC-SYMDEC')) {
-        throw new Error('Password mismatch between browser and Node instances. Please use the same password.')
-      }
-      throw new Error(`Failed to initialize Node.js ONE.core instance: ${result.error}`)
-    }
+    // Only run ONE.core init if not already initialized
+    if (!skipOneCoreInit) {
+      // Initialize Node.js with same credentials as browser
+      const username = user.name
+      const password = user.password
 
-    console.log('[NodeProvisioning] Node.js ONE.core initialized with ID:', result.ownerId)
+      if (!username || !password) {
+        throw new Error('Username and password required for Node initialization')
+      }
+
+      console.log('[NodeProvisioning] Initializing Node.js with username:', username)
+
+      const tBeforeInit = performance.now();
+      console.log('[NodeProvisioning] ⏱️ Calling nodeOneCore.initialize at +${(tBeforeInit - t0).toFixed(1)}ms');
+      const result = await nodeOneCore.initialize(username, password, onProgress)
+      const tAfterInit = performance.now();
+      console.log('[NodeProvisioning] ⏱️ nodeOneCore.initialize completed after', (tAfterInit - tBeforeInit).toFixed(1), 'ms');
+      if (!result.success) {
+        // If it's a decryption error, it means passwords don't match
+        if (result.error && result.error.includes('CYENC-SYMDEC')) {
+          throw new Error('Password mismatch between browser and Node instances. Please use the same password.')
+        }
+        throw new Error(`Failed to initialize Node.js ONE.core instance: ${result.error}`)
+      }
+
+      console.log('[NodeProvisioning] Node.js ONE.core initialized with ID:', result.ownerId)
+    } else {
+      console.log('[NodeProvisioning] Skipping ONE.core init (already initialized)')
+    }
 
     // NOTE: Legacy setupMessageSync() removed - AI initialization now handled by ModuleRegistry
     // The AIModule.init() sets up all AI services, and startMessageListener() is called
@@ -369,11 +296,12 @@ class NodeProvisioning {
     onProgress('ai-discovery', 105, 'AI initialization delegated to ModuleRegistry...');
 
     // Initialize memory tools with NodeOneCore reference
+    // IMPORTANT: await ensures tools are registered before proceeding
     const tBeforeMCP = performance.now();
     console.log('[NodeProvisioning] ⏱️ Starting MCP initialization at +${(tBeforeMCP - t0).toFixed(1)}ms');
     try {
       const { default: mcpManager } = await import('./mcp-manager.js')
-      mcpManager.setNodeOneCore(nodeOneCore)
+      await mcpManager.setNodeOneCore(nodeOneCore)  // NOW ASYNC - waits for tool registration
       const tAfterMCP = performance.now();
       console.log('[NodeProvisioning] ⏱️ MCP initialization completed after', (tAfterMCP - tBeforeMCP).toFixed(1), 'ms');
       console.log('[NodeProvisioning] Memory tools initialized with NodeOneCore')
@@ -407,6 +335,8 @@ class NodeProvisioning {
         topicAnalysisModel,
         channelManager
       )
+      // Set LeuteModel for storage lookups (required for getAllLLMsFromStorage)
+      llmManager.setLeuteModel(nodeOneCore.leuteModel)
       const tAfterLLMUpdate = performance.now();
       console.log('[NodeProvisioning] ⏱️ LLMManager update completed after', (tAfterLLMUpdate - tBeforeLLMUpdate).toFixed(1), 'ms');
       console.log('[NodeProvisioning] LLMManager SystemPromptBuilder dependencies updated')
@@ -421,10 +351,46 @@ class NodeProvisioning {
     // Full capabilities can be enabled on-demand
 
     // Initialize Module System with shared modules from lama.core
+    await initModuleRegistry()
+
     try {
-      const { initializeModuleRegistry, getAIModule } = await import('../registry/module-registry-init.js')
-      await initializeModuleRegistry(nodeOneCore)
-      console.log('[NodeProvisioning] ✅ Module Registry initialized with shared modules')
+      const { getAIModule, getModuleRegistry, getCoreModule } = await import('../registry/module-registry-init.js')
+      const registry = getModuleRegistry()
+      const coreModule = getCoreModule()
+
+      // CONSOLIDATED ARCHITECTURE: Update nodeOneCore to use module-supplied models
+      // CoreModule creates LeuteModel, ChannelManager, TopicModel
+      // ConnectionModule creates ConnectionsModel (with proper TopicGroupManager filters)
+      if (coreModule) {
+        console.log('[NodeProvisioning] Updating nodeOneCore to use module models...')
+        nodeOneCore.leuteModel = coreModule.leuteModel
+        nodeOneCore.channelManager = coreModule.channelManager
+        nodeOneCore.topicModel = coreModule.topicModel
+        console.log('[NodeProvisioning] ✅ Core models from CoreModule')
+
+        // Get ConnectionsModel from ConnectionModule
+        const connectionModule = registry?.getModule('ConnectionModule') as any
+        if (connectionModule?.connectionsModel) {
+          nodeOneCore.connectionsModel = connectionModule.connectionsModel
+          console.log('[NodeProvisioning] ✅ ConnectionsModel from ConnectionModule')
+        }
+      } else {
+        console.warn('[NodeProvisioning] CoreModule not available')
+      }
+
+      // Wire AssemblyDimension from JournalModule to AssemblyManager
+      // This allows AssemblyManager-created assemblies to appear in journal
+      if (registry) {
+        const journalModule = registry.getModule('JournalModule') as any
+        if (journalModule?.assemblyDimension) {
+          const { saveState } = journalModule
+          assemblyManagerSingleton.setAssemblyDimension(
+            journalModule.assemblyDimension,
+            saveState ? () => saveState.call(journalModule) : undefined
+          )
+          console.log('[NodeProvisioning] ✅ AssemblyDimension wired to AssemblyManager')
+        }
+      }
 
       // Start AI message listener after ModuleRegistry init
       // This ensures we use the correct AIAssistantPlan instance with registered topics
@@ -434,6 +400,84 @@ class NodeProvisioning {
         console.log('[NodeProvisioning] Starting AI message listener...')
         await aiModule.startMessageListener(nodeOneCore.ownerId)
         console.log('[NodeProvisioning] ✅ AI message listener started')
+
+        // CRITICAL: Update nodeOneCore.llmObjectManager to use AIModule's instance
+        // The AIModule's LLMObjectManager has queryAllLLMObjects and is properly populated
+        // via loadExisting() backfill.
+        if (aiModule.llmObjectManager) {
+          nodeOneCore.llmObjectManager = aiModule.llmObjectManager
+          console.log('[NodeProvisioning] ✅ Updated nodeOneCore.llmObjectManager to use AIModule instance')
+        }
+
+        // Forward channel updates to UI (simple event, UI decides what to do)
+        // Debounce per channel to avoid overwhelming the UI
+        const { BrowserWindow } = await import('electron')
+        const pendingUpdates = new Map<string, NodeJS.Timeout>()
+
+        // Cache channelId → topicId mapping for event routing
+        // Populated on first lookup per channel, reused thereafter
+        const channelToTopicCache = new Map<string, string>()
+        let cachePopulated = false
+
+        // Helper to rebuild cache from all topics
+        const rebuildCache = async (): Promise<void> => {
+          try {
+            const topics: any[] = await nodeOneCore.topicModel.topics.all()
+            for (const topic of topics) {
+              // topic.channel is the channelInfoIdHash
+              // We need to map from channelInfoIdHash to topicId
+              if (topic.channel && topic.id) {
+                channelToTopicCache.set(topic.channel, topic.id)
+              }
+            }
+            cachePopulated = true
+          } catch (error) {
+            console.warn(`[NodeProvisioning] Failed to build channel→topic cache:`, error)
+          }
+        }
+
+        // Helper to get topicId from channelId
+        const getTopicIdForChannel = async (channelId: string): Promise<string | null> => {
+          // Check cache first
+          if (channelToTopicCache.has(channelId)) {
+            return channelToTopicCache.get(channelId)!
+          }
+
+          // Cache miss - rebuild (handles new topics)
+          await rebuildCache()
+
+          return channelToTopicCache.get(channelId) || null
+        }
+
+        nodeOneCore.channelManager.onUpdated(async (
+          channelInfoIdHash: any,
+          _participantsHash: string,
+          _channelOwner: any,
+          _timeOfEarliestChange: any,
+          _data: any
+        ) => {
+          const channelId = String(channelInfoIdHash)
+          console.log(`[NodeProvisioning] 🔔 channelManager.onUpdated fired: channelInfoIdHash=${channelId.substring(0, 16)}`)
+          // Debounce: only send after 500ms of quiet (AI processing can take >100ms)
+          if (pendingUpdates.has(channelId)) {
+            clearTimeout(pendingUpdates.get(channelId))
+          }
+          pendingUpdates.set(channelId, setTimeout(async () => {
+            pendingUpdates.delete(channelId)
+
+            // Look up topicId for this channel (topic.channel === channelInfoIdHash)
+            const topicId = await getTopicIdForChannel(channelId)
+
+            const mainWindow = BrowserWindow.getAllWindows()[0]
+            console.log(`[NodeProvisioning] 📡 channel:updated → channelId=${channelId.substring(0, 16)}... topicId=${topicId?.substring(0, 20) || 'unknown'}... (window=${mainWindow ? 'found' : 'NOT FOUND'})`)
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('channel:updated', { channelId, topicId })
+              console.log(`[NodeProvisioning] ✅ IPC sent to browser`)
+            }
+          }, 500))
+        })
+        console.log('[NodeProvisioning] ✅ Channel update forwarder registered')
+
         onProgress('complete', 110, 'AI assistant ready');
       } else {
         console.warn('[NodeProvisioning] AIModule not available - message listener not started')

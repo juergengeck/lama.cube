@@ -85,7 +85,7 @@ const attachmentHandlers = {
    * Get an attachment by hash
    */
   async getAttachment(event: IpcMainInvokeEvent, { hash }: AttachmentRequest): Promise<IpcResponse> {
-    console.log('[AttachmentHandler] Get attachment:', hash)
+    console.log('[AttachmentHandler] 📎 Get attachment:', hash)
 
     try {
       // TODO: Proper IoM setup instead of auth check
@@ -93,6 +93,7 @@ const attachmentHandlers = {
 
       // Get from ONE.core
       const attachment = await attachmentService.getAttachment(hash)
+      console.log('[AttachmentHandler] ✅ Got attachment data:', attachment.data.length, 'bytes, metadata:', attachment.metadata)
 
       // Convert buffer to base64 for IPC transfer
       const base64Data = attachment.data.toString('base64')
@@ -105,7 +106,7 @@ const attachmentHandlers = {
         }
       }
     } catch (error) {
-      console.error('[AttachmentHandler] Error getting attachment:', error)
+      console.error('[AttachmentHandler] ❌ Error getting attachment:', hash, error)
       return {
         success: false,
         error: (error as Error).message

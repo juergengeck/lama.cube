@@ -168,12 +168,15 @@ export function useLamaInit() {
     }
   }, [])
 
+  const getLeuteModel = useCallback(() => browserInit.getLeuteModel(), [])
+  const getChannelManager = useCallback(() => browserInit.getChannelManager(), [])
+
   return {
     ...state,
     login,
     register,
     logout,
-    getLeuteModel: () => browserInit.getLeuteModel(),
-    getChannelManager: () => browserInit.getChannelManager()
+    getLeuteModel,
+    getChannelManager
   }
 }

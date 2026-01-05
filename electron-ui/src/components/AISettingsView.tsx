@@ -133,10 +133,11 @@ export function AISettingsView() {
       if (result?.success && result.value) {
         setClaudeApiKey(result.value)
         setApiKeyStatus('valid')
-
-        // If we have a saved API key, ensure AI contacts exist for all Claude models
-        console.log('[AISettingsView] Found existing Claude API key, ensuring AI contacts...')
-        await ensureClaudeContacts()
+        // Discover Claude models (registers them in memory) but do NOT create contacts
+        // Contacts are created on-demand when user clicks "Start Chat" on a model
+        await window.electronAPI?.invoke('ai:discoverClaudeModels', {
+          apiKey: result.value
+        })
       }
     } catch (error) {
       console.error('Failed to load Claude API key:', error)
@@ -196,10 +197,11 @@ export function AISettingsView() {
 
         if (testResult?.success) {
           setApiKeyStatus('valid')
-
-          // Ensure AI contacts for all Claude models
-          await ensureClaudeContacts()
-
+          // Discover Claude models (registers them in memory) but do NOT create contacts
+          // Contacts are created on-demand when user clicks "Start Chat" on a model
+          await window.electronAPI?.invoke('ai:discoverClaudeModels', {
+            apiKey: claudeApiKey
+          })
           await loadModels() // Refresh to show Claude models as available
         } else {
           setApiKeyStatus('invalid')

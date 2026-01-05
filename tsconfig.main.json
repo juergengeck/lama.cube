@@ -25,10 +25,12 @@
     "noEmitOnError": false,
     "baseUrl": ".",
     "paths": {
+      "@lama/core/events": ["../lama.core/dist/lama.core/events/index"],
       "@refinio/api/*": ["../packages/refinio.api/dist/*"],
       "@refinio/*": ["../packages/*"],
       "@local/core": ["../local.core/dist/index"],
       "@local/core/*": ["../local.core/dist/*"],
+      "@settings/core": ["../settings.core/index"],
       "@xenova/transformers": ["./node_modules/@xenova/transformers"],
       "@xenova/transformers/*": ["./node_modules/@xenova/transformers/*"]
     }
@@ -37,6 +39,7 @@
     "@OneCoreTypes.d.ts",
     "lama-electron-shadcn.ts",
     "mcp-server-standalone.ts",
+    "adapters/**/*.ts",
     "main/app.ts",
     "main/types/**/*.ts",
     "main/ipc/controller.ts",

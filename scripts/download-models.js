@@ -6,7 +6,7 @@
  * Models are placed in models/ directory for electron-builder to include.
  */
 
-import { pipeline, env } from '@xenova/transformers';
+import { pipeline, env } from '@huggingface/transformers';
 import { existsSync, mkdirSync, cpSync, readdirSync, statSync } from 'fs';
 import { join, basename } from 'path';
 import { homedir } from 'os';

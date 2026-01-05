@@ -42,11 +42,11 @@ export function createElectronDeviceAdapter(): DevicePlatformAdapter {
       })
     },
 
-    async createInvitation() {
+    async createInvitation(mode?: 'IoM' | 'IoP') {
       if (!window.electronAPI) {
         return { success: false, error: 'Electron API not available' }
       }
-      return await window.electronAPI.invoke('invitation:create')
+      return await window.electronAPI.invoke('invitation:create', mode || 'IoP')
     },
 
     async acceptInvitation(invitationUrl: string) {
@@ -96,6 +96,35 @@ export function createElectronDeviceAdapter(): DevicePlatformAdapter {
           window.electronAPI.off('quicvc:peerLost', callback)
         }
       }
+    },
+
+    // Discovery collection methods
+    async getCollectedPeers() {
+      if (!window.electronAPI) {
+        return { success: false }
+      }
+      return await window.electronAPI.invoke('discovery:getCollectedPeers')
+    },
+
+    async isDiscoveryActive() {
+      if (!window.electronAPI) {
+        return { success: false, active: false }
+      }
+      return await window.electronAPI.invoke('discovery:isCollectionActive')
+    },
+
+    async setDiscoveryActive(active: boolean) {
+      if (!window.electronAPI) {
+        return { success: false }
+      }
+      return await window.electronAPI.invoke('discovery:setCollectionActive', active)
+    },
+
+    async setCollectedPeerTrustLevel(peerId: string, trustLevel: TrustLevel) {
+      if (!window.electronAPI) {
+        return { success: false }
+      }
+      return await window.electronAPI.invoke('discovery:setCollectedPeerTrustLevel', { peerId, trustLevel })
     }
   }
 }

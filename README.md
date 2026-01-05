@@ -32,7 +32,6 @@ main/                          # Node.js Backend (SINGLE ONE.core instance)
 │       └── ... (50+ plan files)
 ├── plans/                     # Initialization plans
 │   ├── CoreInstanceInitializationPlan.ts
-│   ├── ModelInitializationPlan.ts
 │   └── MCPInitializationPlan.ts
 ├── services/                  # Background services
 ├── recipes/                   # ONE.core type definitions

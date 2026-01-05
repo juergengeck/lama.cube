@@ -8,7 +8,7 @@
 import { app } from 'electron';
 import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { pipeline, env } from '@xenova/transformers';
+import { pipeline, env } from '@huggingface/transformers';
 import type {
   LocalTextGenerationProvider,
   TextGenModelId,
@@ -111,7 +111,7 @@ export class ONNXTextGenerationProvider implements LocalTextGenerationProvider {
   onProgress?: (progress: ModelLoadProgress) => void;
   onError?: (error: Error) => void;
 
-  constructor(modelId: TextGenModelId = 'granite-3.3-2b-instruct') {
+  constructor(modelId: TextGenModelId = 'granite-4.0-350m') {
     this.modelId = modelId;
   }
 
@@ -156,10 +156,14 @@ export class ONNXTextGenerationProvider implements LocalTextGenerationProvider {
 
       this.onProgress?.({ stage: 'load', percent: 0 });
 
+      console.log(`[ONNXTextGenerationProvider] Loading pipeline for: ${modelInfo.huggingFaceRepo}`);
+
       // Load text generation pipeline
-      this.generator = await pipeline('text-generation', modelInfo.huggingFaceRepo, {
-        progress_callback: (progress: { status: string; progress?: number; loaded?: number; total?: number }) => {
-          if (progress.status === 'download') {
+      // Note: Type cast needed due to complex union types in transformers.js v3
+      this.generator = await (pipeline as any)('text-generation', modelInfo.huggingFaceRepo, {
+        progress_callback: (progress: { status: string; progress?: number; loaded?: number; total?: number; file?: string }) => {
+          console.log(`[ONNXTextGenerationProvider] Progress: ${progress.status} ${progress.progress?.toFixed(1) ?? ''}% ${progress.file ?? ''}`);
+          if (progress.status === 'download' || progress.status === 'progress') {
             this._status = 'downloading';
             this.onProgress?.({
               stage: 'download',
@@ -167,7 +171,7 @@ export class ONNXTextGenerationProvider implements LocalTextGenerationProvider {
               bytesLoaded: progress.loaded,
               bytesTotal: progress.total
             });
-          } else if (progress.status === 'ready') {
+          } else if (progress.status === 'ready' || progress.status === 'done') {
             this.onProgress?.({ stage: 'load', percent: 100 });
           }
         }

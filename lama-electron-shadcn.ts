@@ -24,9 +24,35 @@ import { loadConfig, type LamaConfig } from './main/config/lama-config.js';
 // Set app name
 app.setName('LAMA');
 
-// Allow multiple instances - each with proper cleanup
-// Different instances can use different user data directories for testing
-console.log('[Main] Starting new LAMA instance with PID:', process.pid);
+// Enable WebGPU in Web Workers for TTS acceleration
+app.commandLine.appendSwitch('enable-features', 'Vulkan,WebGPU,WebGPUService');
+app.commandLine.appendSwitch('enable-unsafe-webgpu');  // Allow WebGPU in Workers
+
+// Single instance lock - prevent multiple instances from running
+// This is critical for proper reset/relaunch behavior
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  console.log('[Main] Another instance is already running, quitting this one');
+  app.quit();
+  // Must use process.exit to stop execution immediately
+  // app.quit() is async and code below would still run
+  process.exit(0);
+}
+
+console.log('[Main] Starting LAMA instance with PID:', process.pid);
+
+// Handle second instance attempts - focus existing window
+app.on('second-instance', (event, commandLine, workingDirectory) => {
+  console.log('[Main] Second instance attempted, focusing existing window');
+  // Focus the main window if it exists
+  const windows = BrowserWindow.getAllWindows();
+  if (windows.length > 0) {
+    const mainWindow = windows[0];
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
 
 // Handle EPIPE errors gracefully (when renderer disconnects unexpectedly)
 process.on('uncaughtException', (error: any) => {
@@ -620,6 +646,10 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
     setTimeout(() => {
       console.log('[ClearData] Restarting application now...');
 
+      // Release single instance lock before relaunching
+      // This prevents the new instance from being blocked
+      app.releaseSingleInstanceLock();
+
       // Use app.relaunch() in both development and production
       // This properly restarts the Electron app
       app.relaunch();
@@ -634,6 +664,7 @@ async function clearAppDataShared(): Promise<{ success: boolean; message?: strin
 
     // Even on error, try to restart the app
     setTimeout(() => {
+      app.releaseSingleInstanceLock();
       app.relaunch();
       app.exit(0);
     }, 1000);

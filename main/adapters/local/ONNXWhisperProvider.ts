@@ -8,7 +8,7 @@
 import { app } from 'electron';
 import { existsSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { pipeline, env, type AutomaticSpeechRecognitionPipeline } from '@xenova/transformers';
+import { pipeline, env, type AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 import type {
   LocalWhisperProvider,
   ModelId,
@@ -108,7 +108,8 @@ export class ONNXWhisperProvider implements LocalWhisperProvider {
 
       this.onProgress?.({ stage: 'load', percent: 0 });
 
-      this.transcriber = await pipeline(
+      // Note: Type cast needed due to complex union types in transformers.js v3
+      this.transcriber = await (pipeline as any)(
         'automatic-speech-recognition',
         modelInfo.huggingFaceRepo,
         {
@@ -126,7 +127,7 @@ export class ONNXWhisperProvider implements LocalWhisperProvider {
             }
           }
         }
-      );
+      ) as AutomaticSpeechRecognitionPipeline;
 
       this._status = 'ready';
       this.onProgress?.({ stage: 'warmup', percent: 100 });

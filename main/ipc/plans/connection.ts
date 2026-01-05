@@ -1,24 +1,16 @@
 /**
  * Connection IPC Handlers (Thin Adapter)
  *
- * Maps Electron IPC calls to ConnectionPlan methods.
- * Business logic lives in @lama/connection.core
+ * Maps Electron IPC calls to ConnectionPlan from ConnectionModule.
+ * Business logic lives in @lama/connection.core via ModuleRegistry.
  * Platform-specific operations (fs, storage, events) handled here.
  */
 
-import fs from 'fs/promises';
-import path from 'path';
-import os from 'os';
-import { execSync } from 'child_process';
 import type { IpcMainInvokeEvent } from 'electron';
-import { ConnectionPlan, type TrustPlanDependencies, type PairingEventCallbacks } from '@lama/connection.core';
+import type { ConnectionPlan } from '@lama/connection.core';
 import nodeOneCore from '../../core/node-one-core.js';
-import { getAllEntries } from '@refinio/one.core/lib/reverse-map-query.js';
-import { getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
-import ProfileModel from '@refinio/one.models/lib/models/Leute/ProfileModel.js';
-
-// Singleton handler instance
-let connectionHandler: ConnectionPlan | null = null;
+import { getModuleRegistry } from '../../registry/module-registry-init.js';
+import type { ConnectionModule } from '@lama/core/modules';
 
 // Get web URL from global config
 function getWebUrl(): string | undefined {
@@ -26,189 +18,44 @@ function getWebUrl(): string | undefined {
 }
 
 /**
- * Platform-specific storage provider for Electron
+ * Get ConnectionPlan from ConnectionModule via ModuleRegistry
+ * ConnectionModule properly wires all dependencies (TopicGroupManager, TrustPlan, etc.)
  */
-const storageProvider = {
-  /**
-   * Get Node.js storage info using fs operations
-   */
-  async getNodeStorage() {
-    try {
-      // Use runtime configuration path (respects --storage CLI arg)
-      const dataPath = (global as any).lamaConfig?.instance.directory || path.join(process.cwd(), 'OneDB');
-
-      let totalSize = 0;
-      let availableSpace = 0;
-
-      // Get actual filesystem stats
-      try {
-        if (process.platform === 'darwin' || process.platform === 'linux') {
-          const dfOutput = execSync(`df -k "${process.cwd()}"`).toString();
-          const lines = dfOutput.trim().split('\n');
-          if (lines.length > 1) {
-            const parts = lines[1].split(/\s+/);
-            const availableBlocks = parseInt(parts[3]) * 1024;
-            availableSpace = availableBlocks;
-          }
-        } else if (process.platform === 'win32') {
-          const drive = path.parse(process.cwd()).root;
-          const wmicOutput = execSync(
-            `wmic logicaldisk where caption="${drive.replace(/\\/g, '')}" get size,freespace /value`
-          ).toString();
-          const freeMatch = wmicOutput.match(/FreeSpace=(\d+)/);
-          if (freeMatch) {
-            availableSpace = parseInt(freeMatch[1]);
-          }
-        }
-      } catch (e) {
-        console.error('[Connection] Failed to get disk stats:', e);
-        availableSpace = os.freemem();
-      }
-
-      // Calculate actual used space
-      try {
-        const files = await fs.readdir(dataPath, { recursive: true });
-        for (const file of files) {
-          try {
-            const filePath = path.join(dataPath, file as string);
-            const stat = await fs.stat(filePath);
-            if (stat.isFile()) {
-              totalSize += stat.size;
-            }
-          } catch (e) {
-            // Ignore individual file errors
-          }
-        }
-      } catch (e) {
-        totalSize = 0;
-      }
-
-      const totalCapacity = totalSize + availableSpace;
-      return {
-        used: totalSize,
-        total: totalCapacity,
-        percentage: totalCapacity > 0 ? Math.round((totalSize / totalCapacity) * 100) : 0
-      };
-    } catch (error) {
-      console.error('[Connection] Failed to get storage info:', error);
-      return {
-        used: 0,
-        total: 0,
-        percentage: 0
-      };
-    }
+function getConnectionPlan(): ConnectionPlan {
+  const registry = getModuleRegistry();
+  if (!registry) {
+    throw new Error('[Connection IPC] ModuleRegistry not initialized');
   }
-};
 
-/**
- * Get handler instance (creates on first use)
- */
-function getHandler(): ConnectionPlan {
-  if (!connectionHandler) {
-    const webUrl = getWebUrl();
-
-    // Prepare TrustPlan dependencies for automatic trust establishment
-    const trustDeps: TrustPlanDependencies = {
-      getAllEntries,
-      getObject,
-      ProfileModel,
-      leuteModel: nodeOneCore.leuteModel
-    };
-
-    // Prepare pairing event callbacks for platform-specific UI updates
-    const pairingCallbacks: PairingEventCallbacks = {
-      async onContactCreated(contact) {
-        console.log('[Connection IPC] Contact created:', contact.displayName);
-        // Update StateManager
-        const stateManager = (await import('../../state/manager.js')).default;
-        stateManager.addContact({
-          id: contact.personId,
-          name: contact.displayName,
-          personId: contact.personId,
-          someoneId: contact.someoneId
-        });
-
-        // Notify UI
-        const { BrowserWindow } = await import('electron');
-        const windows = BrowserWindow.getAllWindows();
-        windows.forEach(window => {
-          window.webContents.send('contacts:updated', {
-            contacts: Array.from(stateManager.getState().contacts.values())
-          });
-        });
-      },
-
-      async onTopicCreated(topic) {
-        console.log('[Connection IPC] Topic created:', topic.channelId);
-        // Update StateManager
-        const stateManager = (await import('../../state/manager.js')).default;
-        stateManager.addConversation({
-          id: topic.channelId,
-          name: 'New Conversation',  // Will be updated with contact name
-          type: topic.type,
-          participants: topic.participants,
-          lastMessage: null,
-          lastMessageTime: Date.now(),
-          unreadCount: 0
-        });
-
-        // Notify UI
-        const { BrowserWindow } = await import('electron');
-        const windows = BrowserWindow.getAllWindows();
-        windows.forEach(window => {
-          window.webContents.send('conversations:updated', {
-            conversations: Array.from(stateManager.getState().conversations.values())
-          });
-        });
-      },
-
-      async onPairingComplete(details) {
-        console.log('[Connection IPC] ✅ Pairing complete:', details.type);
-      }
-    };
-
-    // ConnectionPlan now automatically handles pairing via integrated callbacks
-    connectionHandler = new ConnectionPlan(
-      nodeOneCore,
-      storageProvider,
-      webUrl,
-      undefined, // No discovery config for Electron
-      trustDeps,  // Trust dependencies - enables automatic trust after pairing
-      pairingCallbacks  // Platform-specific UI updates
-    );
-
-    // Wire up mesh propagation support
-    if (nodeOneCore.topicGroupManager) {
-      connectionHandler.setTopicGroupManager(nodeOneCore.topicGroupManager);
-    }
-    if (nodeOneCore.paranoiaLevel !== undefined) {
-      connectionHandler.setParanoiaLevel(nodeOneCore.paranoiaLevel);
-    }
+  const connectionModule = registry.getModule<ConnectionModule>('ConnectionModule');
+  if (!connectionModule?.connectionPlan) {
+    throw new Error('[Connection IPC] ConnectionModule or ConnectionPlan not available');
   }
-  return connectionHandler;
+
+  return connectionModule.connectionPlan;
 }
 
 /**
  * Get current instances and their states
- * Delegates to one.models ConnectionsModel
+ * Delegates to ConnectionPlan from ConnectionModule
  */
 async function getInstances(event: IpcMainInvokeEvent) {
-  const handler = getHandler();
-  const result = await handler.getInstances({});
+  const connectionPlan = getConnectionPlan();
+  const result = await connectionPlan.getInstances({});
   return result.instances;
 }
 
 /**
  * Create a pairing invitation
- * Delegates to one.models ConnectionsModel.pairing
+ * Delegates to ConnectionPlan from ConnectionModule
  * Supports both IoM (device) and IoP (partner) modes
  */
 async function createPairingInvitation(event: IpcMainInvokeEvent, mode?: 'IoM' | 'IoP') {
   console.log('[Connection IPC] 📝 createPairingInvitation called, mode:', mode || 'IoP (default)');
-  const handler = getHandler();
+  const connectionPlan = getConnectionPlan();
   const webUrl = getWebUrl();
   console.log('[Connection IPC] webUrl:', webUrl);
-  const result = await handler.createPairingInvitation({ mode, webUrl });
+  const result = await connectionPlan.createPairingInvitation({ mode, webUrl });
   console.log('[Connection IPC] createPairingInvitation result:', {
     success: result.success,
     hasUrl: !!result.invitation?.url,
@@ -232,15 +79,15 @@ async function createPairingInvitation(event: IpcMainInvokeEvent, mode?: 'IoM' |
 
 /**
  * Accept a pairing invitation
- * Delegates to one.models ConnectionsModel.pairing
+ * Delegates to ConnectionPlan from ConnectionModule
  */
 async function acceptPairingInvitation(event: IpcMainInvokeEvent, invitationUrl: string) {
   console.log('[Connection IPC] 📥 acceptPairingInvitation called');
   console.log('[Connection IPC] invitationUrl length:', invitationUrl.length);
   console.log('[Connection IPC] invitationUrl prefix:', invitationUrl.substring(0, 80) + '...');
-  const handler = getHandler();
+  const connectionPlan = getConnectionPlan();
   try {
-    const result = await handler.acceptPairingInvitation({ invitationUrl });
+    const result = await connectionPlan.acceptPairingInvitation({ invitationUrl });
     console.log('[Connection IPC] acceptPairingInvitation result:', {
       success: result.success,
       message: result.message,
@@ -255,11 +102,11 @@ async function acceptPairingInvitation(event: IpcMainInvokeEvent, invitationUrl:
 
 /**
  * Get connection status
- * Delegates to one.models ConnectionsModel
+ * Delegates to ConnectionPlan from ConnectionModule
  */
 async function getConnectionStatus(event: IpcMainInvokeEvent) {
-  const handler = getHandler();
-  return await handler.getConnectionStatus({});
+  const connectionPlan = getConnectionPlan();
+  return await connectionPlan.getConnectionStatus({});
 }
 
 /**
@@ -351,4 +198,12 @@ export default {
   getDataStats,
   subscribeToEvents
 };
-export { connectionHandler as connectionPlan };
+
+// Export connectionPlan getter for other modules that need it
+export function getConnectionPlanFromModule(): ConnectionPlan | null {
+  try {
+    return getConnectionPlan();
+  } catch {
+    return null;
+  }
+}

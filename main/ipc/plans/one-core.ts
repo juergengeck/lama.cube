@@ -287,6 +287,16 @@ const oneCoreHandlers = {
   },
 
   /**
+   * Get user's current mood
+   */
+  async getMood(event: IpcMainInvokeEvent) {
+    const me = await nodeOneCore.leuteModel.me();
+    const personId = await me.mainIdentity();
+    const data = await getProfileService().getMood(personId);
+    return data;
+  },
+
+  /**
    * Update user's mood
    */
   async updateMood(event: IpcMainInvokeEvent, params: { mood: string }) {

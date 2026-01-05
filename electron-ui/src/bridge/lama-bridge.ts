@@ -32,6 +32,7 @@ export interface LamaAPI {
   setDefaultModel: (modelId: string) => Promise<boolean>
   switchAIModel: (aiPersonId: string, modelId: string) => Promise<boolean>
   getAIPersonForTopic: (topicId: string) => Promise<string | null>
+  setAISettings: (params: { topicId: string; aiPersonId: string; setting: 'analyse' | 'respond' | 'mute' | 'ignore'; enabled: boolean }) => Promise<{ success: boolean; error?: string }>
   enableAIForTopic: (topicId: string) => Promise<boolean>
   disableAIForTopic: (topicId: string) => Promise<boolean>
   getBestModelForTask: (task: 'coding' | 'reasoning' | 'chat' | 'analysis') => Promise<any>
@@ -252,11 +253,11 @@ class LamaBridge implements LamaAPI {
     })
     
     if (!result?.success || !result.messages) {
-      // console.error('[LamaBridge] Failed to get messages from Node')
+      console.error('[LamaBridge] Failed to get messages:', { success: result?.success, error: result?.error, hasMessages: !!result?.messages })
       return []
     }
 
-    // console.log(`[LamaBridge] Got ${result.messages.length} messages from Node via IPC`)
+    console.log(`[LamaBridge] Got ${result.messages.length} messages from Node via IPC for ${conversationId.substring(0, 20)}`)
     
     // Transform Node messages to our Message format
     return result.messages.map((msg: any) => ({
@@ -373,6 +374,18 @@ class LamaBridge implements LamaAPI {
       return result.aiPersonId || null
     }
     return null
+  }
+
+  async setAISettings(params: {
+    topicId: string;
+    aiPersonId: string;
+    setting: 'analyse' | 'respond' | 'mute' | 'ignore';
+    enabled: boolean;
+  }): Promise<{ success: boolean; error?: string }> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    return await window.electronAPI.invoke('ai:setAISettings', params)
   }
 
   async enableAIForTopic(topicId: string): Promise<boolean> {
@@ -602,6 +615,13 @@ class LamaBridge implements LamaAPI {
       throw new Error('IPC not available')
     }
     return await window.electronAPI.invoke('topicAnalysis:getKeywords', { topicId })
+  }
+
+  async getTopicHistory(topicId: string): Promise<{ success: boolean; data?: Array<{ hash: string; name: string; isCurrent: boolean }>; error?: string }> {
+    if (!window.electronAPI) {
+      throw new Error('IPC not available')
+    }
+    return await window.electronAPI.invoke('chat:getTopicHistory', { topicId })
   }
 
   async getKnowledgeGraph(): Promise<{ success: boolean; data?: { nodes: any[]; edges: any[] }; error?: string }> {

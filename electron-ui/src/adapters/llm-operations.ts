@@ -11,7 +11,7 @@ import type {
   LLMConfigOperations,
   AIOperations,
   ModelOption
-} from '@lama/core/ui/types/llm'
+} from '@ui/core'
 
 /**
  * Create LLM config operations adapter for Electron IPC
@@ -100,7 +100,7 @@ export function createLLMConfigOperations(): LLMConfigOperations {
       const response = await window.electronAPI.invoke('llm:setOllamaConfig', {
         modelType: params.modelType,
         modelName: params.modelName,
-        baseUrl: params.server,  // Map 'server' to 'baseUrl' for IPC
+        server: params.server,  // Pass server URL for remote Ollama
         authToken: params.authToken,
         setAsActive: params.setAsActive,
         apiKey: params.apiKey
@@ -120,8 +120,8 @@ export function createLLMConfigOperations(): LLMConfigOperations {
  */
 export function createAIOperations(): AIOperations {
   return {
-    async setDefaultModel(modelId: string) {
-      const success = await window.electronAPI.invoke('ai:setDefaultModel', { modelId })
+    async setDefaultModel(modelId: string, displayName?: string, email?: string) {
+      const success = await window.electronAPI.invoke('ai:setDefaultModel', { modelId, displayName, email })
       if (!success) {
         throw new Error('Failed to set default model')
       }
@@ -131,6 +131,21 @@ export function createAIOperations(): AIOperations {
       const result = await window.electronAPI.invoke('ai:getDefaultModel')
       // Handle wrapped response from IPC controller
       return result?.data !== undefined ? result.data : result
+    },
+
+    async generateAIName(modelId: string, provider?: string) {
+      const response = await window.electronAPI.invoke('ai:generateAIName', { modelId, provider })
+      if (response.success && response.data) {
+        return {
+          success: true,
+          name: response.data.name,
+          email: response.data.email
+        }
+      }
+      return {
+        success: false,
+        error: response.error || 'Failed to generate name'
+      }
     }
   }
 }
@@ -151,8 +166,8 @@ export const CLOUD_MODEL_OPTIONS: ModelOption[] = [
     provider: 'anthropic'
   },
   {
-    id: 'claude-opus-4-1',
-    name: 'Claude Opus 4.1',
+    id: 'claude-opus-4-5-20251101',
+    name: 'Claude Opus 4.5',
     size: 'Cloud',
     description: 'Highest capability. Best for agentic tasks and advanced reasoning.',
     requiresDownload: false,
@@ -246,4 +261,50 @@ export const CLOUD_MODEL_OPTIONS: ModelOption[] = [
     apiKey: true,
     provider: 'qwen'
   }
+]
+
+/**
+ * Local on-device models that can be downloaded
+ * These run entirely on your machine via ONNX (transformers.js)
+ *
+ * Model routing is handled by the LLM datatype with inferenceType: 'ondevice'
+ * (not by ID prefixes - the prefix hack was removed)
+ */
+export const LOCAL_MODEL_OPTIONS: ModelOption[] = [
+  {
+    id: 'granite-4.0-350m',
+    name: 'Granite 4.0 Nano',
+    size: '~700 MB',
+    description: 'Lightweight local model. Fast responses, runs on any hardware.',
+    requiresDownload: true,
+    apiKey: false,
+    provider: 'local'
+  },
+  {
+    id: 'granite-4.0-micro',
+    name: 'Granite 4.0 Micro',
+    size: '~3 GB',
+    description: 'More capable local model. Better quality, requires more RAM.',
+    requiresDownload: true,
+    apiKey: false,
+    provider: 'local'
+  },
+  {
+    id: 'phi-3.5-mini-instruct',
+    name: 'Phi 3.5 Mini',
+    size: '~2.5 GB',
+    description: 'Microsoft Phi model. Good for instruction following.',
+    requiresDownload: true,
+    apiKey: false,
+    provider: 'local'
+  }
+]
+
+/**
+ * Combined model options for onboarding
+ * Includes both cloud and local downloadable models
+ */
+export const ALL_MODEL_OPTIONS: ModelOption[] = [
+  ...LOCAL_MODEL_OPTIONS,
+  ...CLOUD_MODEL_OPTIONS
 ]

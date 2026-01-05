@@ -6,32 +6,39 @@ import type { ChannelManager } from '@refinio/one.models/lib/models/index.js';
 
 import { createAccess } from '@refinio/one.core/lib/access.js';
 import { SET_ACCESS_MODE } from '@refinio/one.core/lib/storage-base-common.js';
-import { calculateIdHashOfObj } from '@refinio/one.core/lib/util/object.js';
-import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
-import type { Person } from '@refinio/one.core/lib/recipes.js';
+import { storeUnversionedObject, getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
+import type { SHA256IdHash, SHA256Hash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { Person, HashGroup } from '@refinio/one.core/lib/recipes.js';
+
+/**
+ * Helper to get participantsHash for a set of person IDs
+ */
+async function getParticipantsHash(participants: SHA256IdHash<Person>[]): Promise<SHA256Hash<HashGroup<Person>>> {
+  const hashGroup: HashGroup<Person> = {
+    $type$: 'HashGroup',
+    person: new Set(participants)
+  };
+  const result = await storeUnversionedObject(hashGroup);
+  return result.hash;
+}
 
 /**
  * Grant a specific person access to a channel
+ * @param channelInfoIdHash - The channel info ID hash
+ * @param personId - The person to grant access to
  */
-export async function grantChannelAccessToPerson(channelId: string, channelOwner: SHA256IdHash<Person> | undefined, personId: SHA256IdHash<Person>): Promise<boolean> {
+export async function grantChannelAccessToPerson(channelInfoIdHash: SHA256IdHash<any>, personId: SHA256IdHash<Person>): Promise<boolean> {
   try {
-    console.log(`[ChannelAccess] Granting channel ${channelId} access to person ${personId?.substring(0, 8)}`)
-    
-    // Calculate the channel info hash
-    const channelInfoHash = await calculateIdHashOfObj({
-      $type$: 'ChannelInfo',
-      id: channelId,
-      owner: channelOwner
-    })
-    
+    console.log(`[ChannelAccess] Granting channel access to person ${personId?.substring(0, 8)}`)
+
     // Grant direct person-to-person access to ChannelInfo
     await createAccess([{
-      id: channelInfoHash,
+      id: channelInfoIdHash,
       person: [personId],
       group: [],
       mode: SET_ACCESS_MODE.ADD
     }])
-    
+
     console.log(`[ChannelAccess] ✅ ChannelInfo access granted to person ${personId?.substring(0, 8)}`)
     return true
   } catch (error) {
@@ -93,41 +100,32 @@ export async function grantMessageAccessToPerson(channelEntry: any, personId: SH
 /**
  * Grant mutual access between two persons for a channel
  * Used for federation between browser and Node instances
+ * @param channelInfoIdHash1 - Person 1's channel info ID hash
+ * @param channelInfoIdHash2 - Person 2's channel info ID hash
+ * @param person1Id - Person 1 ID
+ * @param person2Id - Person 2 ID
  */
-export async function grantMutualChannelAccess(channelId: string, person1Id: SHA256IdHash<Person>, person2Id: SHA256IdHash<Person>): Promise<boolean> {
+export async function grantMutualChannelAccess(channelInfoIdHash1: SHA256IdHash<any>, channelInfoIdHash2: SHA256IdHash<any>, person1Id: SHA256IdHash<Person>, person2Id: SHA256IdHash<Person>): Promise<boolean> {
   try {
-    console.log(`[ChannelAccess] Setting up mutual access for channel ${channelId}`)
+    console.log(`[ChannelAccess] Setting up mutual access for channels`)
     console.log(`[ChannelAccess] Between ${person1Id?.substring(0, 8)} and ${person2Id?.substring(0, 8)}`)
-    
-    // Create channel info hashes for both possible owners
-    const channelInfo1Hash = await calculateIdHashOfObj({
-      $type$: 'ChannelInfo',
-      id: channelId,
-      owner: person1Id
-    })
-    
-    const channelInfo2Hash = await calculateIdHashOfObj({
-      $type$: 'ChannelInfo',
-      id: channelId,
-      owner: person2Id
-    })
-    
+
     // Grant mutual access
     await createAccess([
       {
-        id: channelInfo1Hash,
+        id: channelInfoIdHash1,
         person: [person2Id], // Person 2 can access Person 1's channel
         group: [],
         mode: SET_ACCESS_MODE.ADD
       },
       {
-        id: channelInfo2Hash,
+        id: channelInfoIdHash2,
         person: [person1Id], // Person 1 can access Person 2's channel
         group: [],
         mode: SET_ACCESS_MODE.ADD
       }
     ])
-    
+
     console.log('[ChannelAccess] ✅ Mutual access established')
     return true
   } catch (error) {
@@ -139,22 +137,25 @@ export async function grantMutualChannelAccess(channelId: string, person1Id: SHA
 /**
  * Grant access to all channel entries for a person
  * This ensures they can read all messages in the channel
+ * @param channelManager - The channel manager
+ * @param participantsHash - The participants hash for the channel
+ * @param personId - The person to grant access to
  */
-export async function grantChannelEntryAccess(channelManager: any, channelId: string, personId: SHA256IdHash<Person>): Promise<boolean> {
+export async function grantChannelEntryAccess(channelManager: any, participantsHash: SHA256Hash<any>, personId: SHA256IdHash<Person>): Promise<boolean> {
   try {
     const channelInfos = await channelManager.getMatchingChannelInfos({
-      channelId: channelId
+      participants: participantsHash
     })
-    
+
     if (!channelInfos || channelInfos.length === 0) {
       console.log('[ChannelAccess] No channel infos found')
       return false
     }
-    
+
     for (const channelInfo of channelInfos) {
       if (channelInfo.obj?.data) {
         const accessRequests = []
-        
+
         for (const entry of channelInfo.obj.data) {
           if (entry.dataHash) {
             accessRequests.push({
@@ -165,14 +166,14 @@ export async function grantChannelEntryAccess(channelManager: any, channelId: st
             })
           }
         }
-        
+
         if (accessRequests.length > 0) {
           await createAccess(accessRequests)
           console.log(`[ChannelAccess] Granted access to ${accessRequests.length} channel entries`)
         }
       }
     }
-    
+
     return true
   } catch (error) {
     console.error('[ChannelAccess] Failed to grant entry access:', error)
@@ -188,54 +189,59 @@ export async function setupBrowserNodeChannelAccess(nodeOwnerId: SHA256IdHash<Pe
   try {
     console.log('[ChannelAccess] Setting up browser-node channel access')
     console.log(`[ChannelAccess] Node: ${nodeOwnerId?.substring(0, 8)}, Browser: ${browserPersonId?.substring(0, 8)}`)
-    
+
     // Get all existing channels
     const channelInfos = await channelManager.channels()
-    
+
     for (const channelInfo of channelInfos) {
-      const channelId = channelInfo.id
       const channelOwner = channelInfo.owner
-      
+      const channelInfoIdHash = channelInfo.channelInfoIdHash || channelInfo.idHash
+
       // Grant access to browser for all Node's channels
-      if (channelOwner === nodeOwnerId) {
-        await grantChannelAccessToPerson(channelId, channelOwner, browserPersonId)
+      if (channelOwner === nodeOwnerId && channelInfoIdHash) {
+        await grantChannelAccessToPerson(channelInfoIdHash, browserPersonId)
       }
     }
-    
+
     console.log(`[ChannelAccess] ✅ Processed ${channelInfos.length} channels`)
-    
-    // Specifically ensure "lama" channel has proper access
-    const lamaChannelInfos = await channelManager.getMatchingChannelInfos({
-      channelId: 'lama'
+
+    // Specifically ensure Node's app channel (personal channel) has proper access
+    const nodeParticipantsHash = await getParticipantsHash([nodeOwnerId])
+    const appChannelInfos = await channelManager.getMatchingChannelInfos({
+      participants: nodeParticipantsHash
     })
 
-    if (lamaChannelInfos.length > 0) {
-      console.log('[ChannelAccess] Found lama channel, ensuring access...')
-      for (const channelInfo of lamaChannelInfos) {
-        await grantChannelAccessToPerson('lama', channelInfo.owner, browserPersonId)
+    if (appChannelInfos.length > 0) {
+      console.log('[ChannelAccess] Found app data channel, ensuring access...')
+      for (const channelInfo of appChannelInfos) {
+        const channelInfoIdHash = channelInfo.channelInfoIdHash || channelInfo.idHash
+        if (channelInfoIdHash) {
+          await grantChannelAccessToPerson(channelInfoIdHash, browserPersonId)
+        }
       }
-      console.log('[ChannelAccess] ✅ LAMA channel access configured')
+      console.log('[ChannelAccess] ✅ App data channel access configured')
     }
-    
+
     // Note: Topic-specific channels are created by TopicGroupManager for each participant
     console.log('[ChannelAccess] Browser channels will be created per topic by TopicGroupManager')
-      
-      // Set up a listener for channel updates to trace CHUM sync
-      channelManager.onUpdated((channelInfoIdHash: any, channelId: any, owner: any, time: any, data: any) => {
-        if (owner === browserPersonId) {
-          console.log(`[ChannelAccess] 🔔 Node received update for browser's channel ${channelId}`)
-          console.log('[ChannelAccess] Owner:', owner?.substring(0, 8))
-          console.log('[ChannelAccess] Data items:', data?.length)
-          console.log('[ChannelAccess] Has messages:', data?.some((d: any) => d.$type$ === 'ChatMessage'))
-          
-          // Log the actual messages for debugging
-          const messages = data?.filter((d: any) => d.$type$ === 'ChatMessage')
-          messages?.forEach((msg: any, idx: any) => {
-            console.log(`[ChannelAccess] Message ${idx + 1}:`, msg.data?.text?.substring(0, 50))
-          })
-        }
-      })
-    
+
+    // Set up a listener for channel updates to trace CHUM sync
+    // New callback signature: (channelInfoIdHash, participantsHash, owner, time, data)
+    channelManager.onUpdated((channelInfoIdHash: any, participantsHash: any, owner: any, time: any, data: any) => {
+      if (owner === browserPersonId) {
+        console.log(`[ChannelAccess] 🔔 Node received update for browser's channel, participants: ${participantsHash?.substring(0, 8)}`)
+        console.log('[ChannelAccess] Owner:', owner?.substring(0, 8))
+        console.log('[ChannelAccess] Data items:', data?.length)
+        console.log('[ChannelAccess] Has messages:', data?.some((d: any) => d.$type$ === 'ChatMessage'))
+
+        // Log the actual messages for debugging
+        const messages = data?.filter((d: any) => d.$type$ === 'ChatMessage')
+        messages?.forEach((msg: any, idx: any) => {
+          console.log(`[ChannelAccess] Message ${idx + 1}:`, msg.data?.text?.substring(0, 50))
+        })
+      }
+    })
+
     return true
   } catch (error) {
     console.error('[ChannelAccess] Failed to setup browser-node access:', error)

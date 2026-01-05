@@ -456,54 +456,59 @@ class MCPManager {
   /**
    * Set NodeOneCore reference for memory tools
    * Called after ONE.core is initialized
+   * Returns a promise that resolves when tools are registered
    */
-  setNodeOneCore(nodeOneCore: any): void {
+  async setNodeOneCore(nodeOneCore: any): Promise<void> {
     this.nodeOneCore = nodeOneCore;
 
-    // Initialize memory tools
-    if (nodeOneCore) {
-      import('./mcp/memory-tools.js').then(({ MemoryTools }) => {
-        this.memoryTools = new MemoryTools(nodeOneCore);
+    if (!nodeOneCore) return;
 
-        // Register memory tool definitions
-        const toolDefs = this.memoryTools.getToolDefinitions();
-        for (const toolDef of toolDefs) {
-          this.tools.set(toolDef.name, {
-            name: toolDef.name,
-            fullName: toolDef.name,
-            description: toolDef.description,
-            inputSchema: toolDef.inputSchema,
-            server: 'memory' // Virtual server for memory tools
-          });
-        }
+    // Initialize memory tools SYNCHRONOUSLY (await the import)
+    try {
+      const { MemoryTools } = await import('./mcp/memory-tools.js');
+      this.memoryTools = new MemoryTools(nodeOneCore);
 
-        console.log(`[MCPManager] Registered ${toolDefs.length} memory tools`);
-      }).catch(err => {
-        console.error('[MCPManager] Failed to load memory tools:', err);
-      });
+      // Register memory tool definitions
+      const toolDefs = this.memoryTools.getToolDefinitions();
+      for (const toolDef of toolDefs) {
+        this.tools.set(toolDef.name, {
+          name: toolDef.name,
+          fullName: toolDef.name,
+          description: toolDef.description,
+          inputSchema: toolDef.inputSchema,
+          server: 'memory' // Virtual server for memory tools
+        });
+      }
 
-      // Initialize assembly tools
-      import('@mcp/core/tools/AssemblyTools').then(async ({ AssemblyTools }) => {
-        this.assemblyTools = new AssemblyTools(nodeOneCore);
-        await this.assemblyTools.init();
-
-        // Register assembly tool definitions
-        const toolDefs = this.assemblyTools.getToolDefinitions();
-        for (const toolDef of toolDefs) {
-          this.tools.set(toolDef.name, {
-            name: toolDef.name,
-            fullName: toolDef.name,
-            description: toolDef.description,
-            inputSchema: toolDef.inputSchema,
-            server: 'assembly' // Virtual server for assembly tools
-          });
-        }
-
-        console.log(`[MCPManager] Registered ${toolDefs.length} assembly tools`);
-      }).catch(err => {
-        console.error('[MCPManager] Failed to load assembly tools:', err);
-      });
+      console.log(`[MCPManager] Registered ${toolDefs.length} memory tools:`, Array.from(this.tools.keys()));
+    } catch (err) {
+      console.error('[MCPManager] Failed to load memory tools:', err);
     }
+
+    // Initialize assembly tools SYNCHRONOUSLY
+    try {
+      const { AssemblyTools } = await import('@mcp/core/tools/AssemblyTools');
+      this.assemblyTools = new AssemblyTools(nodeOneCore);
+      await this.assemblyTools.init();
+
+      // Register assembly tool definitions
+      const toolDefs = this.assemblyTools.getToolDefinitions();
+      for (const toolDef of toolDefs) {
+        this.tools.set(toolDef.name, {
+          name: toolDef.name,
+          fullName: toolDef.name,
+          description: toolDef.description,
+          inputSchema: toolDef.inputSchema,
+          server: 'assembly' // Virtual server for assembly tools
+        });
+      }
+
+      console.log(`[MCPManager] Registered ${toolDefs.length} assembly tools`);
+    } catch (err) {
+      console.error('[MCPManager] Failed to load assembly tools:', err);
+    }
+
+    console.log(`[MCPManager] Total tools registered: ${this.tools.size}`);
   }
 
   /**
@@ -632,17 +637,9 @@ class MCPManager {
   }
 
   getAvailableTools(): any {
-    // Filter out memory tools - memory should be automatic context, not explicit tools
-    // Memory tools (memory:search, memory:recent, memory:store) cause:
-    // 1. Multiple LLM calls (user message → tool call → follow-up)
-    // 2. Raw tool results shown to user instead of natural responses
-    // 3. Wasted tokens and latency
-    //
-    // Memory should be automatically included in system prompt BEFORE calling LLM
-    return Array.from(this.tools.values()).filter(tool =>
-      !tool.fullName.startsWith('memory:') &&
-      !tool.fullName.startsWith('subject:')
-    );
+    // Return ALL tools including memory and subject tools
+    // The model needs to know what tools are available to use them
+    return Array.from(this.tools.values());
   }
 
   /**

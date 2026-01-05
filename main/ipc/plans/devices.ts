@@ -8,6 +8,7 @@ const { ipcMain, app } = electron;
 import deviceManager from '../../core/device-manager.js';
 import nodeOneCore from '../../core/node-one-core.js';
 import oneCoreHandlers from './one-core.js';
+import { syncMonitor } from '../../services/sync-monitor.js';
 import type { IpcMainInvokeEvent } from 'electron';
 import fs from 'fs';
 import path from 'path';
@@ -324,6 +325,10 @@ function initializeDevicePlans() {
    */
   const getInstanceInfo = async (): Promise<IpcResponse> => {
     try {
+      // Get sync stats for traffic light visualization
+      const stats = syncMonitor.getStats()
+      const connections = syncMonitor.getConnections()
+
       // Comprehensive instance info that works for both use cases
       const instanceInfo = {
         success: true,
@@ -346,6 +351,10 @@ function initializeDevicePlans() {
           storage: nodeOneCore.getState('capabilities.storage'),
           llm: nodeOneCore.getState('capabilities.llm')
         },
+        // Sync stats for traffic light visualization
+        syncStats: stats,
+        // Per-peer connection stats
+        connections: connections,
         // Devices
         devices: deviceManager.getAllDevices(),
         // For legacy compatibility
@@ -356,11 +365,14 @@ function initializeDevicePlans() {
           platform: 'nodejs',
           role: 'hub',
           initialized: nodeOneCore.initialized,
+          hasPairing: !!nodeOneCore.connectionsModel?.pairing,
           capabilities: {
             network: nodeOneCore.getState('capabilities.network'),
             storage: nodeOneCore.getState('capabilities.storage'),
             llm: nodeOneCore.getState('capabilities.llm')
           },
+          syncStats: stats,
+          connections: connections,
           devices: deviceManager.getAllDevices()
         }
       }
@@ -368,7 +380,9 @@ function initializeDevicePlans() {
       console.log('[DeviceHandlers] Instance info:', JSON.stringify({
         initialized: instanceInfo.initialized,
         ownerId: instanceInfo.ownerId,
-        instanceName: instanceInfo.instanceName
+        instanceName: instanceInfo.instanceName,
+        hasPairing: instanceInfo.hasPairing,
+        instanceHasPairing: instanceInfo.instance?.hasPairing
       }, null, 2))
 
       return instanceInfo
@@ -384,6 +398,23 @@ function initializeDevicePlans() {
   // Register both handler names for compatibility
   ipcMain.handle('devices:getInstanceInfo', getInstanceInfo)
   ipcMain.handle('instance:info', getInstanceInfo)
+
+  /**
+   * Simulate sync activity for testing visualization
+   */
+  ipcMain.handle('devices:simulateSyncActivity', async (
+    event: IpcMainInvokeEvent,
+    { peerId, peerName }: { peerId?: string; peerName?: string }
+  ): Promise<IpcResponse> => {
+    try {
+      const id = peerId || 'test-peer-' + Date.now()
+      const name = peerName || 'Test Peer'
+      syncMonitor.simulateActivity(id, name)
+      return { success: true, message: `Simulated activity for ${name}` }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  })
 
   /**
    * Get trust levels for all instances

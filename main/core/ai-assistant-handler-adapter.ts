@@ -18,8 +18,25 @@ import { storeVersionedObject, getIdObject, getObjectByIdHash } from '@refinio/o
 import { storeUnversionedObject, getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
 import { createDefaultKeys, hasDefaultKeys } from '@refinio/one.core/lib/keychain/keychain.js';
 import { mcpManager } from '@mcp/core/local';
+import { MODELS, type ModelId } from '@local/core';
 import electron from 'electron';
 const { BrowserWindow } = electron;
+
+/**
+ * Lookup function for local on-device models
+ * Uses @local/core MODELS registry to get display name and provider info
+ */
+async function localModelLookup(modelId: string): Promise<{ displayName: string; provider: string } | null> {
+  // Try to find model in registry
+  const modelInfo = MODELS[modelId as ModelId];
+  if (modelInfo && modelInfo.type === 'text-generation') {
+    return {
+      displayName: modelInfo.familyName || modelInfo.name,
+      provider: 'local-onnx'
+    };
+  }
+  return null;
+}
 
 let handlerInstance: AIAssistantPlan | null = null;
 
@@ -35,14 +52,8 @@ export function createAIAssistantHandler(nodeOneCore: NodeOneCore, llmManager: a
 
   console.log('[AIAssistantAdapter] Creating new AIAssistantHandler...');
 
-  // Get main window for platform events
-  const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (!mainWindow) {
-    throw new Error('[AIAssistantAdapter] No main window available for platform events');
-  }
-
-  // Create Electron platform adapter
-  const platform = new ElectronLLMPlatform(mainWindow);
+  // Create Electron platform adapter with window getter
+  const platform = new ElectronLLMPlatform(() => BrowserWindow.getAllWindows()[0] || null);
 
   // Create settings persistence manager
   const settingsPersistence = new AISettingsManager(nodeOneCore);
@@ -62,8 +73,8 @@ export function createAIAssistantHandler(nodeOneCore: NodeOneCore, llmManager: a
     topicGroupManager: (nodeOneCore as any).topicGroupManager,
     assemblyManager: (nodeOneCore as any).assemblyManager,
     mcpManager: mcpManager, // For memory context in analysis
-    settingsPersistence: settingsPersistence,
-    aiSettingsManager: settingsPersistence, // Same instance for both interfaces
+    aiSettingsManager: settingsPersistence, // AISettingsManager for ONE.core storage
+    localModelLookup: localModelLookup, // For resolving local on-device model info
     storageDeps: {
       storeVersionedObject,
       // Wrap storeUnversionedObject to extract just the hash

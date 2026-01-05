@@ -48,11 +48,35 @@ const topicAnalysisHandlers = {
     }
   ) {
     ensureModelsInitialized();
-    return await topicAnalysisHandler.analyzeMessages({
+
+    // Diagnostic: Check if aiAssistantModel is available
+    const hasAIModel = !!nodeOneCoreInstance.aiAssistantModel;
+    console.log('[TopicAnalysisIPC] analyzeMessages called:', {
+      topicId: topicId?.substring(0, 16),
+      hasAIModel,
+      hasTopicAnalysisModel: !!topicAnalysisHandler['topicAnalysisModel'],
+      hasLLMManager: !!topicAnalysisHandler['llmManager'],
+      hasNodeOneCore: !!topicAnalysisHandler['nodeOneCore']
+    });
+
+    const result = await topicAnalysisHandler.analyzeMessages({
       topicId,
       messages,
       forceReanalysis
     });
+
+    // Log result for debugging
+    if (!result.success) {
+      console.error('[TopicAnalysisIPC] analyzeMessages FAILED:', result.error);
+    } else {
+      console.log('[TopicAnalysisIPC] analyzeMessages SUCCESS:', {
+        subjects: result.data?.subjects?.length || 0,
+        keywords: result.data?.keywords?.length || 0,
+        hasSummary: !!result.data?.summary
+      });
+    }
+
+    return result;
   },
 
   /**

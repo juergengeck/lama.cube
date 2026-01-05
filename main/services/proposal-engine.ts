@@ -45,11 +45,21 @@ export class ProposalEngine {
   private topicAnalysisModel: unknown;
   private channelManager: unknown;
   private memoryPlan?: unknown;  // Optional memory plan for direct memory access
+  private topicManager?: any;  // Optional AITopicManager for default topic checks
 
-  constructor(topicAnalysisModel: unknown, channelManager: unknown, memoryPlan?: unknown) {
+  constructor(topicAnalysisModel: unknown, channelManager: unknown, memoryPlan?: unknown, topicManager?: any) {
     this.topicAnalysisModel = topicAnalysisModel;
     this.channelManager = channelManager;
     this.memoryPlan = memoryPlan;
+    this.topicManager = topicManager;
+  }
+
+  /**
+   * Check if a topic is a memory topic (LAMA private space)
+   * Uses topicManager if available, falls back to false
+   */
+  private isMemoryTopic(topicId: string): boolean {
+    return this.topicManager?.isLamaTopic?.(topicId) ?? false;
   }
 
   /**
@@ -439,11 +449,11 @@ export class ProposalEngine {
           const subjects = (await (this.topicAnalysisModel as { getSubjects(topicId: string): Promise<CoreSubject[]> }).getSubjects(topicId));
           if (subjects && subjects.length > 0) {
             allSubjects.push(...subjects);
-            console.log(`[ProposalEngine] Found ${subjects.length} subjects in topic ${topicId}${topicId === 'lama' ? ' (MEMORY)' : ''}`);
+            console.log(`[ProposalEngine] Found ${subjects.length} subjects in topic ${topicId}${this.isMemoryTopic(topicId) ? ' (MEMORY)' : ''}`);
           }
         } catch (error) {
-          // Don't log error for "lama" topic if it has no subjects yet
-          if (topicId !== 'lama') {
+          // Don't log error for memory topic if it has no subjects yet
+          if (!this.isMemoryTopic(topicId)) {
             console.error(`[ProposalEngine] Error fetching subjects for topic ${topicId}:`, error);
           }
         }

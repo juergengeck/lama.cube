@@ -58,9 +58,9 @@ class NodeAccessRightsManager {
               await createAccess([{
                 id: ensureIdHash(channelInfoIdHash),
                 person: [],
-                group: this.getGroups('federation'), // ONLY federation
+                hashGroup: this.getGroups('federation'), // ONLY federation
                 mode: SET_ACCESS_MODE.ADD
-}])
+              }])
 
               console.log(`[NodeAccessRights] ✅ Federation-only access granted for private channel, participants: ${participantsHash?.substring(0, 8)}`)
             } catch (error) {
@@ -81,7 +81,7 @@ class NodeAccessRightsManager {
           await createAccess([{
             id: ensureIdHash(channelInfoIdHash),
             person: [],
-            group: this.getGroups('federation', 'replicant'), // NOT everyone
+            hashGroup: this.getGroups('federation', 'replicant'), // NOT everyone
             mode: SET_ACCESS_MODE.ADD
           }])
 
@@ -150,7 +150,7 @@ class NodeAccessRightsManager {
         const setAccessParam = {
           id: mainProfile.idHash,
           person: [],
-          group: this.getGroups('everyone', 'federation', 'replicant'),
+          hashGroup: this.getGroups('everyone', 'federation', 'replicant'),
           mode: SET_ACCESS_MODE.ADD
         }
         await createAccess([setAccessParam])
@@ -211,7 +211,7 @@ class NodeAccessRightsManager {
                 await createAccess([{
                   id: channelInfoIdHash,
                   person: [],
-                  group: this.getGroups('federation'), // ONLY federation, not everyone!
+                  hashGroup: this.getGroups('federation'), // ONLY federation, not everyone!
                   mode: SET_ACCESS_MODE.ADD
                 }])
               }
@@ -236,7 +236,7 @@ class NodeAccessRightsManager {
               await createAccess([{
                 id: channelInfoIdHash,
                 person: [],
-                group: this.getGroups('federation', 'replicant'),
+                hashGroup: this.getGroups('federation', 'replicant'),
                 mode: SET_ACCESS_MODE.ADD
               }])
             }
@@ -262,7 +262,7 @@ class NodeAccessRightsManager {
       await createAccess([{
         id: channelInfoIdHash,
         person: [],
-        group: this.getGroups('federation', 'replicant', 'everyone'),
+        hashGroup: this.getGroups('federation', 'replicant', 'everyone'),
         mode: SET_ACCESS_MODE.ADD
       }])
 

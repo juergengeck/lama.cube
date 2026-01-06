@@ -43,7 +43,7 @@ import {
 import { InstancePlan } from '@lama/core/plans/InstancePlan.js';
 import { ElectronLLMPlatform, createElectronLLMConfigAdapter } from '../../adapters/electron-llm-platform.js';
 import { UserSettingsManager } from '../core/user-settings-manager.js';
-import { FilterGate, ChumFilterAdapter, type EffectiveAccess } from '@filter/core';
+// FilterGate removed - ConnectionModule creates its own filters via TopicGroupManager
 import type { NodeOneCore } from '../types/one-core.js';
 import type { SHA256Hash, SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
 import type { Person } from '@refinio/one.core/lib/recipes.js';
@@ -55,94 +55,7 @@ let moduleRegistry: ModuleRegistry | null = null;
 let coreModuleInstance: CoreModule | null = null;
 let aiModuleInstance: AIModule | null = null;
 
-/**
- * Create FilterGate with ChumFilterAdapter for CHUM filtering
- * FilterGate runs in SHADOW MODE - logs decisions without affecting actual filtering
- * This allows observing what FilterGate WOULD decide with real certificate data
- */
-function createFilterGateFactories(): {
-  objectFilterFactory: (remotePersonId: SHA256IdHash<Person>) => (hash: SHA256Hash | SHA256IdHash, type: string) => Promise<boolean>;
-  importFilterFactory: (remotePersonId: SHA256IdHash<Person>) => (hash: SHA256Hash | SHA256IdHash, type: string) => Promise<boolean>;
-} {
-  // Create FilterGate in SHADOW MODE for parallel evaluation
-  const filterGate = new FilterGate({
-    getEffectiveAccess: async (subject: SHA256IdHash<Person>): Promise<EffectiveAccess | undefined> => {
-      // TODO: Replace with FilterModel.getEffectiveAccess once certificates are deployed
-      // For now, return a permissive default access that allows everything
-      // This lets us observe what FilterGate WOULD decide with real certificate data
-      return {
-        $type$: 'EffectiveAccess',
-        id: subject,
-        subject,
-        trustLevel: 'high', // Default to high trust in shadow mode
-        contextPermissions: JSON.stringify({ '*': ['read', 'write'] }),
-        delegationAllowed: true,
-        computedAt: Date.now(),
-        basedOn: '[]',
-        chainDepth: 0,
-        source: 'direct'
-      };
-    },
-    shadowMode: true // Enable shadow mode - log but don't enforce
-  });
-  console.log('[ModuleRegistryInit] FilterGate created in SHADOW MODE');
-
-  // Create ChumFilterAdapter wrapping FilterGate
-  const filterAdapter = new ChumFilterAdapter({
-    filterGate,
-    loadObject: async (hash: SHA256Hash | SHA256IdHash) => {
-      try {
-        const obj = await getObject(hash as SHA256Hash);
-        return obj as any;
-      } catch (error) {
-        return undefined;
-      }
-    },
-    logDecisions: true // Enable logging for shadow mode observation
-  });
-
-  // LEGACY: Filter factories are no longer needed here.
-  // ConnectionModule creates ConnectionsModel with proper TopicGroupManager filters.
-  // These permissive filters are kept only for FilterGate shadow mode observation.
-  const defaultObjectFilter = async (hash: any, type: string): Promise<boolean> => {
-    // Allow all - actual filtering is done by ConnectionModule's filters
-    return true;
-  };
-
-  const defaultImportFilter = async (hash: any, type: string): Promise<boolean> => {
-    // Allow all - actual filtering is done by ConnectionModule's filters
-    return true;
-  };
-
-  // Factory functions that create per-peer filters with FilterGate shadow evaluation
-  const objectFilterFactory = (remotePersonId: SHA256IdHash<Person>) => {
-    const filterGateFilter = filterAdapter.createExportFilter(remotePersonId);
-
-    return async (hash: SHA256Hash | SHA256IdHash, type: string): Promise<boolean> => {
-      // Run FilterGate in shadow mode (logs but doesn't affect decision)
-      filterGateFilter(hash, type).catch(err => {
-        console.log(`[FilterGate:Shadow] Error evaluating export for ${type}: ${err.message}`);
-      });
-
-      return defaultObjectFilter(hash, type);
-    };
-  };
-
-  const importFilterFactory = (remotePersonId: SHA256IdHash<Person>) => {
-    const filterGateFilter = filterAdapter.createImportFilter(remotePersonId);
-
-    return async (hash: SHA256Hash | SHA256IdHash, type: string): Promise<boolean> => {
-      // Run FilterGate in shadow mode (logs but doesn't affect decision)
-      filterGateFilter(hash, type).catch(err => {
-        console.log(`[FilterGate:Shadow] Error evaluating import for ${type}: ${err.message}`);
-      });
-
-      return defaultImportFilter(hash, type);
-    };
-  };
-
-  return { objectFilterFactory, importFilterFactory };
-}
+// FilterGate factories removed - ConnectionModule creates its own filters via TopicGroupManager
 
 // DISABLED: TTS moved to renderer process with WebGPU for better performance
 // Node.js ONNX runs on CPU only (~13s for 9s audio)
@@ -277,14 +190,6 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   //   console.warn('[ModuleRegistryInit] TTS pre-load failed (non-critical):', error);
   // });
 
-  // Create FilterGate-based filter factories for CHUM filtering (Electron-specific)
-  // These are supplied to CoreModule so it can use them when creating ConnectionsModel
-  console.log('[ModuleRegistryInit] Creating FilterGate-based CHUM filters...');
-  const { objectFilterFactory, importFilterFactory } = createFilterGateFactories();
-  moduleRegistry.supply('ObjectFilterFactory', objectFilterFactory);
-  moduleRegistry.supply('ImportFilterFactory', importFilterFactory);
-  console.log('[ModuleRegistryInit] ✅ FilterGate-based CHUM filters supplied');
-
   // Register CoreModule - THE single source of model creation
   // CoreModule also sets up the shared channel update listener (onTopicUpdated)
   console.log('[ModuleRegistryInit] Registering CoreModule...');
@@ -336,11 +241,11 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   console.log('[ModuleRegistryInit] ✅ All modules initialized successfully');
 
   // CRITICAL: Set nodeOneCore.topicGroupManager from ChatModule
-  // ChatModule creates TopicGroupManager but doesn't set it on nodeOneCore
+  // Note: ChatModule may or may not have topicGroupManager depending on architecture version
   // ChatPlan checks nodeOneCore.topicGroupManager for group chat creation
   const chatModule = moduleRegistry.getModule<ChatModule>('ChatModule');
-  if (chatModule?.topicGroupManager) {
-    (nodeOneCore as any).topicGroupManager = chatModule.topicGroupManager;
+  if ((chatModule as any)?.topicGroupManager) {
+    (nodeOneCore as any).topicGroupManager = (chatModule as any).topicGroupManager;
     console.log('[ModuleRegistryInit] ✅ TopicGroupManager set on nodeOneCore');
   } else {
     console.warn('[ModuleRegistryInit] ChatModule.topicGroupManager not available');

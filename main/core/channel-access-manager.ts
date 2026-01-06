@@ -35,7 +35,7 @@ export async function grantChannelAccessToPerson(channelInfoIdHash: SHA256IdHash
     await createAccess([{
       id: channelInfoIdHash,
       person: [personId],
-      group: [],
+      hashGroup: [],
       mode: SET_ACCESS_MODE.ADD
     }])
 
@@ -60,27 +60,27 @@ export async function grantMessageAccessToPerson(channelEntry: any, personId: SH
       accessGrants.push({
         id: channelEntry.channelEntryHash,
         person: [personId],
-        group: [],
+        hashGroup: [],
         mode: SET_ACCESS_MODE.ADD
       })
     }
-    
+
     // Grant access to the message data
     if (channelEntry.dataHash) {
       accessGrants.push({
         id: channelEntry.dataHash,
         person: [personId],
-        group: [],
+        hashGroup: [],
         mode: SET_ACCESS_MODE.ADD
       })
     }
-    
+
     // Grant access to the creation time
     if (channelEntry.creationTimeHash) {
       accessGrants.push({
         id: channelEntry.creationTimeHash,
         person: [personId],
-        group: [],
+        hashGroup: [],
         mode: SET_ACCESS_MODE.ADD
       })
     }
@@ -115,13 +115,13 @@ export async function grantMutualChannelAccess(channelInfoIdHash1: SHA256IdHash<
       {
         id: channelInfoIdHash1,
         person: [person2Id], // Person 2 can access Person 1's channel
-        group: [],
+        hashGroup: [],
         mode: SET_ACCESS_MODE.ADD
       },
       {
         id: channelInfoIdHash2,
         person: [person1Id], // Person 1 can access Person 2's channel
-        group: [],
+        hashGroup: [],
         mode: SET_ACCESS_MODE.ADD
       }
     ])
@@ -161,7 +161,7 @@ export async function grantChannelEntryAccess(channelManager: any, participantsH
             accessRequests.push({
               object: entry.dataHash,
               person: [personId],
-              group: [],
+              hashGroup: [],
               mode: SET_ACCESS_MODE.ADD
             })
           }

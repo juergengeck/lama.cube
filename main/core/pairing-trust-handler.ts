@@ -179,7 +179,7 @@ export async function shareMainProfileWithPeer(leuteModel: any, remotePersonId: 
     const setAccessParam = {
       id: mainProfile.idHash,
       person: [remotePersonId], // Grant access to this specific person
-      group: [], // No group access needed for P2P
+      hashGroup: [], // No group access needed for P2P
       mode: SET_ACCESS_MODE.ADD
     }
 

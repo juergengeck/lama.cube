@@ -23,7 +23,7 @@ async function grantAccessRights(nodeOneCore: any, targetPersonId: any): Promise
     await createAccess([{
       id: leuteId,
       person: [targetPersonId],
-      group: [],
+      hashGroup: [],
       mode: SET_ACCESS_MODE.ADD
     }])
     
@@ -42,7 +42,7 @@ async function grantAccessRights(nodeOneCore: any, targetPersonId: any): Promise
         await createAccess([{
           id: someone.idHash,
           person: [targetPersonId],
-          group: [],
+          hashGroup: [],
           mode: SET_ACCESS_MODE.ADD
         }])
       }
@@ -70,7 +70,7 @@ async function grantAccessRights(nodeOneCore: any, targetPersonId: any): Promise
         await createAccess([{
           id: channelId,
           person: [targetPersonId],
-          group: [],
+          hashGroup: [],
           mode: SET_ACCESS_MODE.ADD
         }])
       }
@@ -91,7 +91,7 @@ async function grantAccessRights(nodeOneCore: any, targetPersonId: any): Promise
         await createAccess([{
           id: mainProfile.idHash,
           person: [targetPersonId],
-          group: [],
+          hashGroup: [],
           mode: SET_ACCESS_MODE.ADD
         }])
         console.log('[GrantAccess] ✅ Granted access to main Profile object')

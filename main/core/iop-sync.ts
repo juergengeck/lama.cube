@@ -82,7 +82,7 @@ class IoPSyncManager {
     await createAccess([{
       id: leuteId,
       person: [remotePersonId],
-      group: [],
+      hashGroup: [],
       mode: SET_ACCESS_MODE.ADD
     }])
     
@@ -115,7 +115,7 @@ class IoPSyncManager {
         await createAccess([{
           id: channelInfoId,
           person: [remotePersonId],
-          group: [],
+          hashGroup: [],
           mode: SET_ACCESS_MODE.ADD
         }])
         
@@ -149,7 +149,7 @@ class IoPSyncManager {
         await createAccess([{
           id: someone.idHash,
           person: [remotePersonId],
-          group: [],
+          hashGroup: [],
           mode: SET_ACCESS_MODE.ADD
         }])
         
@@ -190,7 +190,7 @@ class IoPSyncManager {
           await createAccess([{
             id: channelInfoId,
             person: [this.browserPersonId as any],
-            group: [],
+            hashGroup: [],
             mode: SET_ACCESS_MODE.ADD
           }])
         }
@@ -210,7 +210,7 @@ class IoPSyncManager {
           await createAccess([{
             id: someoneId,
             person: [this.browserPersonId as any],
-            group: [],
+            hashGroup: [],
             mode: SET_ACCESS_MODE.ADD
           }])
         }

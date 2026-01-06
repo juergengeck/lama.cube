@@ -276,7 +276,7 @@ class NodeOneCore implements INodeOneCore {
         await createAccess([{
           id: mainProfile.idHash,
           person: [remotePersonId],
-          group: [],
+          hashGroup: [],
           mode: SET_ACCESS_MODE.ADD
         }])
         console.log('[NodeOneCore] ✅ Granted access to our main profile')
@@ -297,7 +297,7 @@ class NodeOneCore implements INodeOneCore {
       await createAccess([{
         id: channelResult.channelInfoIdHash,
         person: [remotePersonId],
-        group: [],
+        hashGroup: [],
         mode: SET_ACCESS_MODE.ADD
       }])
 

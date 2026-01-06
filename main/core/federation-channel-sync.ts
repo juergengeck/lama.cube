@@ -35,7 +35,7 @@ export async function grantFederationAccessToChannel(channelInfoIdHash: any, fed
     await createAccess([{
       id: channelInfoIdHash,
       person: [],
-      group: federationGroupIds,
+      hashGroup: federationGroupIds,
       mode: SET_ACCESS_MODE.ADD
     }])
 

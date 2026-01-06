@@ -95,7 +95,7 @@ class ContentSharingManager {
           await createAccess([{
             id: someone.idHash,
             person: [this.browserPersonId],
-            group: [],
+            hashGroup: [],
             mode: SET_ACCESS_MODE.ADD
           }])
           
@@ -107,7 +107,7 @@ class ContentSharingManager {
             await createAccess([{
               id: profile.idHash,
               person: [this.browserPersonId],
-              group: [],
+              hashGroup: [],
               mode: SET_ACCESS_MODE.ADD
             }])
           }
@@ -153,7 +153,7 @@ class ContentSharingManager {
           await createAccess([{
             id: channelInfoId,
             person: [this.browserPersonId],
-            group: [],
+            hashGroup: [],
             mode: SET_ACCESS_MODE.ADD
           }])
 
@@ -200,7 +200,7 @@ class ContentSharingManager {
           await createAccess([{
             id: someoneId,
             person: [this.browserPersonId],
-            group: [],
+            hashGroup: [],
             mode: SET_ACCESS_MODE.ADD
           }])
         }
@@ -235,7 +235,7 @@ class ContentSharingManager {
           await createAccess([{
             id: channelInfoId,
             person: [this.browserPersonId],
-            group: [],
+            hashGroup: [],
             mode: SET_ACCESS_MODE.ADD
           }])
         }

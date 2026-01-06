@@ -5,13 +5,11 @@
 
 import type { IpcMainInvokeEvent } from 'electron';
 import { ChatPlan } from '@chat/core/plans/ChatPlan.js';
-import { GroupPlan } from '@chat/core/plans/GroupPlan.js';
 import stateManager from '../../state/manager.js';
 import nodeProvisioning from '../../services/node-provisioning.js';
 import nodeOneCore from '../../core/node-one-core.js';
 import { MessageVersionManager } from '../../core/message-versioning.js';
 import { MessageAssertionManager } from '../../core/message-assertion-certificates.js';
-import { getModuleRegistry } from '../../registry/module-registry-init.js';
 import localModelsPlans from './local-models.js';
 import electron from 'electron';
 const { BrowserWindow } = electron;
@@ -22,13 +20,11 @@ let messageVersionManager: MessageVersionManager | null = null;
 // Message assertion manager instance
 let messageAssertionManager: MessageAssertionManager | null = null;
 
-// GroupPlan instance (for Story/Assembly tracking)
-let groupPlan: GroupPlan | null = null;
-
 // Initialize ChatPlan with dependencies
-const chatPlan = new ChatPlan(nodeOneCore, stateManager, messageVersionManager, messageAssertionManager, groupPlan);
+// Note: ChatPlan auto-creates GroupPlan using nodeOneCore.topicModel when available
+const chatPlan = new ChatPlan(nodeOneCore, stateManager, messageVersionManager, messageAssertionManager);
 
-// Initialize message managers and GroupPlan when they become available
+// Initialize message managers when they become available
 async function initializeMessageManagers() {
   if (!messageVersionManager && nodeOneCore.channelManager) {
     messageVersionManager = new MessageVersionManager(nodeOneCore.channelManager);
@@ -39,35 +35,8 @@ async function initializeMessageManagers() {
   if (messageVersionManager && messageAssertionManager) {
     chatPlan.setMessageManagers(messageVersionManager, messageAssertionManager);
   }
-
-  // Initialize GroupPlan when TopicGroupManager is available
-  if (!groupPlan && nodeOneCore.topicGroupManager) {
-    console.log('[Chat IPC] Initializing GroupPlan with TopicGroupManager and StoryFactory');
-
-    // Get the shared StoryFactory from ModuleRegistry
-    // This StoryFactory has AssemblyListener attached for Assembly creation
-    const registry = getModuleRegistry();
-    if (!registry) {
-      console.warn('[Chat IPC] ModuleRegistry not yet initialized, deferring GroupPlan creation');
-      return;
-    }
-
-    // Get JournalModule which provides StoryFactory
-    const journalModule = (registry as any).modules?.find((m: any) => m.name === 'JournalModule');
-    const storyFactory = journalModule?.storyFactory;
-
-    if (!storyFactory) {
-      console.warn('[Chat IPC] StoryFactory not yet initialized, deferring GroupPlan creation');
-      return;
-    }
-
-    console.log('[Chat IPC] ✅ Using shared StoryFactory from ModuleRegistry');
-
-    groupPlan = new GroupPlan(nodeOneCore.topicGroupManager);
-
-    chatPlan.setGroupPlan(groupPlan);
-    console.log('[Chat IPC] ✅ GroupPlan initialized with shared StoryFactory and injected into ChatPlan');
-  }
+  // Note: GroupPlan is now auto-created by ChatPlan using TopicModel
+  // No manual initialization needed
 }
 
 // IPC parameter interfaces
@@ -247,8 +216,39 @@ const chatPlans = {
       }
     }
 
-    // Create conversation via chat.core (generic operation)
-    const response = await chatPlan.createConversation({ type, participants, name });
+    // Use createGroupConversation for group chats (proper Group/HashGroup structure)
+    // Use createConversation for direct chats
+    let response: any;
+    if (type === 'group' && participants.length > 0) {
+      // Group chat: use new createGroupConversation API with proper access control
+      const groupName = name || `Group ${Date.now()}`;
+      try {
+        const topic = await chatPlan.createGroupConversation(groupName, participants as any);
+        // Extract topic ID from the topic object
+        const { calculateIdHashOfObj } = await import('@refinio/one.core/lib/util/object.js');
+        const topicIdHash = await calculateIdHashOfObj(topic);
+        response = {
+          success: true,
+          data: {
+            id: topic.id || topicIdHash,
+            name: topic.name || groupName,
+            type: 'group',
+            participants,
+            topicIdHash: String(topicIdHash)
+          }
+        };
+        console.log(`[Chat IPC] Created group conversation via createGroupConversation: ${response.data.id}`);
+      } catch (error) {
+        console.error('[Chat IPC] createGroupConversation failed:', error);
+        return {
+          success: false,
+          error: `Failed to create group conversation: ${(error as Error).message}`
+        };
+      }
+    } else {
+      // Direct chat: use existing createConversation API
+      response = await chatPlan.createConversation({ type, participants, name });
+    }
 
     console.error(`[Chat IPC] createConversation response:`, JSON.stringify(response, null, 2));
 

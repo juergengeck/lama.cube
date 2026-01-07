@@ -15,6 +15,7 @@ import nodeOneCore from '../../core/node-one-core.js';
 import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
 import { storeUnversionedObject, getObject as getUnversionedObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
 import { getObjectByIdHash } from '@refinio/one.core/lib/storage-versioned-objects.js';
+import { getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
 import { calculateIdHashOfObj } from '@refinio/one.core/lib/util/object.js';
 
 // Singleton handler instance
@@ -46,6 +47,7 @@ function getHandler(): GroupChatPlan {
       storeVersionedObject,
       storeUnversionedObject,
       getObjectByIdHash,
+      getObjectByHash: getObject,
       calculateIdHashOfObj,
 
       // Access control

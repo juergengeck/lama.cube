@@ -50,24 +50,27 @@ class NodeProvisioning {
   async provision(provisioningData: any): Promise<any> {
     console.log('[NodeProvisioning] Received provisioning request')
 
-    // Check if Node is already initialized - skip ONE.core init but run full module setup
-    const nodeInfo = nodeOneCore.getInfo()
-    const skipOneCoreInit = nodeInfo.initialized && nodeInfo.ownerId
+    // If already fully provisioned, return success immediately
+    if (this.provisioned) {
+      const nodeInfo = nodeOneCore.getInfo()
+      console.log('[NodeProvisioning] Already provisioned, returning existing state')
+      return {
+        success: true,
+        nodeId: nodeInfo.ownerId,
+        alreadyProvisioned: true
+      }
+    }
 
-    if (skipOneCoreInit) {
-      console.log('[NodeProvisioning] Node already initialized, skipping ONE.core init')
+    // If we're already provisioning, don't start another one
+    if (this.isProvisioning) {
+      console.log('[NodeProvisioning] Already provisioning, ignoring duplicate request')
+      throw new Error('Provisioning already in progress')
     }
 
     try {
       // Simple validation - just need username and password
       if (!provisioningData?.user?.name || !provisioningData?.user?.password) {
         throw new Error('Username and password required for provisioning')
-      }
-
-      // If we're already provisioning, don't start another one
-      if (this.isProvisioning) {
-        console.log('[NodeProvisioning] Already provisioning, ignoring duplicate request')
-        throw new Error('Provisioning already in progress')
       }
 
       this.isProvisioning = true;
@@ -82,7 +85,11 @@ class NodeProvisioning {
         email: this.user.email || `${this.user.name}@lama.local`
       })
       console.log('[NodeProvisioning] Updated state manager with user:', this.user.name)
-      
+
+      // Check if ONE.core is already initialized (skip init if so)
+      const nodeInfo = nodeOneCore.getInfo()
+      const skipOneCoreInit = nodeInfo.initialized && nodeInfo.ownerId
+
       // Initialize Node instance with provisioned identity
       await this.initializeNodeInstance(provisioningData, skipOneCoreInit)
       

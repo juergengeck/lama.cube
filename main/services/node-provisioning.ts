@@ -50,8 +50,9 @@ class NodeProvisioning {
   async provision(provisioningData: any): Promise<any> {
     console.log('[NodeProvisioning] Received provisioning request')
 
-    // If already fully provisioned, return success immediately
-    if (this.provisioned) {
+    // If already fully provisioned AND nodeOneCore is initialized, return success
+    // IMPORTANT: Check both - this.provisioned might be stale after logout/reset
+    if (this.provisioned && nodeOneCore.initialized) {
       const nodeInfo = nodeOneCore.getInfo()
       console.log('[NodeProvisioning] Already provisioned, returning existing state')
       return {
@@ -59,6 +60,13 @@ class NodeProvisioning {
         nodeId: nodeInfo.ownerId,
         alreadyProvisioned: true
       }
+    }
+
+    // Reset provisioned flag if nodeOneCore is not initialized
+    // This handles the case where user logged out and nodeOneCore was shutdown
+    if (this.provisioned && !nodeOneCore.initialized) {
+      console.log('[NodeProvisioning] Resetting stale provisioned flag (nodeOneCore was reset)')
+      this.provisioned = false
     }
 
     // If we're already provisioning, don't start another one

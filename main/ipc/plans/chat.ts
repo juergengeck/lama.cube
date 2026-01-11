@@ -4,6 +4,8 @@
  */
 
 import type { IpcMainInvokeEvent } from 'electron';
+import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { Topic } from '@refinio/one.models/lib/recipes/ChatRecipes.js';
 import { ChatPlan } from '@chat/core/plans/ChatPlan.js';
 import stateManager from '../../state/manager.js';
 import nodeProvisioning from '../../services/node-provisioning.js';
@@ -135,29 +137,28 @@ const chatPlans = {
   async sendMessage(event: IpcMainInvokeEvent, { conversationId, text, attachments = [] }: SendMessageParams): Promise<IpcResponse> {
     console.log(`[Chat] 📨 sendMessage called: conversationId="${conversationId}", text="${text.substring(0, 50)}..."`);
 
-    // Start message persistence (don't await yet - let AI start in parallel)
-    const savePromise = chatPlan.sendMessage({
+    // CRITICAL: Save message FIRST to ensure channel is in consistent state
+    // This fixes race condition where AI processing reads incomplete channel data
+    // The latency tradeoff is acceptable - correctness > speed
+    const response = await chatPlan.sendMessage({
       conversationId,
       content: text,  // Map 'text' to 'content'
       attachments
     });
+    console.log(`[Chat] 📤 Message saved successfully: ${response.success}`);
 
-    // Trigger AI response immediately if this is an AI topic
-    // This runs in parallel with message persistence for lower latency
+    // Trigger AI response AFTER message is saved
+    // Channel is now in consistent state for buildPrompt to read
     if (nodeOneCore.aiAssistantModel?.isAITopic(conversationId)) {
       const senderId = nodeOneCore.ownerId;
       if (senderId) {
-        console.log(`[Chat] 🤖 AI topic detected - triggering AI response in parallel`);
-        // Fire and forget - don't await, let it run alongside persistence
+        console.log(`[Chat] 🤖 AI topic detected - triggering AI response`);
+        // Fire and forget - don't await, but channel is ready
         nodeOneCore.aiAssistantModel.processMessage(conversationId, text, senderId).catch(err => {
           console.error(`[Chat] ❌ AI processing error:`, err);
         });
       }
     }
-
-    // Now await persistence
-    const response = await savePromise;
-    console.log(`[Chat] 📤 Message sent successfully: ${response.success}`);
 
     return {
       success: response.success,
@@ -230,8 +231,8 @@ const chatPlans = {
         response = {
           success: true,
           data: {
-            id: topic.id || topicIdHash,
-            name: topic.name || groupName,
+            id: topicIdHash,
+            name: topic.displayName ?? topic.originalName ?? groupName,
             type: 'group',
             participants,
             topicIdHash: String(topicIdHash)
@@ -267,6 +268,7 @@ const chatPlans = {
       try {
         await nodeOneCore.aiAssistantModel.registerAITopic(response.data.id, detectedAIPersonId);
         console.error(`[Chat IPC] ✅ Registered AI topic: ${response.data.id} with AI Person: ${detectedAIPersonId.substring(0, 8)} (model: ${detectedAIModelId})`);
+
       } catch (error) {
         console.error('[Chat IPC] Failed to register AI topic:', error);
         // Non-fatal: conversation was created successfully
@@ -580,12 +582,9 @@ const chatPlans = {
 
       console.log('[Chat IPC] getTopicHistory called with topicId:', topicId);
 
-      // Get topic idHash from registry
-      const topicIdHash = await nodeOneCore.topicModel.topics.queryIdHashById(topicId);
-      console.log('[Chat IPC] topicIdHash from registry:', topicIdHash);
-      if (!topicIdHash) {
-        return { success: true, data: [] }; // No idHash = no history
-      }
+      // topicId IS the idHash (stored as string but is actually SHA256IdHash)
+      const topicIdHash = topicId as SHA256IdHash<Topic>;
+      console.log('[Chat IPC] topicIdHash:', topicIdHash);
 
       // Get all versions using ONE.core
       const { getVersionsHashes } = await import('@refinio/one.core/lib/storage-versioned-objects.js');

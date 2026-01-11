@@ -10,6 +10,8 @@
  */
 
 import type { IpcMainInvokeEvent } from 'electron';
+import type { SHA256Hash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { HashGroup, Person } from '@refinio/one.core/lib/recipes.js';
 import { GroupChatPlan, type GroupChatPlanDependencies } from '@lama/connection.core';
 import nodeOneCore from '../../core/node-one-core.js';
 import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
@@ -70,30 +72,31 @@ function getHandler(): GroupChatPlan {
       },
 
       // Channel manager for group chat channels
-      // Note: Adapts old (channelId, owner) signature to new participants-based API
       channelManager: {
         getOrCreateChannel: async (channelId: string, owner: any) => {
-          // Import helper for creating participantsHash
           const { storeUnversionedObject } = await import('@refinio/one.core/lib/storage-unversioned-objects.js');
 
-          // Determine participants from channelId pattern
-          // For P2P channels (id1<->id2), extract both person IDs
-          // For other channels, use [owner] as participants
+          // P2P channels have null owner
+          // Owned channels have owner set
+          let participantsHash: any;
           let participants: any[];
-          if (channelId.includes('<->')) {
-            const [id1, id2] = channelId.split('<->');
-            participants = id1 < id2 ? [id1, id2] : [id2, id1];
-          } else {
-            // Single owner channel (each participant has their own)
-            participants = [owner];
-          }
 
-          const hashGroup = {
-            $type$: 'HashGroup' as const,
-            person: new Set(participants)
-          };
-          const result = await storeUnversionedObject(hashGroup);
-          const participantsHash = result.hash;
+          if (!owner) {
+            // P2P channel - channelId is participantsHash (HashGroup hash)
+            participantsHash = channelId;
+            // Get participants directly from the HashGroup
+            const hashGroup = await getObject(channelId as SHA256Hash<HashGroup<Person>>);
+            participants = hashGroup?.person ? Array.from(hashGroup.person) : [];
+          } else {
+            // Owned channel
+            participants = [owner];
+            const hashGroup = {
+              $type$: 'HashGroup' as const,
+              person: new Set(participants)
+            };
+            const result = await storeUnversionedObject(hashGroup);
+            participantsHash = result.hash;
+          }
 
           // Get existing channels by participants
           const existingChannels = await nodeOneCore.channelManager.getMatchingChannelInfos({

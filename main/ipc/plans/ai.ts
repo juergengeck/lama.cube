@@ -7,6 +7,8 @@
 
 import nodeOneCore from '../../core/node-one-core.js';
 import llmManager from '../../services/llm-manager-singleton.js';
+import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { Topic } from '@refinio/one.models/lib/recipes/ChatRecipes.js';
 import { mcpManager } from '@mcp/core/local';
 import type { IpcMainInvokeEvent } from 'electron';
 import electron from 'electron';
@@ -518,6 +520,23 @@ const aiPlans = {
   },
 
   /**
+   * Get the default AI Person ID
+   * Used by UI to add AI to topics via chat:addParticipants
+   */
+  async getDefaultAIPersonId(event: IpcMainInvokeEvent) {
+    try {
+      const handler = getAIHandler();
+      const aiPersonId = handler.getDefaultAIPersonId?.();
+      if (!aiPersonId) {
+        return { success: false, error: 'No default AI Person configured' };
+      }
+      return { success: true, aiPersonId };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
    * Switch the model for an AI Person
    */
   async switchAIModel(
@@ -659,8 +678,8 @@ const aiPlans = {
         return { success: false, error: 'TopicModel not initialized' };
       }
 
-      // Find the topic
-      const topic = await topicModel.findTopic(topicId);
+      // Find the topic (topicId is stored as string but is actually SHA256IdHash)
+      const topic = await topicModel.findTopic(topicId as SHA256IdHash<Topic>);
       if (!topic) {
         return { success: false, error: `Topic not found: ${topicId}` };
       }
@@ -689,12 +708,14 @@ const aiPlans = {
       topic.aiParticipants.set(aiPersonId as any, aiSettings);
 
       // Store updated topic as new version using storeVersionedObject
+      // Topic identity is (participants, originalName) - use correct property names
       const { storeVersionedObject } = await import('@refinio/one.core/lib/storage-versioned-objects.js');
       await storeVersionedObject({
         $type$: 'Topic',
-        id: topic.id,
+        participants: topic.participants,
+        originalName: topic.originalName,
         channel: topic.channel,
-        name: topic.name,
+        displayName: topic.displayName,
         aiParticipants: topic.aiParticipants
       });
 

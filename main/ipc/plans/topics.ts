@@ -104,13 +104,11 @@ export async function getOrCreateTopicForContact(
       };
     }
 
-    // For non-AI P2P contacts, create proper P2P topic ID in format: personId1<->personId2
-    // Get local person ID
+    // For non-AI P2P contacts, create P2P topic using TopicModel
     const localPersonId = myPersonId;
 
-    // Also get the remote Person ID for CHUM sync and permissions
-    // Someone objects don't have .personId - must use mainIdentity()
-    let remotePersonId: string | null = null;
+    // Get the remote Person ID
+    let remotePersonId: any = null;
     if (nodeInstance.leuteModel) {
       const others = await nodeInstance.leuteModel.others();
       const contact = others.find((c: any) => c.id === contactId);
@@ -124,47 +122,15 @@ export async function getOrCreateTopicForContact(
       throw new Error(`Could not find Person ID for contact ${contactId.substring(0, 8)}`);
     }
 
-    // Create P2P topic ID (lexicographically sorted)
-    const p2pTopicId = localPersonId < remotePersonId
-      ? `${localPersonId}<->${remotePersonId}`
-      : `${remotePersonId}<->${localPersonId}`;
+    // Create P2P topic using TopicModel - this handles "create if not exists" logic
+    // createOneToOneTopic returns the Topic object (existing or newly created)
+    const p2pTopic = await nodeInstance.topicModel.createOneToOneTopic(localPersonId, remotePersonId);
 
-    console.log('[Topics IPC] P2P topic ID:', p2pTopicId);
-    console.log('[Topics IPC]   Local person:', localPersonId?.substring(0, 8));
-    console.log('[Topics IPC]   Remote person:', remotePersonId?.substring(0, 8));
+    // Compute the topic idHash to return as identifier
+    const { calculateIdHashOfObj } = await import('@refinio/one.core/lib/util/object.js');
+    const p2pTopicId = await calculateIdHashOfObj(p2pTopic);
 
-    // Ensure P2P topic and channels exist
-    if (nodeInstance.topicModel) {
-      try {
-        // Try to find existing topic by channel ID (legacy P2P format)
-        const allTopics = await nodeInstance.topicModel.topics.all();
-        const existingTopic = allTopics.find((t: any) => {
-          // Check for legacy P2P format in the channel
-          const channelId = `${t.owner}:${t.name}`;
-          return channelId === p2pTopicId || t.name === `p2p:${remotePersonId}`;
-        });
-
-        if (existingTopic) {
-          console.log('[Topics IPC] P2P topic already exists');
-        } else {
-          throw new Error('Topic not found');
-        }
-      } catch (error) {
-        // Topic doesn't exist, create it via ChatPlan (eating our own dogfood)
-        console.log('[Topics IPC] Creating new P2P topic via ChatPlan...');
-        const { chatPlans } = await import('./chat.js');
-        const result = await chatPlans.createP2PConversation(event, {
-          localPersonId,
-          remotePersonId
-        });
-
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to create P2P conversation');
-        }
-
-        console.log('[Topics IPC] ✅ P2P topic created via ChatPlan:', result.topicId);
-      }
-    }
+    console.log('[Topics IPC] P2P topic ready:', String(p2pTopicId).substring(0, 16));
 
     return {
       success: true,

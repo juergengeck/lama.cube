@@ -59,6 +59,7 @@ import type { AnyObjectResult } from '@refinio/one.models/lib/misc/ObjectEventDi
 // PropertyTree type import (if needed will be handled differently)
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
 import type { Person } from '@refinio/one.core/lib/recipes.js';
+import type { Topic } from '@refinio/one.models/lib/recipes/ChatRecipes.js';
 
 // Get __dirname equivalent in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -306,8 +307,299 @@ class NodeOneCore implements INodeOneCore {
       console.warn('[NodeOneCore] Failed to grant P2P channel access:', (error as Error).message)
     }
 
+    // 3. Grant access to AI channels (for AI conversation sync)
+    try {
+      if (this.aiAssistantModel) {
+        // Get all AI topics from AITopicManager
+        const aiTopicMap = this.aiAssistantModel.topicAIMap
+        if (aiTopicMap && aiTopicMap.size > 0) {
+          console.log(`[NodeOneCore] Granting access to ${aiTopicMap.size} AI topics...`)
+
+          for (const [topicId, _aiPersonId] of aiTopicMap) {
+            // Find the topic to get its channel
+            const topic = await this.topicModel?.findTopic(topicId as SHA256IdHash<Topic>)
+            if (topic?.channel) {
+              await createAccess([{
+                id: topic.channel,
+                person: [remotePersonId],
+                hashGroup: [],
+                mode: SET_ACCESS_MODE.ADD
+              }])
+              console.log(`[NodeOneCore] ✅ Granted AI channel access for topic: ${topicId.substring(0, 16)}`)
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[NodeOneCore] Failed to grant AI channel access:', (error as Error).message)
+    }
+
     // Mark this peer as having been granted access
     this.grantedAccessPeers.add(remotePersonId)
+  }
+
+  /**
+   * Grant AI access to all existing contacts
+   * Grants access to: AI Person, AI Profile, AI Someone, AI channels
+   * Called after AI initialization to ensure existing peers can sync AI conversations
+   */
+  async grantAIChannelAccessToAllPeers(): Promise<void> {
+    if (!this.leuteModel || !this.aiAssistantModel) {
+      console.log('[NodeOneCore] Cannot grant AI access - leuteModel or aiAssistantModel not available')
+      return
+    }
+
+    const { createAccess } = await import('@refinio/one.core/lib/access.js')
+    const { SET_ACCESS_MODE } = await import('@refinio/one.core/lib/storage-base-common.js')
+
+    try {
+      const others = await this.leuteModel.others()
+      if (!others || others.length === 0) {
+        console.log('[NodeOneCore] No contacts to grant AI access to')
+        return
+      }
+
+      // Collect all AI topic IDs and person IDs using AIAssistantPlan methods
+      const aiPersonIds = new Set<string>()
+      const aiTopicIds: string[] = []
+
+      // Use getAllAITopicIds() if available
+      if (this.aiAssistantModel.getAllAITopicIds) {
+        const topicIds = this.aiAssistantModel.getAllAITopicIds()
+        for (const topicId of topicIds) {
+          aiTopicIds.push(topicId)
+          // Get AI person for this topic
+          const aiPersonId = this.aiAssistantModel.getAIPersonForTopic?.(topicId)
+          if (aiPersonId) aiPersonIds.add(aiPersonId)
+        }
+      }
+
+      // Fallback: try topicAIMap via getTopicManager
+      if (aiTopicIds.length === 0 && this.aiAssistantModel.getTopicManager) {
+        const topicManager = this.aiAssistantModel.getTopicManager()
+        const topicAIMap = topicManager?.topicAIMap
+        if (topicAIMap) {
+          for (const [topicId, aiPersonId] of topicAIMap) {
+            aiTopicIds.push(topicId)
+            aiPersonIds.add(aiPersonId)
+          }
+        }
+      }
+
+      // Also get AI contacts from getAllContacts if available
+      if (this.aiAssistantModel.getAllContacts) {
+        const aiContacts = this.aiAssistantModel.getAllContacts()
+        for (const contact of aiContacts) {
+          if (contact.personId) aiPersonIds.add(contact.personId)
+        }
+      }
+
+      if (aiPersonIds.size === 0) {
+        console.log('[NodeOneCore] No AI persons to grant access to')
+        return
+      }
+
+      console.log(`[NodeOneCore] Granting AI access to ${others.length} contacts for ${aiPersonIds.size} AI persons...`)
+
+      for (const someone of others) {
+        const targetPersonId = await someone.mainIdentity()
+        if (!targetPersonId) continue
+
+        // 1. Grant access to each AI Person object
+        for (const aiPersonId of aiPersonIds) {
+          try {
+            // Grant access to AI Person
+            await createAccess([{
+              id: aiPersonId as any,
+              person: [targetPersonId],
+              hashGroup: [],
+              mode: SET_ACCESS_MODE.ADD
+            }])
+
+            // Find and grant access to AI Someone and AI Profile objects
+            const allOthers = await this.leuteModel.others()
+            for (const other of allOthers) {
+              const otherId = await other.mainIdentity()
+              if (otherId === aiPersonId && other.idHash) {
+                // Grant access to AI Someone
+                await createAccess([{
+                  id: other.idHash,
+                  person: [targetPersonId],
+                  hashGroup: [],
+                  mode: SET_ACCESS_MODE.ADD
+                }])
+
+                // Grant access to AI Profile (CRITICAL: enables "Lumi" name to sync)
+                try {
+                  const aiProfile = await other.mainProfile()
+                  if (aiProfile?.idHash) {
+                    await createAccess([{
+                      id: aiProfile.idHash,
+                      person: [targetPersonId],
+                      hashGroup: [],
+                      mode: SET_ACCESS_MODE.ADD
+                    }])
+                    console.log(`[NodeOneCore] ✅ Granted AI Profile access: ${aiProfile.idHash.toString().substring(0, 8)}`)
+                  }
+                } catch (profileError) {
+                  console.warn(`[NodeOneCore] Could not grant AI Profile access:`, (profileError as Error).message)
+                }
+              }
+            }
+          } catch (e) {
+            // Ignore errors for individual AI person
+          }
+        }
+
+        // 2. Grant access to AI channels
+        for (const topicId of aiTopicIds) {
+          try {
+            const topic = await this.topicModel?.findTopic(topicId as SHA256IdHash<Topic>)
+            if (topic?.channel) {
+              await createAccess([{
+                id: topic.channel,
+                person: [targetPersonId],
+                hashGroup: [],
+                mode: SET_ACCESS_MODE.ADD
+              }])
+              console.log(`[NodeOneCore] ✅ Granted channel access for topic: ${topicId.substring(0, 20)}`)
+            }
+          } catch (e) {
+            // Ignore errors for individual topic
+          }
+        }
+      }
+
+      console.log('[NodeOneCore] ✅ AI access granted to all contacts')
+    } catch (error) {
+      console.warn('[NodeOneCore] Failed to grant AI access to all peers:', (error as Error).message)
+    }
+  }
+
+  /**
+   * Grant AI access to a single peer (called when new contact pairs)
+   * Grants access to: AI Person, AI Profile, AI Someone, AI channels
+   * @param targetPersonId The person ID of the newly paired contact
+   */
+  async grantAIAccessToPeer(targetPersonId: SHA256IdHash<Person>): Promise<void> {
+    if (!this.leuteModel || !this.aiAssistantModel) {
+      console.log('[NodeOneCore] Cannot grant AI access - leuteModel or aiAssistantModel not available')
+      return
+    }
+
+    const { createAccess } = await import('@refinio/one.core/lib/access.js')
+    const { SET_ACCESS_MODE } = await import('@refinio/one.core/lib/storage-base-common.js')
+
+    try {
+      // Collect all AI person IDs
+      const aiPersonIds = new Set<string>()
+      const aiTopicIds: string[] = []
+
+      // Use getAllAITopicIds() if available
+      if (this.aiAssistantModel.getAllAITopicIds) {
+        const topicIds = this.aiAssistantModel.getAllAITopicIds()
+        for (const topicId of topicIds) {
+          aiTopicIds.push(topicId)
+          const aiPersonId = this.aiAssistantModel.getAIPersonForTopic?.(topicId)
+          if (aiPersonId) aiPersonIds.add(aiPersonId)
+        }
+      }
+
+      // Fallback: try topicAIMap via getTopicManager
+      if (aiTopicIds.length === 0 && this.aiAssistantModel.getTopicManager) {
+        const topicManager = this.aiAssistantModel.getTopicManager()
+        const topicAIMap = topicManager?.topicAIMap
+        if (topicAIMap) {
+          for (const [topicId, aiPersonId] of topicAIMap) {
+            aiTopicIds.push(topicId)
+            aiPersonIds.add(aiPersonId)
+          }
+        }
+      }
+
+      // Also get AI contacts from getAllContacts if available
+      if (this.aiAssistantModel.getAllContacts) {
+        const aiContacts = this.aiAssistantModel.getAllContacts()
+        for (const contact of aiContacts) {
+          if (contact.personId) aiPersonIds.add(contact.personId)
+        }
+      }
+
+      if (aiPersonIds.size === 0) {
+        console.log('[NodeOneCore] No AI persons to grant access to new peer')
+        return
+      }
+
+      console.log(`[NodeOneCore] Granting AI access to new peer ${String(targetPersonId).substring(0, 8)} for ${aiPersonIds.size} AI persons...`)
+
+      // 1. Grant access to each AI Person, Profile, and Someone
+      for (const aiPersonId of aiPersonIds) {
+        try {
+          // Grant access to AI Person
+          await createAccess([{
+            id: aiPersonId as any,
+            person: [targetPersonId],
+            hashGroup: [],
+            mode: SET_ACCESS_MODE.ADD
+          }])
+
+          // Find and grant access to AI Someone and AI Profile
+          const allOthers = await this.leuteModel.others()
+          for (const other of allOthers) {
+            const otherId = await other.mainIdentity()
+            if (otherId === aiPersonId && other.idHash) {
+              // Grant access to AI Someone
+              await createAccess([{
+                id: other.idHash,
+                person: [targetPersonId],
+                hashGroup: [],
+                mode: SET_ACCESS_MODE.ADD
+              }])
+
+              // Grant access to AI Profile
+              try {
+                const aiProfile = await other.mainProfile()
+                if (aiProfile?.idHash) {
+                  await createAccess([{
+                    id: aiProfile.idHash,
+                    person: [targetPersonId],
+                    hashGroup: [],
+                    mode: SET_ACCESS_MODE.ADD
+                  }])
+                  console.log(`[NodeOneCore] ✅ Granted AI Profile access to new peer: ${aiProfile.idHash.toString().substring(0, 8)}`)
+                }
+              } catch (profileError) {
+                console.warn(`[NodeOneCore] Could not grant AI Profile access:`, (profileError as Error).message)
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore errors for individual AI person
+        }
+      }
+
+      // 2. Grant access to AI channels
+      for (const topicId of aiTopicIds) {
+        try {
+          const topic = await this.topicModel?.findTopic(topicId as SHA256IdHash<Topic>)
+          if (topic?.channel) {
+            await createAccess([{
+              id: topic.channel,
+              person: [targetPersonId],
+              hashGroup: [],
+              mode: SET_ACCESS_MODE.ADD
+            }])
+            console.log(`[NodeOneCore] ✅ Granted AI channel access to new peer for topic: ${topicId.substring(0, 20)}`)
+          }
+        } catch (e) {
+          // Ignore errors for individual topic
+        }
+      }
+
+      console.log(`[NodeOneCore] ✅ AI access granted to new peer ${String(targetPersonId).substring(0, 8)}`)
+    } catch (error) {
+      console.warn('[NodeOneCore] Failed to grant AI access to peer:', (error as Error).message)
+    }
   }
 
 
@@ -452,180 +744,10 @@ class NodeOneCore implements INodeOneCore {
         })
       }
 
-      // Handle successful pairing - create Someone and Profile
-      this.connectionsModel.pairing.onPairingSuccess(async (initiatedLocally: any, localPersonId: any, localInstanceId: any, remotePersonId: any, remoteInstanceId: any, token: any) => {
-        console.log('[NodeOneCore] ✅ PAIRING SUCCESS EVENT TRIGGERED')
-        console.log('[NodeOneCore] ═══════════════════════════════════════════')
-        console.log('[NodeOneCore] 📊 Pairing Details:')
-        console.log('[NodeOneCore]   • Initiated locally:', initiatedLocally)
-        console.log('[NodeOneCore]   • Local person:', localPersonId?.substring(0, 8) || 'null')
-        console.log('[NodeOneCore]   • Local instance:', localInstanceId?.substring(0, 8) || 'null')
-        console.log('[NodeOneCore]   • Remote person:', remotePersonId?.substring(0, 8) || 'null')
-        console.log('[NodeOneCore]   • Remote instance:', remoteInstanceId?.substring(0, 8) || 'null')
-        console.log('[NodeOneCore] ═══════════════════════════════════════════')
-        console.log('[NodeOneCore] 🔧 Starting remote contact setup...')
-
-        // CRITICAL: Establish trust first (like one.leute does)
-        if (remotePersonId && this.leuteModel) {
-          try {
-            // Step 1: Trust establishment (must come first)
-            console.log('[NodeOneCore] 🔐 Step 1: Establishing trust with remote peer...')
-            const { completePairingTrust } = await import('./pairing-trust-handler.js')
-
-            // Get CAPlan for device certificate issuance with journal visibility
-            const caPlan = await this.getCAPlan()
-
-            const trustResult = await completePairingTrust({
-              trust: this.leuteModel.trust,
-              leuteModel: this.leuteModel,
-              initiatedLocally,
-              localPersonId,
-              localInstanceId,
-              remotePersonId,
-              remoteInstanceId,
-              token,
-              caPlan
-            })
-
-            if (trustResult.success) {
-              console.log('[NodeOneCore] ✅ Trust established successfully!')
-            } else {
-              console.warn('[NodeOneCore] ⚠️ Trust establishment had issues:', trustResult)
-            }
-
-            // Step 2: Create address book entry
-            console.log('[NodeOneCore] 📁 Step 2: Creating address book entry...')
-
-            // Use the proper contact creation helper that uses ONE.models APIs
-            const { handleNewConnection } = await import('./contact-creation-proper.js')
-
-            const someone = await handleNewConnection(remotePersonId, this.leuteModel)
-            console.log('[NodeOneCore] ✅ Address book entry created successfully!')
-            console.log('[NodeOneCore]   • Someone ID:', someone?.idHash?.toString()?.substring(0, 8) || 'null')
-
-            // Step 3: Detect invitation type and create appropriate topic
-            console.log('[NodeOneCore] 💬 Step 3: Handling pairing completion...')
-            const { handlePairingCompletion } = await import('@lama/connection.core')
-
-            const pairingResult = await handlePairingCompletion({
-              leuteModel: this.leuteModel,
-              topicModel: this.topicModel,
-              channelManager: this.channelManager,
-              localPersonId,
-              remotePersonId,
-              initiatedLocally
-            })
-
-            // Check pairing result
-            if (!pairingResult) {
-              throw new Error('Pairing failed - no result returned')
-            }
-
-            console.log('[NodeOneCore] ✅ Pairing complete - type:', pairingResult.type)
-            console.log('[NodeOneCore]   Channel:', pairingResult.channelId.substring(0, 20))
-
-            const topicRoom = pairingResult.topicRoom
-
-            // Log the profile info
-            if (someone?.mainProfile) {
-              try {
-                const profile = typeof someone.mainProfile === 'function' ?
-                  await someone.mainProfile() : someone.mainProfile
-                console.log('[NodeOneCore]   • Profile ID:', profile?.idHash?.toString()?.substring(0, 8) || 'null')
-              } catch (e: any) {
-                console.log('[NodeOneCore]   • Profile info not available')
-              }
-            }
-
-            // Grant access to our profile
-            console.log('[NodeOneCore] 🔓 Granting mutual access permissions...')
-            await this.grantPeerAccess(remotePersonId, 'pairing')
-            console.log('[NodeOneCore] ✅ Access permissions granted')
-
-            // Step 4: Add contact and conversation to StateManager for UI
-            console.log('[NodeOneCore] 📲 Step 4: Adding to StateManager and notifying UI...')
-            try {
-              const { default: stateManager } = await import('../state/manager.js')
-              const { BrowserWindow } = await import('electron')
-
-              // Get profile info for display
-              let displayName = 'Unknown Contact'
-              if (someone?.mainProfile) {
-                try {
-                  const profile = typeof someone.mainProfile === 'function' ?
-                    await someone.mainProfile() : someone.mainProfile
-
-                  // Extract name from PersonDescriptions
-                  const personName = profile.personDescriptions?.find((d: any) => d.$type$ === 'PersonName')
-                  if (personName?.name) {
-                    displayName = personName.name
-                  }
-                } catch (e: any) {
-                  console.log('[NodeOneCore]   • Could not get profile name')
-                }
-              }
-
-              // Add contact to state
-              const contactId = remotePersonId
-              stateManager.addContact({
-                id: contactId,
-                name: displayName,
-                personId: remotePersonId,
-                someoneId: someone?.idHash
-              })
-              console.log('[NodeOneCore]   • Contact added to state:', contactId.substring(0, 8))
-
-              // Create P2P conversation ID
-              const p2pId = localPersonId < remotePersonId ?
-                `${localPersonId}<->${remotePersonId}` :
-                `${remotePersonId}<->${localPersonId}`
-
-              // Add conversation to state with detected type
-              stateManager.addConversation({
-                id: pairingResult.channelId,
-                name: displayName,
-                type: pairingResult.type,
-                participants: [localPersonId, remotePersonId],
-                lastMessage: null,
-                lastMessageTime: Date.now(),
-                unreadCount: 0
-              })
-              console.log('[NodeOneCore]   • Conversation added to state:', pairingResult.channelId.substring(0, 20))
-              console.log('[NodeOneCore]   • Conversation type:', pairingResult.type)
-
-              // Notify UI
-              const windows = BrowserWindow.getAllWindows()
-              windows.forEach(window => {
-                window.webContents.send('contacts:updated', {
-                  contacts: Array.from(stateManager.getState().contacts.values())
-                })
-                window.webContents.send('conversations:updated', {
-                  conversations: Array.from(stateManager.getState().conversations.values())
-                })
-              })
-              console.log('[NodeOneCore]   • UI notified of updates')
-
-            } catch (error) {
-              console.error('[NodeOneCore] ❌ Failed to update StateManager:', error)
-            }
-
-            console.log('[NodeOneCore] ═══════════════════════════════════════════')
-            console.log('[NodeOneCore] 🎉 PAIRING COMPLETE - Remote contact is ready!')
-
-          } catch (error) {
-            console.error('[NodeOneCore] ❌ Failed to create address book entry:', error)
-            console.error('[NodeOneCore]    Error stack:', (error as Error).stack)
-          }
-        } else {
-          console.log('[NodeOneCore] ⚠️ Cannot create contact:', {
-            hasRemotePersonId: !!remotePersonId,
-            hasLeuteModel: !!this.leuteModel
-          })
-        }
-
-        // ConnectionsModel will handle the transition to CHUM automatically
-      })
-      console.log('[NodeOneCore] ✅ Pairing callbacks registered')
+      // NOTE: Successful pairing is handled by ConnectionModule via registerPairingHandler()
+      // ConnectionModule fires events (onContactsChanged, onTopicsChanged, onConnectionsChanged)
+      // which trigger UI updates via setupConnectionModuleListeners() in module-registry-init.ts
+      console.log('[NodeOneCore] ✅ Pairing failure callback registered (success handled by ConnectionModule)')
     } else {
       console.log('[NodeOneCore] ⚠️  Pairing module not available')
     }
@@ -677,6 +799,23 @@ class NodeOneCore implements INodeOneCore {
       console.log('[NodeOneCore] ✅ LLMObjectManager assigned from AIModule')
     }
 
+    // CRITICAL: Verify aiAssistantModel was set by AIModule.init()
+    // AIModule.init() sets oneCore.aiAssistantModel at line 389
+    // If not set, AI IPC handlers will fail with "AI Assistant Handler not initialized"
+    if (!this.aiAssistantModel) {
+      throw new Error('[NodeOneCore] CRITICAL: aiAssistantModel not set after ModuleRegistry init - AIModule.init() may have failed')
+    }
+    console.log('[NodeOneCore] ✅ aiAssistantModel verified')
+
+    // Get TopicAnalysisModel from AnalysisModule
+    // CRITICAL: AnalysisModule creates TopicAnalysisModel and supplies it to AIModule
+    // We MUST use the same instance so AIModule's deps.topicAnalysisModel matches nodeOneCore's
+    const analysisModule = registry?.getModule('AnalysisModule') as any
+    if (analysisModule?.topicAnalysisModel) {
+      this.topicAnalysisModel = analysisModule.topicAnalysisModel
+      console.log('[NodeOneCore] ✅ TopicAnalysisModel assigned from AnalysisModule')
+    }
+
     // TTS/STT object managers are created here (Electron-specific)
     await this.initializeTTSObjectManager(onProgress)
     await this.initializeSTTObjectManager(onProgress)
@@ -697,11 +836,13 @@ class NodeOneCore implements INodeOneCore {
     this.contentSharing = new ContentSharingManager(this)
     console.log('[NodeOneCore] ✅ Content Sharing Manager initialized')
 
-    // Initialize Topic Analysis Model
+    // Initialize Topic Analysis Model (FALLBACK only if AnalysisModule didn't provide it)
+    // Normally AnalysisModule creates and supplies TopicAnalysisModel - see lines 828-835
     if (!this.topicAnalysisModel) {
+      console.warn('[NodeOneCore] ⚠️ TopicAnalysisModel not provided by AnalysisModule - creating fallback')
       this.topicAnalysisModel = new TopicAnalysisModel(this.channelManager, this.topicModel)
       await this.topicAnalysisModel.init()
-      console.log('[NodeOneCore] ✅ Topic Analysis Model initialized')
+      console.log('[NodeOneCore] ✅ Topic Analysis Model initialized (fallback)')
     }
 
     // NOTE: TopicGroupManager is created by ChatModule (via ModuleRegistry)
@@ -817,8 +958,8 @@ class NodeOneCore implements INodeOneCore {
         
         for (const [id, conversation] of conversationsMap) {
           try {
-            // Check if this is a P2P conversation (contains <->)
-            const isP2P = id.includes('<->')
+            // Check if this is a P2P conversation using TopicModel
+            const isP2P = await this.topicModel?.isOneToOneChatAsync?.(id) ?? false
 
             // For P2P conversations, skip creating channels here
             // P2P channels are managed by TopicGroupManager.ensureP2PChannelsForPeer
@@ -916,9 +1057,10 @@ class NodeOneCore implements INodeOneCore {
       
       // Send greeting message as plain text
       // TopicRoom.sendMessage expects (text, author, channelOwner)
+      // Post to instance owner's channel for proper CHUM sync
       const greetingText = `Hello! I'm ${modelName}. How can I help you today?`
-      
-      await topicRoom.sendMessage(greetingText, aiPersonId, undefined)
+
+      await topicRoom.sendMessage(greetingText, aiPersonId, this.ownerId)
       console.log(`[NodeOneCore] ✅ AI greeting sent from ${modelName}`)
     } catch (error) {
       console.error('[NodeOneCore] Failed to send AI greeting:', error)

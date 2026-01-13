@@ -1027,61 +1027,6 @@ class NodeOneCore implements INodeOneCore {
   }
 
   /**
-   * Create channels for existing conversations so Node participates in CHUM sync
-   */
-  async createChannelsForExistingConversations(): Promise<any> {
-    console.log('[NodeOneCore] Creating channels for existing conversations...')
-    
-    if (!this.channelManager) {
-      console.warn('[NodeOneCore] ChannelManager not available')
-      return
-    }
-    
-    try {
-      // Get existing conversations from state
-      const { default: stateManager } = await import('../state/manager.js')
-      const state = stateManager.getState()
-      const conversationsMap = state?.conversations
-      
-      if (conversationsMap && conversationsMap.size > 0) {
-        console.log(`[NodeOneCore] Found ${conversationsMap.size} existing conversations`)
-        
-        for (const [id, conversation] of conversationsMap) {
-          try {
-            // Check if this is a P2P conversation using TopicModel
-            const isP2P = await this.topicModel?.isOneToOneChatAsync?.(id) ?? false
-
-            // For P2P conversations, skip creating channels here
-            // P2P channels are managed by TopicGroupManager.ensureP2PChannelsForPeer
-            if (isP2P) {
-              console.log(`[NodeOneCore] Skipping P2P channel creation for: ${id} (handled by TopicGroupManager)`)
-              continue
-            }
-
-            // For group chats, use our owner ID as participant
-            const channelOwner = this.ownerId
-
-            // Create a channel for each conversation
-            // With new participants-based ChannelInfo, the owner is the sole participant
-            // This ensures the Node instance receives CHUM updates for messages in these conversations
-            const channelResult = await this.channelManager.createChannel([channelOwner], channelOwner)
-            console.log(`[NodeOneCore] Created channel for conversation: ${id} (participantsHash: ${channelResult.participantsHash?.substring(0, 8)})`)
-          } catch (error) {
-            // Channel might already exist, that's fine
-            if (!(error as Error).message?.includes('already exists')) {
-              console.warn(`[NodeOneCore] Could not create channel for ${id}:`, (error as Error).message)
-            }
-          }
-        }
-      } else {
-        console.log('[NodeOneCore] No existing conversations found')
-      }
-    } catch (error) {
-      console.error('[NodeOneCore] Error creating channels for existing conversations:', error)
-    }
-  }
-
-  /**
    * Set up message sync - DEPRECATED
    *
    * AI initialization and message listeners are now handled by ModuleRegistry/AIModule.

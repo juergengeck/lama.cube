@@ -478,6 +478,7 @@ class NodeProvisioning {
           const mainWindow = BrowserWindow.getAllWindows()[0]
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('channel:updated', {
+              channelId: channelInfoIdHash,  // Browser expects 'channelId'
               channelInfoIdHash,
               participants,
               channelOwner

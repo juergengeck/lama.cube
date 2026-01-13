@@ -16,7 +16,7 @@ import { AISettingsManager } from './ai-settings-manager.js';
 import type { NodeOneCore } from '../types/one-core.js';
 import { storeVersionedObject, getIdObject, getObjectByIdHash } from '@refinio/one.core/lib/storage-versioned-objects.js';
 import { storeUnversionedObject, getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
-import { createDefaultKeys, hasDefaultKeys } from '@refinio/one.core/lib/keychain/keychain.js';
+import { createPersonWithDefaultKeys } from '@refinio/one.models/lib/misc/person.js';
 import { mcpManager } from '@mcp/core/local';
 import { MODELS, type ModelId } from '@local/core';
 import electron from 'electron';
@@ -86,8 +86,7 @@ export function createAIAssistantHandler(nodeOneCore: NodeOneCore, llmManager: a
       getObject,
       getObjectByIdHash,
       channelManager: nodeOneCore.channelManager,
-      createDefaultKeys,
-      hasDefaultKeys
+      createPersonWithDefaultKeys
     }
   });
 

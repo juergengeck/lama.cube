@@ -49,9 +49,13 @@ async function getInstances(event: IpcMainInvokeEvent) {
  * Create a pairing invitation
  * Delegates to ConnectionPlan from ConnectionModule
  * Supports both IoM (device) and IoP (partner) modes
+ *
+ * @param mode - 'IoM' for device pairing, 'IoP' for partner pairing (default)
+ * @param personId - Optional specific identity to share (defaults to myMainIdentity)
  */
-async function createPairingInvitation(event: IpcMainInvokeEvent, mode?: 'IoM' | 'IoP') {
+async function createPairingInvitation(event: IpcMainInvokeEvent, mode?: 'IoM' | 'IoP', personId?: string) {
   console.log('[Connection IPC] 📝 createPairingInvitation called, mode:', mode || 'IoP (default)');
+  console.log('[Connection IPC] personId:', personId ? personId.substring(0, 12) + '...' : 'default');
   const connectionPlan = getConnectionPlan();
   const webUrl = getWebUrl();
   console.log('[Connection IPC] webUrl:', webUrl);
@@ -190,13 +194,40 @@ function subscribeToEvents(callback: (event: any) => void) {
   console.log('[Connection] Subscribed to ONE.core events');
 }
 
+/**
+ * Get configured pairing identity from user settings
+ * Returns the profileId configured in DeviceSettings.discoveryIdentity
+ * Returns undefined if not configured (will use myMainIdentity)
+ */
+async function getConfiguredPairingIdentity(event: IpcMainInvokeEvent): Promise<string | undefined> {
+  try {
+    const registry = getModuleRegistry();
+    if (!registry) {
+      return undefined;
+    }
+
+    // Try to get from UserSettingsManager if available
+    const userSettingsManager = (global as any).userSettingsManager;
+    if (userSettingsManager) {
+      const settings = await userSettingsManager.getSettings();
+      return (settings as any).device?.discoveryIdentity?.profileId;
+    }
+
+    return undefined;
+  } catch (error) {
+    console.warn('[Connection IPC] Failed to get configured pairing identity:', error);
+    return undefined;
+  }
+}
+
 export default {
   getInstances,
   createPairingInvitation,
   acceptPairingInvitation,
   getConnectionStatus,
   getDataStats,
-  subscribeToEvents
+  subscribeToEvents,
+  getConfiguredPairingIdentity
 };
 
 // Export connectionPlan getter for other modules that need it

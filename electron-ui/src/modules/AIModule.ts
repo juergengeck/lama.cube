@@ -16,7 +16,7 @@ import { getIdObject } from '@refinio/one.core/lib/storage-versioned-objects.js'
 import { getObject, storeUnversionedObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
 import { getAllEntries } from '@refinio/one.core/lib/reverse-map-query.js';
 import { createAccess } from '@refinio/one.core/lib/access.js';
-import { createDefaultKeys, hasDefaultKeys } from '@refinio/one.core/lib/keychain/keychain.js';
+import { createPersonWithDefaultKeys } from '@refinio/one.models/lib/misc/person.js';
 
 // LAMA core plans (platform-agnostic business logic - AI-related)
 import { AIPlan } from '@lama/core/plans/AIPlan';
@@ -216,7 +216,7 @@ export class AIModule implements Module {
       stateManager: undefined, // Optional - not used in browser
       llmObjectManager: this.llmObjectManager, // Platform-agnostic LLM object manager
       contextEnrichmentService: undefined, // Optional - not used in browser
-      topicAnalysisModel: undefined, // Will be set during init()
+      topicAnalysisModel: this.deps.topicAnalysisModel, // From AnalysisModule via demand/supply
       topicGroupManager: topicGroupManager!,
       settingsPersistence: undefined, // Optional - use llmConfigPlan instead
       llmConfigPlan: undefined, // Will be set right after
@@ -227,8 +227,7 @@ export class AIModule implements Module {
         getIdObject,
         getObjectByIdHash,
         getObject,
-        createDefaultKeys,
-        hasDefaultKeys,
+        createPersonWithDefaultKeys,
         channelManager: channelManager!,    // Required: for querying LLM objects
         trustPlan: trustPlan!,              // For assigning 'high' trust to AI contacts
         journalPlan: journalPlan!,          // For recording AI contact creation as assemblies
@@ -370,19 +369,17 @@ export class AIModule implements Module {
   /**
    * Start the AI message listener after login
    * Called after all initialization is complete
+   *
+   * NOTE: In lama.cube (Electron), the message listener runs in the MAIN process
+   * via MessageListenersPlan. This renderer-side method only scans existing topics.
+   * The main process listener handles channel updates and triggers AI responses.
+   * Having both would cause duplicate AI responses.
    */
   async startMessageListener(ownerId: string): Promise<void> {
-    const { channelManager, topicModel } = this.deps;
-
-    console.log('[AIModule] Creating and starting AIMessageListener...');
-    this.aiMessageListener = new AIMessageListener({
-      channelManager: channelManager!,
-      topicModel: topicModel!,
-      aiPlan: this.aiAssistantPlan,
-      ownerId: ownerId
-    });
-    await this.aiMessageListener.start();
-    console.log('[AIModule] AIMessageListener started');
+    // DISABLED: Main process handles message listening via MessageListenersPlan
+    // Creating a listener here would cause duplicate AI responses
+    // The main process listener already subscribes to channelManager.onUpdated()
+    console.log('[AIModule] Message listener disabled in renderer - main process handles this');
 
     // CRITICAL: Scan existing conversations AFTER ChannelManager is fully loaded
     // This registers all AI topics so the message listener knows which topics have AI

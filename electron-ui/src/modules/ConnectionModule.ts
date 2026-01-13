@@ -156,28 +156,27 @@ export class ConnectionModule implements Module {
       },
 
       // Channel manager for group chat channels
-      // Note: Adapts old (channelId, owner) signature to new participants-based API
       channelManager: {
         getOrCreateChannel: async (channelId: string, owner: any) => {
-          // Determine participants from channelId pattern
-          // For P2P channels (id1<->id2), extract both person IDs
-          // For other channels, use [owner] as participants
+          // P2P channels have null owner
+          // Owned channels have owner set
+          let participantsHash: string;
           let participants: any[];
-          if (channelId.includes('<->')) {
-            const [id1, id2] = channelId.split('<->');
-            participants = id1 < id2 ? [id1, id2] : [id2, id1];
-          } else {
-            // Single owner channel (each participant has their own)
-            participants = [owner];
-          }
 
-          // Create participantsHash for query
-          const hashGroup = {
-            $type$: 'HashGroup' as const,
-            person: new Set(participants)
-          };
-          const result = await storeUnversionedObject(hashGroup);
-          const participantsHash = result.hash;
+          if (!owner) {
+            // P2P channel - channelId is participantsHash
+            participantsHash = channelId;
+            participants = [];
+          } else {
+            // Owned channel
+            participants = [owner];
+            const hashGroup = {
+              $type$: 'HashGroup' as const,
+              person: new Set(participants)
+            };
+            const result = await storeUnversionedObject(hashGroup);
+            participantsHash = result.hash;
+          }
 
           // Get existing channels by participants
           const existingChannels = await this.deps.channelManager!.getMatchingChannelInfos({

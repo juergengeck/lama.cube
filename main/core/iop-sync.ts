@@ -56,13 +56,14 @@ class IoPSyncManager {
     
     // 1. Grant Browser access to Node's Leute object
     await this.grantAccessToLeute(this.browserPersonId, createAccess, SET_ACCESS_MODE, calculateIdHashOfObj)
-    
+
     // 2. Grant Browser access to all Node's channels
     await this.grantAccessToChannels(this.browserPersonId, createAccess, SET_ACCESS_MODE, calculateIdHashOfObj)
-    
-    // 3. Grant Browser access to Node's Someone objects (contacts)
-    await this.grantAccessToSomeones(this.browserPersonId, createAccess, SET_ACCESS_MODE)
-    
+
+    // NOTE: Someone objects are NOT shared by default.
+    // Only Profiles are shared, scoped to chat participants.
+    // Profile access is granted in TopicModel.shareParticipantProfiles()
+
     console.log('[IoPSync] ✅ Access rights granted')
   }
   
@@ -129,40 +130,6 @@ class IoPSyncManager {
   }
   
   /**
-   * Grant access to Someone objects (contacts)
-   */
-  async grantAccessToSomeones(remotePersonId: any, createAccess: any, SET_ACCESS_MODE: any): Promise<any> {
-    console.log('[IoPSync] Granting access to Someone objects...')
-    
-    if (!this.nodeOneCore.leuteModel) {
-      console.warn('[IoPSync] LeuteModel not available')
-      return
-    }
-    
-    // Get all contacts (Someone objects)
-    const others = await this.nodeOneCore.leuteModel.others()
-    console.log(`[IoPSync] Found ${others.length} contacts to share`)
-    
-    for (const someone of others) {
-      try {
-        // Grant access to the Someone object
-        await createAccess([{
-          id: someone.idHash,
-          person: [remotePersonId],
-          hashGroup: [],
-          mode: SET_ACCESS_MODE.ADD
-        }])
-        
-        console.log(`[IoPSync] Access granted to contact: ${someone.idHash?.substring(0, 8)}...`)
-      } catch (error) {
-        console.warn(`[IoPSync] Failed to grant access to contact:`, (error as Error).message)
-      }
-    }
-    
-    console.log('[IoPSync] ✅ Someone access granted')
-  }
-  
-  /**
    * Set up listeners for new content to automatically grant access
    */
   setupAutoAccessGrant(): any {
@@ -199,26 +166,9 @@ class IoPSyncManager {
       })
     }
     
-    // Listen for new contacts
-    if (this.nodeOneCore.leuteModel) {
-      this.nodeOneCore.leuteModel.onSomeoneAdded(async (someoneId: any) => {
-        console.log(`[IoPSync] New contact added: ${String(someoneId).substring(0, 8)}..., granting access...`)
-        const { createAccess } = await import('@refinio/one.core/lib/access.js')
-        const { SET_ACCESS_MODE } = await import('@refinio/one.core/lib/storage-base-common.js')
-        
-        if (this.browserPersonId) {
-          await createAccess([{
-            id: someoneId,
-            person: [this.browserPersonId as any],
-            hashGroup: [],
-            mode: SET_ACCESS_MODE.ADD
-          }])
-        }
-        
-        console.log(`[IoPSync] ✅ Access granted to new contact`)
-      })
-    }
-    
+    // NOTE: Someone objects are NOT auto-shared.
+    // Profile access is granted when participants join a chat via TopicModel.
+
     console.log('[IoPSync] ✅ Auto-access grant configured')
   }
   

@@ -143,7 +143,7 @@ export class LamaAPIServer {
 
                   try {
                     // Register topic so AIMessageListener knows to trigger AI responses
-                    nodeOneCore.aiAssistantModel.registerAITopic(topicId, aiModelId);
+                    await nodeOneCore.aiAssistantModel.registerAITopic(topicId, aiModelId);
                     console.log(`[LamaAPI] Registered AI topic: ${topicId} with model: ${aiModelId}`);
 
                     // Trigger welcome message generation in background (non-blocking)

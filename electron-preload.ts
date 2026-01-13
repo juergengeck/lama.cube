@@ -115,9 +115,7 @@ console.log = (...args: any[]): void => {
   originalLog.apply(console, args);
   // Forward to main process if it contains specific keywords
   const msg = args.join(' ');
-  if (msg.includes('EncryptionPlugin') || msg.includes('evenLocalNonceCounter') ||
-      msg.includes('LamaBridge') || msg.includes('useLamaMessages') ||
-      msg.includes('chat:newMessages') || msg.includes('IPC event')) {
+  if (msg.includes('EncryptionPlugin') || msg.includes('evenLocalNonceCounter')) {
     ipcRenderer.send('browser-log', 'log', msg);
   }
 };

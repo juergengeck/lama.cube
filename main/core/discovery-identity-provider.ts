@@ -9,6 +9,7 @@
 
 import type { DiscoveryIdentityProvider, DiscoveryIdentity } from '@lama/connection.core';
 import type nodeOneCore from './node-one-core.js';
+import type { UserSettingsManager } from './user-settings-manager.js';
 
 type NodeOneCore = typeof nodeOneCore;
 
@@ -17,34 +18,78 @@ export interface CubeDiscoveryIdentityProviderDeps {
   nodeOneCore: NodeOneCore;
   /** Instance ID (from ONE.core) */
   instanceId: string;
+  /** User settings manager for reading discoveryIdentity config */
+  userSettingsManager?: UserSettingsManager;
 }
 
 export class CubeDiscoveryIdentityProvider implements DiscoveryIdentityProvider {
   private nodeOneCore: NodeOneCore;
   private instanceId: string;
+  private userSettingsManager?: UserSettingsManager;
   private changeCallbacks: ((identity: DiscoveryIdentity) => void)[] = [];
 
   constructor(deps: CubeDiscoveryIdentityProviderDeps) {
     this.nodeOneCore = deps.nodeOneCore;
     this.instanceId = deps.instanceId;
+    this.userSettingsManager = deps.userSettingsManager;
+  }
+
+  /**
+   * Set user settings manager after construction (for lazy initialization)
+   */
+  setUserSettingsManager(manager: UserSettingsManager): void {
+    this.userSettingsManager = manager;
   }
 
   /**
    * Get current discovery identity based on user settings
    *
-   * Note: Device-specific discovery settings (custom displayName, pubKeyOverride)
-   * are not yet implemented in UserSettings. This method returns the default
-   * owner identity. When device settings are added to UserSettings, this can
-   * be extended to support custom discovery identities.
+   * Checks DeviceSettings.discoveryIdentity for configured identity.
+   * Falls back to owner identity if not configured.
    */
   async getDiscoveryIdentity(): Promise<DiscoveryIdentity> {
-    // TODO: When device settings are added to UserSettings, check for:
-    // - settings.device?.discoveryIdentity?.pubKeyOverride
-    // - settings.device?.discoveryIdentity?.displayName
-    // - settings.device?.discoveryIdentity?.profileId
-    //
-    // For now, use default owner identity
+    // Check user settings for configured discovery identity
+    if (this.userSettingsManager) {
+      try {
+        const settings = await this.userSettingsManager.getSettings();
+        const discoveryConfig = (settings as any).device?.discoveryIdentity;
+
+        if (discoveryConfig) {
+          console.log('[DiscoveryIdentityProvider] Using configured discovery identity');
+          return {
+            pubKey: discoveryConfig.pubKeyOverride || discoveryConfig.profileId || this.nodeOneCore.ownerId || '',
+            deviceId: this.instanceId,
+            displayName: discoveryConfig.displayName || this.getDefaultDisplayName(),
+          };
+        }
+      } catch (error) {
+        console.warn('[DiscoveryIdentityProvider] Failed to read settings, using default:', error);
+      }
+    }
+
+    // Fall back to default owner identity
     return this.getDefaultIdentity();
+  }
+
+  /**
+   * Get configured pairing identity (personId) from settings
+   * Returns undefined if not configured (uses myMainIdentity)
+   */
+  async getPairingIdentity(): Promise<string | undefined> {
+    if (!this.userSettingsManager) {
+      return undefined;
+    }
+
+    try {
+      const settings = await this.userSettingsManager.getSettings();
+      const discoveryConfig = (settings as any).device?.discoveryIdentity;
+
+      // profileId maps to a Person ID for pairing
+      return discoveryConfig?.profileId;
+    } catch (error) {
+      console.warn('[DiscoveryIdentityProvider] Failed to read pairing identity:', error);
+      return undefined;
+    }
   }
 
   /**

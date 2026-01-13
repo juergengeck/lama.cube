@@ -444,6 +444,49 @@ class NodeOneCore implements INodeOneCore {
                 } catch (profileError) {
                   console.warn(`[NodeOneCore] Could not grant AI Profile access:`, (profileError as Error).message)
                 }
+
+                // Grant access to AI Keys (CRITICAL for signature verification)
+                try {
+                  const { getAllEntries } = await import('@refinio/one.core/lib/reverse-map-query.js')
+                  const keysHashes = await getAllEntries(aiPersonId as any, 'Keys')
+                  for (const keysHash of keysHashes) {
+                    await createAccess([{
+                      object: keysHash,
+                      person: [targetPersonId],
+                      hashGroup: [],
+                      mode: SET_ACCESS_MODE.ADD
+                    }])
+                  }
+                  if (keysHashes.length > 0) {
+                    console.log(`[NodeOneCore] ✅ Granted AI Keys access (${keysHashes.length} keys)`)
+                  }
+                } catch (keysError) {
+                  console.warn(`[NodeOneCore] Could not grant AI Keys access:`, (keysError as Error).message)
+                }
+
+                // Grant access to AI TrustKeysCertificate (CRITICAL for CHUM sync)
+                try {
+                  if (this.leuteModel?.trust) {
+                    const aiProfile = await other.mainProfile()
+                    if (aiProfile?.idHash) {
+                      const { getAllIdObjectEntries } = await import('@refinio/one.core/lib/reverse-map-query.js')
+                      const certs = await getAllIdObjectEntries(aiProfile.idHash, 'TrustKeysCertificate')
+                      for (const certIdHash of certs) {
+                        await createAccess([{
+                          id: certIdHash,
+                          person: [targetPersonId],
+                          hashGroup: [],
+                          mode: SET_ACCESS_MODE.ADD
+                        }])
+                      }
+                      if (certs.length > 0) {
+                        console.log(`[NodeOneCore] ✅ Granted AI TrustKeysCertificate access (${certs.length} certs)`)
+                      }
+                    }
+                  }
+                } catch (certError) {
+                  console.warn(`[NodeOneCore] Could not grant AI TrustKeysCertificate access:`, (certError as Error).message)
+                }
               }
             }
           } catch (e) {
@@ -570,6 +613,53 @@ class NodeOneCore implements INodeOneCore {
                 }
               } catch (profileError) {
                 console.warn(`[NodeOneCore] Could not grant AI Profile access:`, (profileError as Error).message)
+              }
+
+              // Grant access to AI Keys (CRITICAL for signature verification)
+              // Without Keys access, remote peers cannot verify AI's signatures on ChannelInfo
+              try {
+                const { getAllEntries } = await import('@refinio/one.core/lib/reverse-map-query.js')
+                // Find Keys objects that reference this AI person as owner
+                const keysHashes = await getAllEntries(aiPersonId as any, 'Keys')
+                for (const keysHash of keysHashes) {
+                  await createAccess([{
+                    object: keysHash,
+                    person: [targetPersonId],
+                    hashGroup: [],
+                    mode: SET_ACCESS_MODE.ADD
+                  }])
+                }
+                if (keysHashes.length > 0) {
+                  console.log(`[NodeOneCore] ✅ Granted AI Keys access to new peer (${keysHashes.length} keys)`)
+                }
+              } catch (keysError) {
+                console.warn(`[NodeOneCore] Could not grant AI Keys access:`, (keysError as Error).message)
+              }
+
+              // Grant access to AI TrustKeysCertificate (CRITICAL for CHUM sync)
+              // Without TrustKeysCertificate, remote peers won't trust AI's signing keys
+              try {
+                if (this.leuteModel?.trust) {
+                  const aiProfile = await other.mainProfile()
+                  if (aiProfile?.idHash) {
+                    // Find TrustKeysCertificate objects that reference this AI profile
+                    const { getAllIdObjectEntries } = await import('@refinio/one.core/lib/reverse-map-query.js')
+                    const certs = await getAllIdObjectEntries(aiProfile.idHash, 'TrustKeysCertificate')
+                    for (const certIdHash of certs) {
+                      await createAccess([{
+                        id: certIdHash,
+                        person: [targetPersonId],
+                        hashGroup: [],
+                        mode: SET_ACCESS_MODE.ADD
+                      }])
+                    }
+                    if (certs.length > 0) {
+                      console.log(`[NodeOneCore] ✅ Granted AI TrustKeysCertificate access to new peer (${certs.length} certs)`)
+                    }
+                  }
+                }
+              } catch (certError) {
+                console.warn(`[NodeOneCore] Could not grant AI TrustKeysCertificate access:`, (certError as Error).message)
               }
             }
           }
@@ -1057,10 +1147,10 @@ class NodeOneCore implements INodeOneCore {
       
       // Send greeting message as plain text
       // TopicRoom.sendMessage expects (text, author, channelOwner)
-      // Post to instance owner's channel for proper CHUM sync
+      // AI posts to its own channel (owned by AI, shared with group participants)
       const greetingText = `Hello! I'm ${modelName}. How can I help you today?`
 
-      await topicRoom.sendMessage(greetingText, aiPersonId, this.ownerId)
+      await topicRoom.sendMessage(greetingText, aiPersonId, aiPersonId)
       console.log(`[NodeOneCore] ✅ AI greeting sent from ${modelName}`)
     } catch (error) {
       console.error('[NodeOneCore] Failed to send AI greeting:', error)
@@ -1105,8 +1195,8 @@ class NodeOneCore implements INodeOneCore {
         // Create AI person ID for the response
         const aiPersonId = await this.getOrCreateAIPersonId((llmManager as any).defaultModelId, 'AI Assistant')
         
-        // Send AI response to topic (will sync via CHUM to browser)
-        await topicRoom.sendMessage(response.content, aiPersonId, this.ownerId)
+        // AI posts to its own channel (owned by AI, shared with group participants)
+        await topicRoom.sendMessage(response.content, aiPersonId, aiPersonId)
         
         console.log('[NodeOneCore] ✅ AI response sent to topic')
       }

@@ -141,6 +141,10 @@ class LamaBridge implements LamaAPI {
 
       // Contact events
       window.electronAPI.on(Events.CONTACT_ADDED, createIPCHandler(Events.CONTACT_ADDED))
+      window.electronAPI.on(Events.CONTACTS_ACCEPTED, (data: any) => {
+        console.log('[LamaBridge] 👥 contacts:accepted received')
+        this.emit(Events.CONTACTS_ACCEPTED, data)
+      })
 
       // Conversation events
       window.electronAPI.on(Events.CHAT_CONVERSATION_CREATED, createIPCHandler('conversation:created'))
@@ -392,15 +396,37 @@ class LamaBridge implements LamaAPI {
     if (!window.electronAPI) {
       throw new Error('IPC not available')
     }
-    const result = await window.electronAPI.invoke('ai:enableForTopic', { topicId })
+    // Get the default AI person ID
+    const aiResult = await window.electronAPI.invoke('ai:getDefaultAIPersonId', {})
+    if (!aiResult.success || !aiResult.aiPersonId) {
+      console.error('[LamaBridge] No default AI Person configured')
+      return false
+    }
+    // Add AI as participant via ChatPlan - this creates channels properly
+    const result = await window.electronAPI.invoke('chat:addParticipants', {
+      conversationId: topicId,
+      participantIds: [aiResult.aiPersonId]
+    })
     return result.success
   }
-  
+
   async disableAIForTopic(topicId: string): Promise<boolean> {
     if (!window.electronAPI) {
       throw new Error('IPC not available')
     }
-    const result = await window.electronAPI.invoke('ai:disableForTopic', { topicId })
+    // Get AI person for this topic
+    const aiResult = await window.electronAPI.invoke('ai:getAIPersonForTopic', { topicId })
+    if (!aiResult.success || !aiResult.aiPersonId) {
+      // No AI in this topic, nothing to disable
+      return true
+    }
+    // Update AI settings to disable responding
+    const result = await window.electronAPI.invoke('ai:setAISettings', {
+      topicId,
+      aiPersonId: aiResult.aiPersonId,
+      setting: 'respond',
+      enabled: false
+    })
     return result.success
   }
   
@@ -479,7 +505,6 @@ class LamaBridge implements LamaAPI {
       this.eventListeners.set(event, new Set())
     }
     this.eventListeners.get(event)!.add(callback)
-    // console.log(`[LamaBridge] ON: Added listener for ${event}, total listeners: ${this.eventListeners.get(event)!.size}`)
 
     // Return cleanup function
     return () => {
@@ -491,23 +516,16 @@ class LamaBridge implements LamaAPI {
     const listeners = this.eventListeners.get(event)
     if (listeners) {
       listeners.delete(callback)
-      // console.log(`[LamaBridge] OFF: Removed listener for ${event}, remaining: ${listeners.size}`)
     }
   }
 
   private emit(event: string, ...args: any[]): void {
     const listeners = this.eventListeners.get(event)
-    // console.log(`[LamaBridge] EMIT event: ${event}, listeners count: ${listeners?.size || 0}`)
-    // if (event === 'chat:newMessages') {
-    //   console.log('[LamaBridge] chat:newMessages data:', args[0])
-    // }
+    if (event === 'channel:updated' && window.electronAPI?.invoke) {
+      window.electronAPI.invoke('debug:log', `[LamaBridge] EMIT channel:updated → ${listeners?.size || 0} listeners`).catch(() => {})
+    }
     if (listeners) {
-      listeners.forEach(callback => {
-        // console.log(`[LamaBridge] Calling listener for ${event}`)
-        callback(...args)
-      })
-    } else {
-      // console.log(`[LamaBridge] NO LISTENERS for event: ${event}`)
+      listeners.forEach(callback => callback(...args))
     }
   }
   

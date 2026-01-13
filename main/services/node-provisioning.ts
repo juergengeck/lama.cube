@@ -15,13 +15,11 @@ import assemblyManagerSingleton from './assembly-manager-singleton.js';
  * TrustPlan wiring is handled by ChatModule via demand/supply system
  */
 async function initModuleRegistry(): Promise<void> {
-  try {
-    const { initializeModuleRegistry } = await import('../registry/module-registry-init.js')
-    await initializeModuleRegistry(nodeOneCore)
-    console.log('[NodeProvisioning] ✅ Module Registry initialized')
-  } catch (error) {
-    console.error('[NodeProvisioning] Failed to initialize Module Registry:', error)
-  }
+  // CRITICAL: Do NOT catch errors here - fail fast if module registry fails
+  // Module registry sets up aiAssistantModel which is required for AI operations
+  const { initializeModuleRegistry } = await import('../registry/module-registry-init.js')
+  await initializeModuleRegistry(nodeOneCore)
+  console.log('[NodeProvisioning] ✅ Module Registry initialized')
 }
 
 class NodeProvisioning {
@@ -30,6 +28,7 @@ class NodeProvisioning {
   commServerUrl: any;
   provisioned: boolean | undefined;
   private isProvisioning: boolean = false;
+  private provisioningPromise: Promise<any> | null = null;
 
   constructor() {
     this.user = null
@@ -69,19 +68,40 @@ class NodeProvisioning {
       this.provisioned = false
     }
 
-    // If we're already provisioning, don't start another one
-    if (this.isProvisioning) {
-      console.log('[NodeProvisioning] Already provisioning, ignoring duplicate request')
-      throw new Error('Provisioning already in progress')
+    // If we're already provisioning, wait for it to complete instead of throwing
+    if (this.isProvisioning && this.provisioningPromise) {
+      console.log('[NodeProvisioning] Already provisioning, waiting for completion...')
+      try {
+        const result = await this.provisioningPromise;
+        console.log('[NodeProvisioning] Existing provisioning completed, returning result')
+        return result;
+      } catch (error) {
+        console.log('[NodeProvisioning] Existing provisioning failed, returning error')
+        throw error;
+      }
     }
 
-    try {
-      // Simple validation - just need username and password
-      if (!provisioningData?.user?.name || !provisioningData?.user?.password) {
-        throw new Error('Username and password required for provisioning')
-      }
+    // Simple validation - just need username and password
+    if (!provisioningData?.user?.name || !provisioningData?.user?.password) {
+      throw new Error('Username and password required for provisioning')
+    }
 
-      this.isProvisioning = true;
+    this.isProvisioning = true;
+
+    // Create a promise that other callers can await
+    this.provisioningPromise = this.doProvision(provisioningData);
+
+    try {
+      const result = await this.provisioningPromise;
+      return result;
+    } finally {
+      this.isProvisioning = false;
+      this.provisioningPromise = null;
+    }
+  }
+
+  private async doProvision(provisioningData: any): Promise<any> {
+    try {
 
       // Store user info (ID will be set after ONE.core initialization)
       this.user = provisioningData.user
@@ -208,7 +228,6 @@ class NodeProvisioning {
       // See: lama.core/plans/AIAssistantPlan.ts → setDefaultModel() → createDefaultChats()
       console.log('[NodeProvisioning] Default chat creation handled by AIAssistantPlan via setDefaultModel()')
 
-      this.isProvisioning = false;
       this.provisioned = true;
 
       return {
@@ -220,7 +239,6 @@ class NodeProvisioning {
     } catch (error) {
       console.error('[NodeProvisioning] Provisioning failed:', error)
       // Reset state on failure
-      this.isProvisioning = false;
       this.user = null
       return {
         success: false,
@@ -416,6 +434,29 @@ class NodeProvisioning {
         await aiModule.startMessageListener(nodeOneCore.ownerId)
         console.log('[NodeProvisioning] ✅ AI message listener started')
 
+        // Grant AI channel access to all existing contacts for CHUM sync
+        console.log('[NodeProvisioning] Granting AI channel access to existing contacts...')
+        await nodeOneCore.grantAIChannelAccessToAllPeers()
+        console.log('[NodeProvisioning] ✅ AI channel access granted to existing contacts')
+
+        // Register handler to grant AI access when new contacts pair
+        // This ensures newly paired contacts can see AI Person/Profile/channels
+        if (nodeOneCore.connectionsModel?.pairing) {
+          nodeOneCore.connectionsModel.pairing.onPairingSuccess(async (
+            _initiatedLocally: boolean,
+            _localPersonId: any,
+            _localInstanceId: any,
+            remotePersonId: any,
+            _remoteInstanceId: any,
+            _token: any
+          ) => {
+            console.log(`[NodeProvisioning] 🤝 New contact paired: ${String(remotePersonId).substring(0, 8)}`)
+            // Grant AI access to the newly paired contact
+            await nodeOneCore.grantAIAccessToPeer(remotePersonId)
+          })
+          console.log('[NodeProvisioning] ✅ Registered onPairingSuccess handler for AI access grants')
+        }
+
         // CRITICAL: Update nodeOneCore.llmObjectManager to use AIModule's instance
         // The AIModule's LLMObjectManager has queryAllLLMObjects and is properly populated
         // via loadExisting() backfill.
@@ -424,72 +465,24 @@ class NodeProvisioning {
           console.log('[NodeProvisioning] ✅ Updated nodeOneCore.llmObjectManager to use AIModule instance')
         }
 
-        // Forward channel updates to UI (simple event, UI decides what to do)
-        // Debounce per channel to avoid overwhelming the UI
+        // Forward channel updates to UI
         const { BrowserWindow } = await import('electron')
-        const pendingUpdates = new Map<string, NodeJS.Timeout>()
 
-        // Cache channelId → topicId mapping for event routing
-        // Populated on first lookup per channel, reused thereafter
-        const channelToTopicCache = new Map<string, string>()
-        let cachePopulated = false
-
-        // Helper to rebuild cache from all topics
-        const rebuildCache = async (): Promise<void> => {
-          try {
-            const topics: any[] = await nodeOneCore.topicModel.topics.all()
-            for (const topic of topics) {
-              // topic.channel is the channelInfoIdHash
-              // We need to map from channelInfoIdHash to topicId
-              if (topic.channel && topic.id) {
-                channelToTopicCache.set(topic.channel, topic.id)
-              }
-            }
-            cachePopulated = true
-          } catch (error) {
-            console.warn(`[NodeProvisioning] Failed to build channel→topic cache:`, error)
-          }
-        }
-
-        // Helper to get topicId from channelId
-        const getTopicIdForChannel = async (channelId: string): Promise<string | null> => {
-          // Check cache first
-          if (channelToTopicCache.has(channelId)) {
-            return channelToTopicCache.get(channelId)!
-          }
-
-          // Cache miss - rebuild (handles new topics)
-          await rebuildCache()
-
-          return channelToTopicCache.get(channelId) || null
-        }
-
-        nodeOneCore.channelManager.onUpdated(async (
-          channelInfoIdHash: any,
-          _participantsHash: string,
-          _channelOwner: any,
-          _timeOfEarliestChange: any,
-          _data: any
+        nodeOneCore.channelManager.onUpdated((
+          channelInfoIdHash,
+          participants,
+          channelOwner,
+          timeOfEarliestChange,
+          data
         ) => {
-          const channelId = String(channelInfoIdHash)
-          console.log(`[NodeProvisioning] 🔔 channelManager.onUpdated fired: channelInfoIdHash=${channelId.substring(0, 16)}`)
-          // Debounce: only send after 500ms of quiet (AI processing can take >100ms)
-          if (pendingUpdates.has(channelId)) {
-            clearTimeout(pendingUpdates.get(channelId))
+          const mainWindow = BrowserWindow.getAllWindows()[0]
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('channel:updated', {
+              channelInfoIdHash,
+              participants,
+              channelOwner
+            })
           }
-          pendingUpdates.set(channelId, setTimeout(async () => {
-            pendingUpdates.delete(channelId)
-
-            // Look up topicId for this channel (topic.channel === channelInfoIdHash)
-            const topicId = await getTopicIdForChannel(channelId)
-
-            const mainWindow = BrowserWindow.getAllWindows()[0]
-            console.log(`[NodeProvisioning] 📡 channel:updated → channelId=${channelId.substring(0, 16)}... topicId=${topicId?.substring(0, 20) || 'unknown'}... (window=${mainWindow ? 'found' : 'NOT FOUND'})`)
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('channel:updated', { channelId, topicId })
-              console.log(`[NodeProvisioning] ✅ IPC sent to browser`)
-            }
-          }, 500))
         })
         console.log('[NodeProvisioning] ✅ Channel update forwarder registered')
 

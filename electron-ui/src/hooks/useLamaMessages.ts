@@ -57,40 +57,17 @@ export function useLamaMessages(conversationId: string) {
     loadMessages()
   }, [conversationId])
 
-  // Listen for new messages - this is THE key part
+  // Listen for channel updates (messages changed)
   useEffect(() => {
-    // Define handler inside effect to capture current conversationId
-    const handleNewMessages = (data: { conversationId: string }) => {
-      console.log('[useLamaMessages] 🔵🔵🔵 EVENT RECEIVED! conversationId in event:', data.conversationId)
-      console.log('[useLamaMessages] 🔵🔵🔵 Current conversationId in hook:', conversationId)
-
-      // Normalize IDs for P2P comparison
-      const normalize = (id: string) =>
-        id?.includes('<->') ? id.split('<->').sort().join('<->') : id
-
-      const normalizedEvent = normalize(data.conversationId)
-      const normalizedCurrent = normalize(conversationId)
-
-      console.log('[useLamaMessages] 🔵 Comparing normalized:', normalizedEvent, '===', normalizedCurrent)
-
-      if (normalizedEvent === normalizedCurrent) {
-        console.log('[useLamaMessages] ✅✅✅ MATCH! Loading fresh messages...')
-        // Use ref to avoid dependency issues
-        if (loadMessagesRef.current) {
-          loadMessagesRef.current()
-        }
-      } else {
-        console.log('[useLamaMessages] ❌ No match, ignoring event')
+    const handleChannelUpdated = async () => {
+      if (loadMessagesRef.current) {
+        await loadMessagesRef.current()
       }
     }
 
-    console.log('[useLamaMessages] 📡 Registering listener for conversationId:', conversationId)
-    lamaBridge.on('chat:newMessages', handleNewMessages)
-
-    // Cleanup
+    lamaBridge.on('channel:updated', handleChannelUpdated)
     return () => {
-      console.log('[useLamaMessages] 🧹 Cleaning up listener for:', conversationId)
-      lamaBridge.off('chat:newMessages', handleNewMessages)
+      lamaBridge.off('channel:updated', handleChannelUpdated)
     }
   }, [conversationId])
 

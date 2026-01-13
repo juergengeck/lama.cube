@@ -236,21 +236,17 @@ function AppContent() {
     return () => window.removeEventListener('open-conversation', handleOpenConversation)
   }, [])
 
-  // Global listener for new messages - keeps conversation list updated app-wide
+  // Global listener for channel updates - keeps conversation list updated app-wide
   useEffect(() => {
     if (!isAuthenticated) return
 
-    const handleNewMessages = (data: { conversationId: string; messages: any[] }) => {
-      console.log('[App] 📬 Global: New messages received for conversation:', data.conversationId)
-      // This ensures the lamaBridge event system knows there's at least one listener
-      // The actual UI updates happen in ChatLayout or other components
+    const handleChannelUpdated = (data: { channelId: string; topicId: string }) => {
+      console.log('[App] 📬 Global: Channel updated for topic:', data.topicId?.substring(0, 20))
     }
 
-    // Register as a global listener so messages are always acknowledged
-    lamaBridge.on('chat:newMessages', handleNewMessages)
-
+    lamaBridge.on('channel:updated', handleChannelUpdated)
     return () => {
-      lamaBridge.off('chat:newMessages', handleNewMessages)
+      lamaBridge.off('channel:updated', handleChannelUpdated)
     }
   }, [isAuthenticated])
   
@@ -384,6 +380,7 @@ function AppContent() {
         // Create AI identity and default chats BEFORE showing main UI
         // This ensures topics are fetched AFTER AI is created
         setIsCreatingAI(true)
+        let aiCreated = false
         try {
           const response = await window.electronAPI.invoke('ai:generateAIName', { modelId: model.id, provider: model.provider })
           if (response.success && response.data) {
@@ -391,8 +388,13 @@ function AppContent() {
             console.log('[App] AI identity generated:', name, email)
             // Set the default model WITH the generated name and email
             // This creates the AI Person in ONE.core with proper aiId
-            await ai.setDefaultModel(model.id, name, email)
-            console.log('[App] AI Person created with name:', name, 'for model:', model.id)
+            const setModelResult = await ai.setDefaultModel(model.id, name, email)
+            if (setModelResult) {
+              console.log('[App] AI Person created with name:', name, 'for model:', model.id)
+              aiCreated = true
+            } else {
+              console.error('[App] Failed to set default model - AI handler may not be initialized')
+            }
           } else {
             console.error('[App] Failed to generate AI identity:', response.error)
           }
@@ -402,8 +404,12 @@ function AppContent() {
           setIsCreatingAI(false)
         }
 
-        // Now show main UI - topics will be fetched with correct AI info
-        setHasDefaultModel(true)
+        // Only proceed to main UI if AI was created successfully
+        if (aiCreated) {
+          setHasDefaultModel(true)
+        } else {
+          console.error('[App] AI creation failed - staying on onboarding screen')
+        }
       }}
     />
   }

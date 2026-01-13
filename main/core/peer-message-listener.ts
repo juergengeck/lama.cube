@@ -153,15 +153,8 @@ class PeerMessageListener {
       return;
     }
 
-    // Normalize P2P topic IDs to match what the UI expects
-    let normalizedTopicId = topicId;
-    if (topicId.includes('<->')) {
-      const parts = topicId.split('<->');
-      normalizedTopicId = parts.sort().join('<->');
-      console.log(`[PeerMessageListener] Normalized P2P topic ID: ${topicId} -> ${normalizedTopicId}`);
-    }
-
-    console.log(`[PeerMessageListener] 📤 Sending notification to UI for ${normalizedTopicId}`);
+    // HashGroup-based topic IDs are already deterministic
+    const normalizedTopicId = topicId;
 
     // Ensure webContents is ready - if not, queue the notification
     if (!this.mainWindow.webContents || this.mainWindow.webContents.isLoading()) {

@@ -54,6 +54,7 @@ let moduleRegistry: ModuleRegistry | null = null;
 // Store module instances for later access
 let coreModuleInstance: CoreModule | null = null;
 let aiModuleInstance: AIModule | null = null;
+let connectionModuleInstance: ConnectionModule | null = null;
 
 // FilterGate factories removed - ConnectionModule creates its own filters via TopicGroupManager
 
@@ -96,6 +97,51 @@ export function getPreloadedTTSProvider(): any {
 */
 
 /**
+ * Setup event listeners for ConnectionModule to update Electron UI
+ *
+ * ConnectionModule emits events when contacts/topics/connections change.
+ * We listen to these events and notify the renderer process via IPC.
+ */
+function setupConnectionModuleListeners(connectionModule: ConnectionModule, nodeOneCore: NodeOneCore): void {
+  // Import Electron dynamically to avoid issues during module loading
+  import('electron').then(({ BrowserWindow }) => {
+    // Helper to notify all windows
+    const notifyAllWindows = (channel: string, data: any) => {
+      const windows = BrowserWindow.getAllWindows();
+      windows.forEach(window => {
+        if (!window.isDestroyed()) {
+          window.webContents.send(channel, data);
+        }
+      });
+    };
+
+    // Listen for contact changes (new contact created via pairing)
+    connectionModule.onContactsChanged(() => {
+      console.log('[ModuleRegistryInit] ConnectionModule: contacts changed, notifying UI...');
+      // Notify UI to refresh contacts (matches existing ContactsView.tsx listener)
+      notifyAllWindows('contacts:updated', {});
+    });
+
+    // Listen for topic changes (new topic created via pairing)
+    connectionModule.onTopicsChanged(() => {
+      console.log('[ModuleRegistryInit] ConnectionModule: topics changed, notifying UI...');
+      // Notify UI to refresh conversations (matches existing ChatLayout listener)
+      notifyAllWindows('chat:conversationCreated', {});
+    });
+
+    // Listen for connection state changes (pairing complete)
+    connectionModule.onConnectionsChanged(() => {
+      console.log('[ModuleRegistryInit] ConnectionModule: pairing complete, notifying UI...');
+      // Notify UI of both contacts and conversations update
+      notifyAllWindows('contacts:updated', {});
+      notifyAllWindows('chat:conversationCreated', {});
+    });
+  }).catch(err => {
+    console.error('[ModuleRegistryInit] Failed to setup ConnectionModule listeners:', err);
+  });
+}
+
+/**
  * Initialize ModuleRegistry with shared modules from lama.core
  *
  * This replaces the old unified-plan-system-init.ts with a proper
@@ -131,10 +177,10 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   // are created by CoreModule and supplied via emitSupplies()
   moduleRegistry.supply('OneCore', nodeOneCore);
 
-  // Supply TopicAnalysisModel if available (not managed by CoreModule)
-  if ((nodeOneCore as any).topicAnalysisModel) {
-    moduleRegistry.supply('TopicAnalysisModel', (nodeOneCore as any).topicAnalysisModel);
-  }
+  // NOTE: TopicAnalysisModel is created and supplied by AnalysisModule
+  // AnalysisModule.init() creates it, emitSupplies() supplies it to the registry
+  // AIModule demands TopicAnalysisModel and receives it from AnalysisModule
+  // After initializeModuleRegistry returns, node-one-core.ts gets it from AnalysisModule
 
   // NOTE: TopicGroupManager is created by ChatModule and set on oneCore
   // ChatModule.emitSupplies() supplies it to the registry
@@ -210,7 +256,8 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   // ConnectionModule needs commServerUrl and webUrl for Discovery and invitations
   // webUrl from config, or undefined to let ConnectionPlan use its fallback (https://lama.one)
   const webUrl = (global as any).lamaConfig?.web?.url;
-  moduleRegistry.register(new ConnectionModule(commServerUrl, webUrl));
+  connectionModuleInstance = new ConnectionModule(commServerUrl, webUrl);
+  moduleRegistry.register(connectionModuleInstance);
 
   console.log('[ModuleRegistryInit] Registering AnalysisModule...');
   moduleRegistry.register(new AnalysisModule());
@@ -265,6 +312,14 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
     console.log('[ModuleRegistryInit] ✅ UserSettingsManager wired to AIModule llmManager');
   } else {
     console.warn('[ModuleRegistryInit] Cannot wire userSettingsManager - userSettingsManager:', !!userSettingsManager, 'llmManager:', !!aiModuleInstance?.llmManager);
+  }
+
+  // Setup ConnectionModule event listeners for UI updates
+  // ConnectionModule handles pairing via registerPairingHandler() and emits events when contacts/topics change
+  if (connectionModuleInstance) {
+    console.log('[ModuleRegistryInit] Setting up ConnectionModule event listeners for UI updates...');
+    setupConnectionModuleListeners(connectionModuleInstance, nodeOneCore);
+    console.log('[ModuleRegistryInit] ✅ ConnectionModule event listeners registered');
   }
 
   // Create retroactive Assemblies for Instance and Owner (bootstrap problem: created before StoryFactory)

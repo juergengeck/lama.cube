@@ -198,6 +198,7 @@ class IPCController {
     this.handle('connection:createPairingInvitation', connectionPlans.createPairingInvitation);
     this.handle('connection:acceptPairingInvitation', connectionPlans.acceptPairingInvitation);
     this.handle('connection:getDataStats', connectionPlans.getDataStats);
+    this.handle('connection:getConfiguredPairingIdentity', connectionPlans.getConfiguredPairingIdentity);
 
     // Group chat plans (certificate-based group chat establishment)
     this.handle('groupChat:createGroup', groupChatPlans.createGroup);
@@ -251,6 +252,7 @@ class IPCController {
     this.handle('ai:switchAIModel', aiPlans.switchAIModel);
     this.handle('ai:setAISettings', aiPlans.setAISettings);
     this.handle('ai:getAIPersonForTopic', aiPlans.getAIPersonForTopic);
+    this.handle('ai:getDefaultAIPersonId', aiPlans.getDefaultAIPersonId);
     this.handle('ai:generateAIName', aiPlans.generateAIName);
 
     // LLM Configuration plans (network Ollama support)

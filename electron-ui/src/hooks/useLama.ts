@@ -38,51 +38,30 @@ export function useLamaMessages(conversationId: string) {
     loadMessages()
   }, [conversationId]) // Only reload when conversation changes
 
-  // Listen for new messages
+  // Listen for channel updates (messages changed)
+  // Refresh on ANY channel:updated - message retrieval aggregates all relevant channels
   useEffect(() => {
-    const handleNewMessages = (data: { conversationId: string; messages: Message[] }) => {
-      console.log('[useLamaMessages] 📨 New message event:', data.conversationId, 'current:', conversationId)
-
-      // DEBUG: Show message details
-      data.messages?.forEach((msg, i) => {
-        console.log(`[useLamaMessages] 🔍 Event message ${i}: "${msg.content?.substring(0, 30)}..." for conversation ${data.conversationId}`)
-      })
-
-      // Normalize P2P channel IDs for comparison
-      const normalize = (id: string) => {
-        if (id?.includes('<->')) {
-          return id.split('<->').sort().join('<->')
+    const handleChannelUpdated = () => {
+      // Forward log to main process for debugging
+      if ((window as any).electronAPI?.invoke) {
+        (window as any).electronAPI.invoke('debug:log', `[useLamaMessages] 🔄 callback fired for: ${conversationId?.substring(0, 20)}`).catch(() => {})
+      }
+      console.log('[useLamaMessages] 🔄 channel:updated, reloading messages for:', conversationId?.substring(0, 20))
+      lamaBridge.getMessages(conversationId).then((msgs: any) => {
+        if ((window as any).electronAPI?.invoke) {
+          (window as any).electronAPI.invoke('debug:log', `[useLamaMessages] ✅ setMessages called with ${msgs?.length} messages`).catch(() => {})
         }
-        return id
-      }
-
-      const eventId = normalize(data.conversationId)
-      const currentId = normalize(conversationId)
-
-      console.log(`[useLamaMessages] 🔍 Comparing eventId: "${eventId}" vs currentId: "${currentId}"`)
-
-      if (eventId === currentId) {
-        console.log('[useLamaMessages] ✅ Match! Refreshing messages...')
-        // Directly fetch and update messages - no complex state management
-        lamaBridge.getMessages(conversationId).then((msgs: any) => {
-          console.log('[useLamaMessages] 🔄 Got', msgs.length, 'messages from refresh')
-          msgs.forEach((msg: any, i: any) => {
-            console.log(`[useLamaMessages] 🔍 Refreshed message ${i}: "${msg.content?.substring(0, 30)}..." for ${conversationId}`)
-          })
-          setMessages(msgs)
-        }).catch((err: any) => {
-          console.error('[useLamaMessages] Failed to refresh:', err)
-        })
-      } else {
-        console.log('[useLamaMessages] ❌ No match, ignoring event')
-      }
+        setMessages(msgs)
+      }).catch((err: any) => {
+        console.error('[useLamaMessages] Failed to refresh:', err)
+      })
     }
 
-    lamaBridge.on('chat:newMessages', handleNewMessages)
+    lamaBridge.on('channel:updated', handleChannelUpdated)
     return () => {
-      lamaBridge.off('chat:newMessages', handleNewMessages)
+      lamaBridge.off('channel:updated', handleChannelUpdated)
     }
-  }, [conversationId]) // Re-subscribe when conversation changes
+  }, [conversationId])
 
   const sendMessage = useCallback(async (topicId: string, content: string, attachments?: any[]) => {
     try {

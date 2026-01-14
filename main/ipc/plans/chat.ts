@@ -147,18 +147,8 @@ const chatPlans = {
     });
     console.log(`[Chat] 📤 Message saved successfully: ${response.success}`);
 
-    // Trigger AI response AFTER message is saved
-    // Channel is now in consistent state for buildPrompt to read
-    if (nodeOneCore.aiAssistantModel?.isAITopic(conversationId)) {
-      const senderId = nodeOneCore.ownerId;
-      if (senderId) {
-        console.log(`[Chat] 🤖 AI topic detected - triggering AI response`);
-        // Fire and forget - don't await, but channel is ready
-        nodeOneCore.aiAssistantModel.processMessage(conversationId, text, senderId).catch(err => {
-          console.error(`[Chat] ❌ AI processing error:`, err);
-        });
-      }
-    }
+    // AI response is triggered by AIMessageListener when channel update fires
+    // This unified path handles both local and remote messages consistently
 
     return {
       success: response.success,

@@ -1092,10 +1092,10 @@ class NodeOneCore implements INodeOneCore {
       
       // Send greeting message as plain text
       // TopicRoom.sendMessage expects (text, author, channelOwner)
-      // AI posts to its own channel (owned by AI, shared with group participants)
+      // AI posts to the common group channel (null = topic's default channel)
       const greetingText = `Hello! I'm ${modelName}. How can I help you today?`
 
-      await topicRoom.sendMessage(greetingText, aiPersonId, aiPersonId)
+      await topicRoom.sendMessage(greetingText, aiPersonId, null)
       console.log(`[NodeOneCore] ✅ AI greeting sent from ${modelName}`)
     } catch (error) {
       console.error('[NodeOneCore] Failed to send AI greeting:', error)
@@ -1139,9 +1139,9 @@ class NodeOneCore implements INodeOneCore {
       if (response && response.content) {
         // Create AI person ID for the response
         const aiPersonId = await this.getOrCreateAIPersonId((llmManager as any).defaultModelId, 'AI Assistant')
-        
-        // AI posts to its own channel (owned by AI, shared with group participants)
-        await topicRoom.sendMessage(response.content, aiPersonId, aiPersonId)
+
+        // AI posts to the common group channel (null = topic's default channel)
+        await topicRoom.sendMessage(response.content, aiPersonId, null)
         
         console.log('[NodeOneCore] ✅ AI response sent to topic')
       }

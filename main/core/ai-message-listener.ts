@@ -301,10 +301,10 @@ class AIMessageListener {
    * Check if a topic is an AI topic
    * AIAssistantHandler is the source of truth - always delegate to it
    */
-  isAITopic(topicId: string): boolean {
+  async isAITopic(topicId: string): Promise<boolean> {
     // AIAssistantModel is the source of truth
     if (this.aiAssistantModel && this.aiAssistantModel.isAITopic) {
-      return this.aiAssistantModel.isAITopic(topicId)
+      return await this.aiAssistantModel.isAITopic(topicId)
     }
 
     // Fallback for 'default' channel if AIAssistantModel not available yet
@@ -457,7 +457,7 @@ class AIMessageListener {
 
         // Check if this topic is registered with AI using actual topicIdHash
         // The AITopicManager registry is the source of truth
-        const isAITopic = this.aiAssistantModel.isAITopic(topicIdHash)
+        const isAITopic = await this.aiAssistantModel.isAITopic(topicIdHash)
 
         if (!isAITopic) {
           console.log(`[AIMessageListener] Topic ${topicDisplayName} is not registered as AI topic, skipping`)

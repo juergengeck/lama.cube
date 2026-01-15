@@ -150,20 +150,9 @@ export class MCPInitializationPlan {
   }
 
   private async registerPlans(nodeOneCore: any): Promise<void> {
-    console.log('[MCPInitializationPlan] Registering plans with plan registry...');
-
-    const { registerLamaCorePlans, getLamaCoreDepend } = await import('@lama/core/services/plan-registration.js');
-    const deps = getLamaCoreDepend(nodeOneCore);
-    registerLamaCorePlans(deps);
-
-    // Register chat.core plan
-    const { chatPlan } = await import('../ipc/plans/chat.js');
-    if (chatPlan) {
-      const { planRegistry } = await import('@mcp/core');
-      planRegistry.registerPlan('chat', 'messaging', chatPlan, 'Chat and messaging operations');
-    }
-
-    console.log('[MCPInitializationPlan] ✅ Plans registered');
+    // Plan registration is now handled by mcp-server-init.ts via wireModulesToRegistry()
+    // which uses the refinio.api PlanRegistry
+    console.log('[MCPInitializationPlan] Plans registered via mcp-server-init.ts');
   }
 
   /**

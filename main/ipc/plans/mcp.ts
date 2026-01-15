@@ -388,15 +388,27 @@ const mcpHandlers = {
 
   /**
    * Get MCP manager status
+   * Includes both MCP manager state and HTTP API server status
    */
   async getStatus(event: IpcMainInvokeEvent): Promise<MCPStatusResult> {
     try {
       const state = mcpManager.debugState();
 
+      // Also check HTTP API server status for MCP thin proxy
+      let apiServerRunning = false;
+      try {
+        const { lamaAPIServer } = await import('../../services/lama-api-server.js');
+        const apiStatus = lamaAPIServer.getStatus();
+        apiServerRunning = apiStatus.running;
+      } catch {
+        // API server not imported/started
+      }
+
       return {
         success: true,
         data: {
-          running: state.initialized,
+          // running is true if either MCP manager OR HTTP API server is available
+          running: state.initialized || apiServerRunning,
           servers: state.servers,
           connectedClients: state.connectedClients,
           toolCount: state.toolCount,

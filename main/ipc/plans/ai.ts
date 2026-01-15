@@ -735,7 +735,7 @@ const aiPlans = {
   },
 
   /**
-   * Generate AI name
+   * Generate AI name (renamed from generateBirthName)
    * Called on first launch to create AI identity
    * @param modelId - Model ID to use for name generation (user's selected model)
    * @param _provider - Unused (LLM object's provider field is used from storage)
@@ -745,7 +745,7 @@ const aiPlans = {
     { modelId, provider: _provider }: { modelId: string; provider?: string }
   ): Promise<{
     success: boolean;
-    data?: { name: string; email: string };
+    data?: { name: string; email: string; creationContext?: { device: string; locale: string; time: number; app: string; creationStory?: string } };
     error?: string;
   }> {
     console.log(`[AI IPC] Generating AI name with model: ${modelId}`);
@@ -793,13 +793,14 @@ const aiPlans = {
       // Generate name using the user's selected model
       const result = await creationService.generateName(context, modelId);
 
-      console.log(`[AI IPC] AI name generated: ${result.name}`);
+      console.log(`[AI IPC] AI name generated: ${result.name} with creation story`);
 
       return {
         success: true,
         data: {
           name: result.name,
-          email: result.email
+          email: result.email,
+          creationContext: result.creationContext
         }
       };
     } catch (error: any) {

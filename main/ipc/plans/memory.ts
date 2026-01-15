@@ -19,7 +19,7 @@ export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
         throw new Error('Chat Memory Handler not initialized');
       }
 
-      const status = nodeOneCore.chatMemoryHandler.getMemoryStatus(params.topicId);
+      const status = nodeOneCore.chatMemoryHandler.getMemoryStatus({ topicId: params.topicId });
 
       return {
         enabled: status.enabled,
@@ -40,7 +40,7 @@ export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
         throw new Error('Chat Memory Handler not initialized');
       }
 
-      const enabled = await nodeOneCore.chatMemoryHandler.toggleMemories(params.topicId);
+      const enabled = await nodeOneCore.chatMemoryHandler.toggleMemories({ topicId: params.topicId });
 
       return {
         enabled
@@ -69,11 +69,11 @@ export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
           throw new Error('Chat Memory Handler not initialized');
         }
 
-        const config = await nodeOneCore.chatMemoryHandler.enableMemories(
-          params.topicId,
-          params.autoExtract ?? true,
-          params.keywords ?? []
-        );
+        const config = await nodeOneCore.chatMemoryHandler.enableMemories({
+          topicId: params.topicId,
+          autoExtract: params.autoExtract ?? true,
+          keywords: params.keywords ?? []
+        });
 
         return {
           enabled: true,
@@ -95,7 +95,7 @@ export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
         throw new Error('Chat Memory Handler not initialized');
       }
 
-      await nodeOneCore.chatMemoryHandler.disableMemories(params.topicId);
+      await nodeOneCore.chatMemoryHandler.disableMemories({ topicId: params.topicId });
 
       return {
         enabled: false
@@ -150,7 +150,7 @@ export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
       event: IpcMainInvokeEvent,
       params: {
         topicId?: string;
-        keywords: string[];
+        keywords: string[] | string;  // MCP may pass comma-separated string
         limit?: number;
       }
     ) => {
@@ -159,11 +159,17 @@ export default function registerMemoryHandlers(ipcMain: any, nodeOneCore: any) {
           throw new Error('Chat Memory Handler not initialized');
         }
 
-        const result = await nodeOneCore.chatMemoryHandler.findRelatedMemories(
-          params.topicId || '',
-          params.keywords,
-          params.limit ?? 10
-        );
+        // Handle keywords as string or array (MCP may pass comma-separated string)
+        let keywords = params.keywords;
+        if (typeof keywords === 'string') {
+          keywords = keywords.split(',').map(k => k.trim()).filter(k => k.length > 0);
+        }
+
+        const result = await nodeOneCore.chatMemoryHandler.findRelatedMemories({
+          topicId: params.topicId || '',
+          keywords,
+          limit: params.limit ?? 10
+        });
 
         return {
           memories: result.memories,

@@ -342,6 +342,15 @@ class NodeProvisioning {
       console.warn('[NodeProvisioning] Failed to initialize memory tools:', error)
     }
 
+    // Start HTTP API server for MCP thin proxy
+    try {
+      const { lamaAPIServer } = await import('./lama-api-server.js');
+      await lamaAPIServer.start();
+      console.log('[NodeProvisioning] ✅ HTTP API server started on port 8787');
+    } catch (error) {
+      console.warn('[NodeProvisioning] Failed to start HTTP API server:', error);
+    }
+
     // Initialize AssemblyManager for knowledge extraction and Supply/Demand markets
     try {
       console.log('[NodeProvisioning] Initializing AssemblyManager...')

@@ -43,6 +43,8 @@ import {
 import { InstancePlan } from '@lama/core/plans/InstancePlan.js';
 import { ElectronLLMPlatform, createElectronLLMConfigAdapter } from '../../adapters/electron-llm-platform.js';
 import { UserSettingsManager } from '../core/user-settings-manager.js';
+import { getInferenceManager } from '../core/inference-manager.js';
+import { MeaningDimension } from '@cube/meaning.core';
 // FilterGate removed - ConnectionModule creates its own filters via TopicGroupManager
 import type { NodeOneCore } from '../types/one-core.js';
 import type { SHA256Hash, SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
@@ -262,6 +264,43 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   console.log('[ModuleRegistryInit] Registering AnalysisModule...');
   moduleRegistry.register(new AnalysisModule());
 
+  // Supply EmbeddingProvider and MeaningDimension for semantic memory search (if InferenceManager is ready)
+  try {
+    const inferenceManager = getInferenceManager();
+    if (inferenceManager.initialized) {
+      const localProvider = inferenceManager.getEmbeddingProvider();
+      moduleRegistry.supply('EmbeddingProvider', localProvider);
+      console.log('[ModuleRegistryInit] ✅ EmbeddingProvider supplied for semantic memory search');
+
+      // Create shared MeaningDimension for cube-based HNSW indexing
+      // Adapt LocalEmbeddingProvider to meaning.core's EmbeddingProvider interface
+      const meaningEmbeddingProvider = {
+        model: 'all-MiniLM-L6-v2' as const,
+        embed: (text: string) => localProvider.embed(text),
+        embedBatch: (texts: string[]) => localProvider.embedBatch(texts)
+      };
+
+      const meaningDimension = new MeaningDimension({
+        model: 'all-MiniLM-L6-v2',
+        embeddingProvider: meaningEmbeddingProvider
+      });
+
+      // Initialize MeaningDimension (non-blocking)
+      meaningDimension.init().then(() => {
+        console.log('[ModuleRegistryInit] ✅ MeaningDimension initialized for cube-based memory indexing');
+      }).catch(err => {
+        console.warn('[ModuleRegistryInit] ⚠️ MeaningDimension init failed:', err);
+      });
+
+      moduleRegistry.supply('MeaningDimension', meaningDimension);
+      console.log('[ModuleRegistryInit] ✅ MeaningDimension supplied for cube-based memory indexing');
+    } else {
+      console.log('[ModuleRegistryInit] ℹ️ InferenceManager not ready - memory will use keyword search');
+    }
+  } catch (error) {
+    console.warn('[ModuleRegistryInit] EmbeddingProvider/MeaningDimension not available:', error);
+  }
+
   console.log('[ModuleRegistryInit] Registering MemoryModule...');
   moduleRegistry.register(new MemoryModule());
 
@@ -287,6 +326,20 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   await moduleRegistry.initAll();
   console.log('[ModuleRegistryInit] ✅ All modules initialized successfully');
 
+  // Wire modules to HandlerRegistry for MCP/transport access
+  const { wireModulesToRegistry, startMcpServer } = await import('../services/mcp-server-init.js');
+  wireModulesToRegistry(moduleRegistry);
+
+  // Start MCP server (stdio) - exposes handlers to Claude Code
+  // Note: Only start if running with --mcp-stdio flag or similar
+  // For now, always start - can be gated later
+  try {
+    await startMcpServer();
+  } catch (error) {
+    console.warn('[ModuleRegistryInit] MCP server failed to start:', error);
+    // Non-critical - continue without MCP
+  }
+
   // CRITICAL: Set nodeOneCore.topicGroupManager from ChatModule
   // Note: ChatModule may or may not have topicGroupManager depending on architecture version
   // ChatPlan checks nodeOneCore.topicGroupManager for group chat creation
@@ -296,6 +349,16 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
     console.log('[ModuleRegistryInit] ✅ TopicGroupManager set on nodeOneCore');
   } else {
     console.warn('[ModuleRegistryInit] ChatModule.topicGroupManager not available');
+  }
+
+  // CRITICAL: Set nodeOneCore.chatMemoryHandler from MemoryModule
+  // IPC handlers for memory operations use nodeOneCore.chatMemoryHandler
+  const memoryModule = moduleRegistry.getModule<MemoryModule>('MemoryModule');
+  if (memoryModule?.chatMemoryPlan) {
+    (nodeOneCore as any).chatMemoryHandler = memoryModule.chatMemoryPlan;
+    console.log('[ModuleRegistryInit] ✅ ChatMemoryHandler set on nodeOneCore');
+  } else {
+    console.warn('[ModuleRegistryInit] MemoryModule.chatMemoryPlan not available');
   }
 
   // CRITICAL: Wire userSettingsManager to AIModule's llmManager for API key injection

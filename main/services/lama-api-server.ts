@@ -18,8 +18,8 @@ import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
 import type { Person } from '@refinio/one.core/lib/recipes.js';
 import { ContactsPlan } from '@chat/core/plans/ContactsPlan.js';
 import { MemoryTools } from './mcp/memory-tools.js';
-import { handleDiscoverPlans, handleCallPlan } from '@mcp/core';
 import { UserSettingsManager } from '../core/user-settings-manager.js';
+import { getPlanRegistry } from './mcp-server-init.js';
 
 export class LamaAPIServer {
   private server: http.Server | null = null;
@@ -72,7 +72,40 @@ export class LamaAPIServer {
       req.on('data', chunk => body += chunk);
       req.on('end', async () => {
         try {
-          const { method, params } = JSON.parse(body);
+          const parsedBody = JSON.parse(body || '{}');
+          let method = parsedBody.method;
+          let params = parsedBody.params || parsedBody;
+
+          // Handle REST-style URL paths (e.g., /api/chatMemory/findRelatedMemories)
+          const url = req.url || '/';
+          if (url.startsWith('/api/')) {
+            // Map REST endpoints to IPC method names
+            const restMethodMap: Record<string, string> = {
+              '/api/chatMemory/enableMemories': 'memory:enable',
+              '/api/chatMemory/disableMemories': 'memory:disable',
+              '/api/chatMemory/toggleMemories': 'memory:toggle',
+              '/api/chatMemory/extractSubjects': 'memory:extract',
+              '/api/chatMemory/findRelatedMemories': 'memory:find',
+              '/api/chatMemory/autoExtractFromTopic': 'memory:extract',
+              '/api/chatMemory/getMemoryStatus': 'memory:getStatus'
+            };
+            method = restMethodMap[url];
+            if (!method) {
+              res.writeHead(404);
+              res.end(JSON.stringify({ success: false, error: `Unknown REST endpoint: ${url}` }));
+              return;
+            }
+            // Map REST params to IPC params format
+            if (url === '/api/chatMemory/findRelatedMemories') {
+              // Convert keywords string to array if needed
+              let keywords = params.keywords;
+              if (typeof keywords === 'string') {
+                keywords = keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k.length > 0);
+              }
+              params = { keywords, limit: params.limit };
+            }
+            console.log(`[LamaAPI] REST ${url} -> ${method}`);
+          }
 
           this.requestCount++;
           console.log(`[LamaAPI] ${this.requestCount}. ${method}`, params ? `(${Object.keys(params).join(', ')})` : '');
@@ -90,12 +123,34 @@ export class LamaAPIServer {
 
           switch (method) {
             // MCP Meta-Tools - Plan discovery and dynamic calls
-            case 'mcp:discover_plans':
-              result = await handleDiscoverPlans(params || {});
+            case 'mcp:discover_plans': {
+              const registry = getPlanRegistry();
+              if (!registry) {
+                throw new Error('PlanRegistry not initialized');
+              }
+              const allMetadata = registry.getAllMetadata();
+              result = {
+                plans: allMetadata.map(m => ({
+                  name: m.name,
+                  description: m.description,
+                  methods: m.methods.map(method => ({
+                    name: method.name,
+                    description: method.description,
+                    params: method.params
+                  }))
+                }))
+              };
               break;
-            case 'mcp:call_plan':
-              result = await handleCallPlan(params);
+            }
+            case 'mcp:call_plan': {
+              const registry = getPlanRegistry();
+              if (!registry) {
+                throw new Error('PlanRegistry not initialized');
+              }
+              const { plan, method: methodName, params: callParams } = params;
+              result = await registry.execute(plan, methodName, callParams || {});
               break;
+            }
 
             // Chat handlers - call business logic directly
             case 'chat:sendMessage':
@@ -332,20 +387,52 @@ export class LamaAPIServer {
               break;
 
             case 'memory:getStatus':
+              if (!nodeOneCore.chatMemoryHandler) throw new Error('ChatMemoryHandler not initialized');
+              result = nodeOneCore.chatMemoryHandler.getMemoryStatus({ topicId: params.topicId });
+              break;
             case 'memory:toggle':
+              if (!nodeOneCore.chatMemoryHandler) throw new Error('ChatMemoryHandler not initialized');
+              result = { enabled: await nodeOneCore.chatMemoryHandler.toggleMemories({ topicId: params.topicId }) };
+              break;
             case 'memory:enable':
+              if (!nodeOneCore.chatMemoryHandler) throw new Error('ChatMemoryHandler not initialized');
+              result = await nodeOneCore.chatMemoryHandler.enableMemories({
+                topicId: params.topicId,
+                autoExtract: params.autoExtract ?? true,
+                keywords: params.keywords ?? []
+              });
+              break;
             case 'memory:disable':
+              if (!nodeOneCore.chatMemoryHandler) throw new Error('ChatMemoryHandler not initialized');
+              await nodeOneCore.chatMemoryHandler.disableMemories({ topicId: params.topicId });
+              result = { enabled: false };
+              break;
             case 'memory:extract':
-            case 'memory:find':
+              if (!nodeOneCore.chatMemoryHandler) throw new Error('ChatMemoryHandler not initialized');
+              result = await nodeOneCore.chatMemoryHandler.extractSubjects({
+                topicId: params.topicId,
+                limit: params.limit ?? 50,
+                includeContext: true
+              });
+              break;
+            case 'memory:find': {
+              if (!nodeOneCore.chatMemoryHandler) throw new Error('ChatMemoryHandler not initialized');
+              // Handle keywords as string or array (MCP may pass comma-separated string)
+              let keywords = params.keywords;
+              if (typeof keywords === 'string') {
+                keywords = keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k.length > 0);
+              }
+              result = await nodeOneCore.chatMemoryHandler.findRelatedMemories({
+                topicId: params.topicId || '',
+                keywords: keywords || [],
+                limit: params.limit ?? 10
+              });
+              break;
+            }
             case 'memory:journal:list':
             case 'memory:journal:get':
-              // Get the registered handler from ipcMain
-              const handler = (ipcMain as any)._events[`handle-${method}`]?.[0];
-              if (handler) {
-                result = await handler(mockEvent, params || {});
-              } else {
-                throw new Error(`Memory handler ${method} not registered`);
-              }
+              // These still need IPC as they access TopicAnalysisModel directly
+              throw new Error(`${method} requires IPC handler - restart app to register`);
               break;
 
             default:

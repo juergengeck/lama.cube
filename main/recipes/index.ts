@@ -35,8 +35,8 @@ import { AIRecipe, AIListRecipe } from '@lama/core/recipes/AIRecipe.js'
 // AISettings Recipe - AI assistant application settings per instance
 import { AISettingsRecipe } from '@lama/core/recipes/AISettingsRecipe.js'
 
-// Chat Memory Config - memory extraction configuration per topic
-import { ChatMemoryConfigRecipe } from './chat-memory-config.js'
+// Chat Memory Recipes - config and association for topic memory extraction
+import { ChatMemoryConfigRecipe, ChatMemoryAssociationRecipe } from './chat-memory-config.js'
 
 // Memory Recipe - synthesized knowledge document from memory.core
 import { MemoryRecipe } from '@memory/core/recipes/MemoryRecipe'
@@ -196,6 +196,7 @@ const LamaRecipes = [
     UserSettingsRecipe,
     AvatarPreferenceRecipe,
     ChatMemoryConfigRecipe,
+    ChatMemoryAssociationRecipe,
     MemoryRecipe,
     ...MCPRecipes,
     // ...FeedForwardRecipes

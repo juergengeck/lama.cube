@@ -264,41 +264,44 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   console.log('[ModuleRegistryInit] Registering AnalysisModule...');
   moduleRegistry.register(new AnalysisModule());
 
-  // Supply EmbeddingProvider and MeaningDimension for semantic memory search (if InferenceManager is ready)
+  // Supply EmbeddingProvider and MeaningDimension for semantic memory search
+  // Initialize InferenceManager if needed (may not be initialized yet during provisioning flow)
   try {
     const inferenceManager = getInferenceManager();
-    if (inferenceManager.initialized) {
-      const localProvider = inferenceManager.getEmbeddingProvider();
-      moduleRegistry.supply('EmbeddingProvider', localProvider);
-      console.log('[ModuleRegistryInit] ✅ EmbeddingProvider supplied for semantic memory search');
 
-      // Create shared MeaningDimension for cube-based HNSW indexing
-      // Adapt LocalEmbeddingProvider to meaning.core's EmbeddingProvider interface
-      const meaningEmbeddingProvider = {
-        model: 'all-MiniLM-L6-v2' as const,
-        embed: (text: string) => localProvider.embed(text),
-        embedBatch: (texts: string[]) => localProvider.embedBatch(texts)
-      };
-
-      const meaningDimension = new MeaningDimension({
-        model: 'all-MiniLM-L6-v2',
-        embeddingProvider: meaningEmbeddingProvider
-      });
-
-      // Initialize MeaningDimension (non-blocking)
-      meaningDimension.init().then(() => {
-        console.log('[ModuleRegistryInit] ✅ MeaningDimension initialized for cube-based memory indexing');
-      }).catch(err => {
-        console.warn('[ModuleRegistryInit] ⚠️ MeaningDimension init failed:', err);
-      });
-
-      moduleRegistry.supply('MeaningDimension', meaningDimension);
-      console.log('[ModuleRegistryInit] ✅ MeaningDimension supplied for cube-based memory indexing');
-    } else {
-      console.log('[ModuleRegistryInit] ℹ️ InferenceManager not ready - memory will use keyword search');
+    // Initialize InferenceManager if not yet ready (blocking to ensure embeddings available)
+    if (!inferenceManager.initialized) {
+      console.log('[ModuleRegistryInit] Initializing InferenceManager for semantic memory...');
+      await inferenceManager.init({ preferLocal: true });
+      console.log('[ModuleRegistryInit] ✅ InferenceManager initialized');
     }
+
+    const localProvider = inferenceManager.getEmbeddingProvider();
+    moduleRegistry.supply('EmbeddingProvider', localProvider);
+    console.log('[ModuleRegistryInit] ✅ EmbeddingProvider supplied for semantic memory search');
+
+    // Create shared MeaningDimension for cube-based HNSW indexing
+    // Adapt LocalEmbeddingProvider to meaning.core's EmbeddingProvider interface
+    const meaningEmbeddingProvider = {
+      model: 'all-MiniLM-L6-v2' as const,
+      embed: (text: string) => localProvider.embed(text),
+      embedBatch: (texts: string[]) => localProvider.embedBatch(texts)
+    };
+
+    const meaningDimension = new MeaningDimension({
+      model: 'all-MiniLM-L6-v2',
+      embeddingProvider: meaningEmbeddingProvider
+    });
+
+    // Initialize MeaningDimension (blocking to ensure ready for MemoryModule)
+    await meaningDimension.init();
+    console.log('[ModuleRegistryInit] ✅ MeaningDimension initialized for cube-based memory indexing');
+
+    moduleRegistry.supply('MeaningDimension', meaningDimension);
+    console.log('[ModuleRegistryInit] ✅ MeaningDimension supplied for cube-based memory indexing');
   } catch (error) {
     console.warn('[ModuleRegistryInit] EmbeddingProvider/MeaningDimension not available:', error);
+    console.log('[ModuleRegistryInit] ℹ️ Memory will use keyword search');
   }
 
   console.log('[ModuleRegistryInit] Registering MemoryModule...');

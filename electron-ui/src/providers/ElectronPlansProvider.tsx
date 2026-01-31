@@ -1,50 +1,80 @@
 /**
  * ElectronPlansProvider - IPC Wrappers for LAMA Plans
  *
- * Wraps Electron IPC calls to match Plan interfaces from @chat/core and @lama/core.
+ * Wraps Electron IPC calls to match Plan interfaces from @refinio/chat.core and @refinio/lama.core.
  * This allows lama.cube to use the SAME UI components as lama.browser by providing
  * Plan implementations via IPC instead of direct access.
  *
  * Architecture:
  * - UI Components: Import from lama.browser (SHARED)
- * - Plan Interfaces: Defined in @chat/core, @lama/core (SHARED)
+ * - Plan Interfaces: Defined in @refinio/chat.core, @refinio/lama.core (SHARED)
  * - Plan Implementations: Platform-specific (browser: direct, cube: IPC wrappers)
  *
  * See: ui.core/ARCHITECTURE.md for complete architecture documentation
  */
 
 import { ReactNode, useState, useEffect, useMemo, useCallback } from 'react'
-import { PlansProvider, type LAMAPlansContext, type MemoryPlan, type LocalModelsPlan, type IngestionPlan } from '@ui/core'
-import type { ContactsPlan } from '@chat/core/plans/ContactsPlan.js'
-import type { ChatPlan } from '@chat/core/plans/ChatPlan.js'
-import type { AIPlan } from '@lama/core/plans/AIPlan.js'
-import type { AIAssistantPlan } from '@lama/core/plans/AIAssistantPlan.js'
-import type { LLMConfigPlan } from '@lama/core/plans/LLMConfigPlan.js'
-import type { TopicAnalysisPlan } from '@lama/core/plans/TopicAnalysisPlan.js'
-import type { ProposalsPlan } from '@lama/core/plans/ProposalsPlan.js'
-import type { KeywordDetailPlan } from '@lama/core/plans/KeywordDetailPlan.js'
-import type { WordCloudSettingsPlan } from '@lama/core/plans/WordCloudSettingsPlan.js'
-import type { CryptoPlan } from '@lama/core/plans/CryptoPlan.js'
-import type { AuditPlan } from '@lama/core/plans/AuditPlan.js'
-import type { JournalPlan } from '@lama/core/plans/JournalPlan.js'
-import type { ExportPlan } from '@chat/core/plans/ExportPlan.js'
-import type { FeedForwardPlan } from '@chat/core/plans/FeedForwardPlan.js'
-import type { ConnectionPlan } from '@lama/connection.core'
-import type { TrustPlan } from '@trust/core/plans/TrustPlan.js'
-import type { CubePlan } from '@lama/core/plans/CubePlan.js'
-import type { TransportPlan } from '@transport/core'
+import { PlansProvider, type LAMAPlansContext, type MemoryPlan, type LocalModelsPlan, type IngestionPlan, type OnecorePlan } from '@refinio/ui.core'
+import type { ContactsPlan } from '@refinio/chat.core/plans/ContactsPlan.js'
+import type { ChatPlan } from '@refinio/chat.core/plans/ChatPlan.js'
+import type { AIPlan } from '@refinio/lama.core/plans/AIPlan.js'
+import type { AIAssistantPlan } from '@refinio/lama.core/plans/AIAssistantPlan.js'
+import type { LLMConfigPlan } from '@refinio/lama.core/plans/LLMConfigPlan.js'
+import type { TopicAnalysisPlan } from '@refinio/lama.core/plans/TopicAnalysisPlan.js'
+import type { ProposalsPlan } from '@refinio/lama.core/plans/ProposalsPlan.js'
+import type { KeywordDetailPlan } from '@refinio/lama.core/plans/KeywordDetailPlan.js'
+import type { WordCloudSettingsPlan } from '@refinio/lama.core/plans/WordCloudSettingsPlan.js'
+import type { CryptoPlan } from '@refinio/lama.core/plans/CryptoPlan.js'
+import type { AuditPlan } from '@refinio/lama.core/plans/AuditPlan.js'
+import type { JournalPlan } from '@refinio/lama.core/plans/JournalPlan.js'
+import type { ExportPlan } from '@refinio/lama.core/plans/ExportPlan.js'
+import type { FeedForwardPlan } from '@refinio/chat.core/plans/FeedForwardPlan.js'
+import type { ConnectionPlan } from '@refinio/connection.core'
+import type { TrustPlan } from '@refinio/trust.core/plans/TrustPlan.js'
+import type { CubePlan } from '@refinio/lama.core/plans/CubePlan.js'
+import type { TransportPlan } from '@refinio/transport.core'
+
+/**
+ * Helper to check if an error indicates NodeOneCore is not yet initialized
+ * Used by Plan wrappers to gracefully handle pre-login state
+ */
+function isNotInitializedError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const msg = error.message
+    return msg.includes('not initialized') ||
+           msg.includes('NodeOneCore') ||
+           msg.includes('No handler registered')
+  }
+  return false
+}
 
 /**
  * IPC Wrapper for ContactsPlan
  * Maps ContactsPlan interface methods to Electron IPC calls
+ * Gracefully handles pre-login state by returning empty results
  */
 const contactsPlan: ContactsPlan = {
   async getContacts() {
-    return await window.electronAPI.invoke('contacts:list')
+    try {
+      return await window.electronAPI.invoke('contacts:list')
+    } catch (error) {
+      // Gracefully handle pre-login state - return empty contacts
+      if (isNotInitializedError(error)) {
+        return { success: true, contacts: [] }
+      }
+      throw error
+    }
   },
 
   async getContactsWithTrust() {
-    return await window.electronAPI.invoke('contacts:list-with-trust')
+    try {
+      return await window.electronAPI.invoke('contacts:list-with-trust')
+    } catch (error) {
+      if (isNotInitializedError(error)) {
+        return { success: true, contacts: [] }
+      }
+      throw error
+    }
   },
 
   async getPendingContacts() {
@@ -248,6 +278,14 @@ const llmConfigPlan: LLMConfigPlan & {
   getAvailableModels: () => Promise<any>
   discoverOllamaModels: (params?: { serverUrl?: string }) => Promise<any>
   discoverClaudeModels: () => Promise<any>
+  // Server management methods for OllamaServersSection component
+  getOllamaServers: () => Promise<any>
+  addOllamaServer: (params: any) => Promise<any>
+  updateOllamaServer: (params: any) => Promise<any>
+  removeOllamaServer: (params: any) => Promise<any>
+  setOllamaServerEnabled: (params: any) => Promise<any>
+  discoverAllOllamaModels: () => Promise<any>
+  testConnectionAndDiscoverModels: (params: any) => Promise<any>
 } = {
   async getAllConfigs() {
     return await window.electronAPI.invoke('llmConfig:getAll')
@@ -265,8 +303,12 @@ const llmConfigPlan: LLMConfigPlan & {
     return await window.electronAPI.invoke('llmConfig:delete', modelId)
   },
 
-  async testConnection(modelId: string) {
-    return await window.electronAPI.invoke('llmConfig:testConnection', modelId)
+  async testConnection(params: any) {
+    return await window.electronAPI.invoke('llmConfig:testConnection', params)
+  },
+
+  async testConnectionAndDiscoverModels(params: any) {
+    return await window.electronAPI.invoke('llm:testConnectionAndDiscoverModels', params)
   },
 
   async getAvailableModels(params?: any) {
@@ -274,13 +316,39 @@ const llmConfigPlan: LLMConfigPlan & {
   },
 
   async discoverOllamaModels(params?: { serverUrl?: string }) {
-    const result = await window.electronAPI.invoke('ai:discoverOllamaModels', params)
+    const result = await window.electronAPI.invoke('llmConfig:discoverOllamaModels', params)
     return result
   },
 
   async discoverClaudeModels() {
     const result = await window.electronAPI.invoke('ai:discoverClaudeModels')
     return result
+  },
+
+  // ========== Ollama Server Management ==========
+
+  async getOllamaServers() {
+    return await window.electronAPI.invoke('llmConfig:getOllamaServers')
+  },
+
+  async addOllamaServer(params: any) {
+    return await window.electronAPI.invoke('llmConfig:addOllamaServer', params)
+  },
+
+  async updateOllamaServer(params: any) {
+    return await window.electronAPI.invoke('llmConfig:updateOllamaServer', params)
+  },
+
+  async removeOllamaServer(params: any) {
+    return await window.electronAPI.invoke('llmConfig:removeOllamaServer', params)
+  },
+
+  async setOllamaServerEnabled(params: any) {
+    return await window.electronAPI.invoke('llmConfig:setOllamaServerEnabled', params)
+  },
+
+  async discoverAllOllamaModels() {
+    return await window.electronAPI.invoke('llmConfig:discoverAllOllamaModels')
   }
 } as any
 
@@ -561,6 +629,28 @@ const transportPlan: TransportPlan = {
 
   async shutdown() {
     // No-op for IPC - main process handles cleanup
+  },
+
+  // Simplified createInvite for UI components
+  async createInvite() {
+    try {
+      const result = await window.electronAPI.transport.createWebRTCInvite({})
+      if (!result.success) {
+        return { success: false, error: result.error || 'Failed to create invite' }
+      }
+      return {
+        success: true,
+        data: {
+          inviteUrl: result.url,
+          sessionId: result.sessionId
+        }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create invite'
+      }
+    }
   }
 }
 
@@ -655,17 +745,27 @@ const ingestionPlan: IngestionPlan = {
 }
 
 /**
+ * IPC Wrapper for OnecorePlan
+ * Low-level ONE.core instance operations
+ */
+const onecorePlan: OnecorePlan = {
+  async clearStorage() {
+    return await window.electronAPI.invoke('onecore:clearStorage')
+  }
+}
+
+/**
  * Complete LAMAPlans implementation for Electron
  * All Plans are IPC wrappers that match Plan interfaces
  */
 export const electronPlans: LAMAPlans = {
-  // Chat Plans (from @chat/core)
+  // Chat Plans (from @refinio/chat.core)
   contacts: contactsPlan,
   chat: chatPlan,
   export: exportPlan,
   feedForward: feedForwardPlan,
 
-  // AI Plans (from @lama/core)
+  // AI Plans (from @refinio/lama.core)
   ai: aiPlan,
   aiAssistant: aiAssistantPlan,
   llmConfig: llmConfigPlan,
@@ -677,10 +777,10 @@ export const electronPlans: LAMAPlans = {
   audit: auditPlan,
   journal: journalPlan,
 
-  // Connection Plans (from @lama/connection.core)
+  // Connection Plans (from @refinio/connection.core)
   connection: connectionPlan,
 
-  // Trust Plans (from @trust/core)
+  // Trust Plans (from @refinio/trust.core)
   trust: trustPlan,
 
   // Cube Plans (dimensional storage)
@@ -696,7 +796,169 @@ export const electronPlans: LAMAPlans = {
   transport: transportPlan,
 
   // Local Models Plans (from local.core)
-  localModels: localModelsPlan
+  localModels: localModelsPlan,
+
+  // ONE.core instance operations (clear storage, restart)
+  onecore: onecorePlan,
+
+  // Settings Plan (for profile/identity info and various settings)
+  settings: {
+    async getProfile() {
+      const result = await window.electronAPI.invoke('onecore:getMyProfile')
+      if (result.success && result.data) {
+        return result.data
+      }
+      return { displayName: '', publicKey: '' }
+    },
+    async updateProfile(params: { displayName: string }) {
+      // Get owner ID first
+      const ownerResult = await window.electronAPI.invoke('onecore:getOwnerId')
+      if (!ownerResult.success) {
+        throw new Error('Failed to get owner ID')
+      }
+      // Update name
+      await window.electronAPI.invoke('onecore:setPersonName', { name: params.displayName })
+      return { success: true }
+    },
+
+    // Network settings - stored in UserSettings ONE.core object
+    async getNetworkSettings() {
+      const result = await window.electronAPI.invoke('settings:getNetwork', {})
+      if (result.success && result.data) {
+        // Map from UserSettings NetworkSettings to UI expected format
+        return {
+          relayServer: result.data.commServerUrl || 'wss://comm10.dev.refinio.one',
+          enableP2P: result.data.enableQUIC || true,
+          enableRelay: result.data.enableWebSocket !== false,
+          invitationDomain: 'lama.one' // Not in NetworkSettings, use default
+        }
+      }
+      return {
+        relayServer: 'wss://comm10.dev.refinio.one',
+        enableP2P: true,
+        enableRelay: true,
+        invitationDomain: 'lama.one'
+      }
+    },
+    async updateNetworkSettings(config: any) {
+      // Map from UI format to UserSettings NetworkSettings
+      const updates = {
+        commServerUrl: config.relayServer,
+        enableWebSocket: config.enableRelay,
+        enableQUIC: config.enableP2P
+      }
+      return await window.electronAPI.invoke('settings:updateNetwork', { updates })
+    },
+
+    // Privacy settings - stored in UserSettings ONE.core object
+    async getPrivacySettings() {
+      const result = await window.electronAPI.invoke('settings:getPrivacy', {})
+      if (result.success && result.data) {
+        // Map from UserSettings PrivacySettings to UI expected format
+        return {
+          autoEncrypt: result.data.encryptStorage !== false,
+          saveHistory: true // Not directly in PrivacySettings, default true
+        }
+      }
+      return {
+        autoEncrypt: true,
+        saveHistory: true
+      }
+    },
+    async updatePrivacySettings(config: any) {
+      // Map from UI format to UserSettings PrivacySettings
+      const updates = {
+        encryptStorage: config.autoEncrypt
+      }
+      return await window.electronAPI.invoke('settings:updatePrivacy', { updates })
+    },
+
+    // Storage stats - query ONE.core storage
+    async getStorageStats() {
+      // TODO: Implement proper storage stats via IPC when available
+      // For now return placeholder - this requires querying ONE.core storage directories
+      return {
+        success: true,
+        data: {
+          used: 0,
+          total: 10 * 1024 * 1024 * 1024, // 10GB default
+          breakdown: {
+            messages: 0,
+            files: 0,
+            cache: 0
+          }
+        }
+      }
+    },
+    async runCleanup(_options: any) {
+      // TODO: Implement proper cleanup via IPC when available
+      // This requires calling ONE.core storage cleanup functions
+      console.warn('[Settings] runCleanup requires ONE.core storage API')
+      return { success: true }
+    }
+  },
+
+  // MCP Plan (for MCP server management)
+  mcp: {
+    async listServers() {
+      return await window.electronAPI.invoke('mcp:listServers')
+    },
+    async addServer(config: any) {
+      return await window.electronAPI.invoke('mcp:addServer', { config })
+    },
+    async updateServer(name: string, config: any) {
+      return await window.electronAPI.invoke('mcp:updateServer', { name, config })
+    },
+    async removeServer(name: string) {
+      return await window.electronAPI.invoke('mcp:removeServer', { name })
+    },
+    async getStatus() {
+      return await window.electronAPI.invoke('mcp:getStatus')
+    },
+    async getAvailableTools() {
+      return await window.electronAPI.invoke('mcp:getAvailableTools')
+    },
+    async getTopicConfig(topicId: string) {
+      return await window.electronAPI.invoke('mcp:getTopicConfig', { topicId })
+    },
+    async setTopicConfig(topicId: string, config: any) {
+      return await window.electronAPI.invoke('mcp:setTopicConfig', { topicId, config })
+    },
+    async reconnect() {
+      return await window.electronAPI.invoke('mcp:reconnect')
+    }
+  },
+
+  // Baileys Plan (WhatsApp integration)
+  baileys: {
+    async connect(params?: { useQR?: boolean; phoneNumber?: string }) {
+      return await window.electronAPI.invoke('baileys:connect', params || {})
+    },
+    async waitForConnection(params?: { timeoutMs?: number }) {
+      return await window.electronAPI.invoke('baileys:waitForConnection', params || {})
+    },
+    async disconnect() {
+      return await window.electronAPI.invoke('baileys:disconnect')
+    },
+    async getStatus() {
+      return await window.electronAPI.invoke('baileys:getStatus')
+    },
+    async requestPairingCode(params: { phoneNumber: string }) {
+      return await window.electronAPI.invoke('baileys:requestPairingCode', params)
+    },
+    async getQRCode() {
+      return await window.electronAPI.invoke('baileys:getQRCode')
+    },
+    async getPairingCode() {
+      return await window.electronAPI.invoke('baileys:getPairingCode')
+    },
+    async sendMessage(params: { topicId: string; text: string }) {
+      return await window.electronAPI.invoke('baileys:sendMessage', params)
+    },
+    async sendMessageToJid(params: { jid: string; text: string }) {
+      return await window.electronAPI.invoke('baileys:sendMessageToJid', params)
+    }
+  }
 
   // Platform-specific plans (optional):
   // filesystem?: FilesystemPlan  // TODO: Add Electron file dialog wrappers
@@ -726,11 +988,10 @@ export const electronPlans: LAMAPlans = {
 export function ElectronPlansProvider({ children }: { children: ReactNode }) {
   const [ownerId, setOwnerId] = useState<string | null>(null)
 
-  // Fetch owner ID on mount
+  // Fetch owner ID only after nodecore is ready (user logged in)
   useEffect(() => {
     async function fetchOwnerId() {
       try {
-        // Get owner ID from IPC
         const response = await window.electronAPI.invoke('onecore:getOwnerId')
         if (response.success && response.ownerId) {
           setOwnerId(response.ownerId)
@@ -739,7 +1000,13 @@ export function ElectronPlansProvider({ children }: { children: ReactNode }) {
         console.error('[ElectronPlansProvider] Failed to fetch owner ID:', error)
       }
     }
-    fetchOwnerId()
+
+    // Listen for nodecore:ready event (sent after login/init)
+    const cleanup = window.electronAPI.on('nodecore:ready', () => {
+      fetchOwnerId()
+    })
+
+    return cleanup
   }, [])
 
   // Stable callback for isTopicLoading

@@ -149,6 +149,11 @@ function createWindow(): void {
   // Set up IPC logger to send Node logs to browser
   ipcLogger.setMainWindow(mainWindow);
   ipcLogger.enable(); // Enable to debug welcome message generation
+
+  // Update IPC controller with the main window
+  import('./main/ipc/controller.js').then(({ default: ipcController }) => {
+    ipcController.setMainWindow(mainWindow!);
+  });
   
   // In development, load from Vite dev server
   if (process.env.NODE_ENV !== 'production') {
@@ -388,11 +393,17 @@ app.whenReady().then(async () => {
     Menu.setApplicationMenu(menu);
   }
 
+  // CRITICAL: Register IPC handlers IMMEDIATELY, before anything creates a window
+  // This prevents "No handler registered" errors if window is created during auto-init
+  const { default: ipcController } = await import('./main/ipc/controller.js');
+  ipcController.initialize(null); // Window will be set later by mainApp.start() or createWindow()
+  console.log('[Main] IPC handlers registered early');
+
   // Start Vite server first if in development
   if (process.env.NODE_ENV !== 'production') {
     await startViteServer();
   }
-  
+
   // Try to auto-initialize instances
   try {
     const initResult = await autoInitialize();
@@ -408,6 +419,8 @@ app.whenReady().then(async () => {
   // Start the main application
   try {
     await mainApp.start();
+    // Sync local mainWindow with mainApp's window
+    mainWindow = mainApp.getMainWindow();
     console.log('Main application started successfully');
   } catch (error) {
     console.error('Failed to start main application:', error);

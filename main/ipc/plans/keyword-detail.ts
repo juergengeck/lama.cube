@@ -8,21 +8,19 @@
  */
 
 import type { IpcMainInvokeEvent } from 'electron';
-import { KeywordDetailPlan } from '@lama/core/plans/KeywordDetailPlan.js';
+import { KeywordDetailPlan } from '@refinio/lama.core/plans/KeywordDetailPlan.js';
 import nodeOneCoreInstance from '../../core/node-one-core.js';
-import TopicAnalysisModel from '@lama/core/one-ai/models/TopicAnalysisModel.js';
-import * as keywordAccessStorage from '@lama/core/one-ai/storage/keyword-access-storage.js';
-import * as keywordEnrichment from '@lama/core/one-ai/services/keyword-enrichment.js';
+import * as keywordAccessStorage from '@refinio/lama.core/one-ai/storage/keyword-access-storage.js';
+import * as keywordEnrichment from '@refinio/lama.core/one-ai/services/keyword-enrichment.js';
 
-// Singleton model instance
-let topicAnalysisModel: TopicAnalysisModel | null = null;
+// Singleton handler (uses TopicAnalysisModel from nodeOneCore via demand/supply)
 let keywordDetailHandler: KeywordDetailPlan | null = null;
 
 /**
- * Initialize TopicAnalysisModel singleton and handler
+ * Initialize handler using TopicAnalysisModel from AnalysisModule (via nodeOneCore)
  */
 async function initializeHandler(): Promise<KeywordDetailPlan> {
-  if (keywordDetailHandler && topicAnalysisModel?.state.currentState === 'Initialised') {
+  if (keywordDetailHandler && nodeOneCoreInstance?.topicAnalysisModel?.state.currentState === 'Initialised') {
     return keywordDetailHandler;
   }
 
@@ -30,18 +28,14 @@ async function initializeHandler(): Promise<KeywordDetailPlan> {
     throw new Error('ONE.core not initialized');
   }
 
-  const channelManager = nodeOneCoreInstance.channelManager;
-  if (!channelManager) {
-    throw new Error('ChannelManager not available');
-  }
-
-  const topicModel = nodeOneCoreInstance.topicModel;
-  if (!topicModel) {
-    throw new Error('TopicModel not available');
-  }
-
+  // Use TopicAnalysisModel from AnalysisModule (via demand/supply pattern)
+  const topicAnalysisModel = nodeOneCoreInstance.topicAnalysisModel;
   if (!topicAnalysisModel) {
-    topicAnalysisModel = new TopicAnalysisModel(channelManager, topicModel);
+    throw new Error('TopicAnalysisModel not available - AnalysisModule may not be initialized');
+  }
+
+  if (topicAnalysisModel.state.currentState !== 'Initialised') {
+    throw new Error('TopicAnalysisModel not initialized');
   }
 
   if (!keywordDetailHandler) {

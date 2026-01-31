@@ -9,6 +9,10 @@ import type {
   TestConnectionResponse,
   OllamaModel,
 } from '../types/llm-config.js';
+import {
+  fetchModelCapabilities,
+  getLocalOllamaModels as getLocalOllamaModelsCore
+} from '@refinio/lama.core/services/ollama.js';
 
 /**
  * Validate Ollama server URL format
@@ -186,21 +190,44 @@ export async function testOllamaConnection(
 }
 
 /**
- * Fetch available models from Ollama server
- * Similar to testOllamaConnection but just returns models list
+ * Re-export fetchModelCapabilities from core with Ollama-specific name
+ * for backwards compatibility
+ */
+export async function fetchOllamaModelCapabilities(
+  baseUrl: string,
+  modelName: string,
+  authToken?: string
+): Promise<string[]> {
+  const normalizedUrl = normalizeOllamaUrl(baseUrl);
+  return fetchModelCapabilities(modelName, normalizedUrl, authToken);
+}
+
+/**
+ * Fetch available models from Ollama server with capabilities
+ * Uses core's getLocalOllamaModels with URL normalization
  */
 export async function fetchOllamaModels(
   baseUrl: string,
   authToken?: string
 ): Promise<OllamaModel[]> {
-  const result = await testOllamaConnection(baseUrl, authToken);
+  const normalizedUrl = normalizeOllamaUrl(baseUrl);
 
+  // First test connection to provide better error messages
+  const result = await testOllamaConnection(baseUrl, authToken);
   if (!result.success) {
-    // Type guard: if success is false, result is TestConnectionError
     const error = (result as { error: string }).error || 'Failed to fetch models';
     throw new Error(error);
   }
 
-  // Type guard: if success is true, result is TestConnectionSuccess
-  return result.models || [];
+  // Use core function with auth support
+  const coreModels = await getLocalOllamaModelsCore(normalizedUrl, authToken);
+
+  // Map core format (modified_at) to cube format (modified)
+  return coreModels.map(model => ({
+    name: model.name,
+    size: model.size,
+    digest: model.digest,
+    modified: model.modified_at,
+    capabilities: model.capabilities
+  }));
 }

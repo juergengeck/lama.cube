@@ -7,6 +7,7 @@ import ProfileModel from '@refinio/one.models/lib/models/Leute/ProfileModel.js'
 import SomeoneModel from '@refinio/one.models/lib/models/Leute/SomeoneModel.js'
 import { ensureIdHash } from '@refinio/one.core/lib/util/type-checks.js'
 import { getObjectByIdHash } from '@refinio/one.core/lib/storage-versioned-objects.js'
+import type { JournalPlan } from '@refinio/lama.core/plans/JournalPlan.js'
 
 /**
  * Creates a Profile and Someone object for an existing Person, following the correct ONE object relationship sequence.
@@ -15,9 +16,10 @@ import { getObjectByIdHash } from '@refinio/one.core/lib/storage-versioned-objec
  * @param {string} personId - The Person ID to create objects for
  * @param {Object} leuteModel - The initialized LeuteModel instance
  * @param {Object} profileOptions - Options for the profile (displayName, descriptors, etc.)
+ * @param {JournalPlan} journalPlan - Optional JournalPlan for recording contact creation
  * @returns {Promise<Object>} The newly created Someone object
  */
-export async function createProfileAndSomeoneForPerson(personId: any, leuteModel: any, profileOptions = {}): Promise<any> {
+export async function createProfileAndSomeoneForPerson(personId: any, leuteModel: any, profileOptions: any = {}, journalPlan?: JournalPlan): Promise<any> {
   console.log(`[ContactCreationProper] 📝 Creating new contact for Person ${personId?.substring(0, 8)}...`)
 
   try {
@@ -76,6 +78,27 @@ export async function createProfileAndSomeoneForPerson(personId: any, leuteModel
     await (leuteModel as any).loadLatestVersion()
     console.log('[ContactCreationProper]   └─ ✅ Contact creation complete!')
 
+    // Record in journal
+    if (journalPlan) {
+      try {
+        await journalPlan.recordContactCreation({
+          contactType: 'manual',
+          personId: personId.toString(),
+          displayName: profileOptions.displayName || 'Unknown',
+          createdBy: leuteModel.ownerId.toString(),
+          source: 'api',
+          objects: {
+            person: personId.toString(),
+            profile: profile.idHash.toString(),
+            someone: someone.idHash.toString()
+          }
+        });
+        console.log('[ContactCreationProper] 📓 Recorded contact creation in journal');
+      } catch (journalError) {
+        console.warn('[ContactCreationProper] Failed to record in journal:', journalError);
+      }
+    }
+
     return someone
   } catch (error) {
     console.error('[ContactCreationProper] Error creating Profile/Someone:', error)
@@ -90,9 +113,10 @@ export async function createProfileAndSomeoneForPerson(personId: any, leuteModel
  * @param {string} personId - The ID hash of the Person
  * @param {Object} leuteModel - The initialized LeuteModel instance
  * @param {Object} profileOptions - Options for creating the profile if needed
+ * @param {JournalPlan} journalPlan - Optional JournalPlan for recording contact creation
  * @returns {Promise<Object>} The Someone object (existing or created)
  */
-export async function ensureContactExists(personId: any, leuteModel: any, profileOptions = {}): Promise<any> {
+export async function ensureContactExists(personId: any, leuteModel: any, profileOptions: any = {}, journalPlan?: JournalPlan): Promise<any> {
   console.log(`[ContactCreationProper] Ensuring contact for Person ${personId?.substring(0, 8)}...`)
 
   // First check all existing contacts to see if any already use this Person ID
@@ -131,7 +155,7 @@ export async function ensureContactExists(personId: any, leuteModel: any, profil
   // not the Person ID itself, so we can't use it to check if we need to create a Someone
   console.log(`[ContactCreationProper] No existing Someone found for Person ${personId}. Creating Profile and Someone...`)
   try {
-    const someone = await createProfileAndSomeoneForPerson(personId, leuteModel, profileOptions)
+    const someone = await createProfileAndSomeoneForPerson(personId, leuteModel, profileOptions, journalPlan)
     console.log(`[ContactCreationProper] ✅ Successfully created and added contact for Person ${personId}`)
     return someone
   } catch (creationError: any) {
@@ -172,9 +196,10 @@ async function getPersonDisplayName(personId: any): Promise<any> {
  *
  * @param {string} remotePersonId - The remote person's ID
  * @param {Object} leuteModel - The LeuteModel instance
+ * @param {JournalPlan} journalPlan - Optional JournalPlan for recording contact creation
  * @returns {Promise<Object>} The Someone object
  */
-export async function handleNewConnection(remotePersonId: any, leuteModel: any): Promise<any> {
+export async function handleNewConnection(remotePersonId: any, leuteModel: any, journalPlan?: JournalPlan): Promise<any> {
   console.log('[ContactCreationProper] 🤝 Handling new connection from:', remotePersonId?.substring(0, 8))
   console.log('[ContactCreationProper] Step 1/3: Getting display name for contact...')
 
@@ -187,7 +212,8 @@ export async function handleNewConnection(remotePersonId: any, leuteModel: any):
     const someone = await ensureContactExists(
       remotePersonId,
       leuteModel,
-      { displayName }
+      { displayName },
+      journalPlan
     )
 
     console.log('[ContactCreationProper] Step 3/3: Contact setup complete!')
@@ -204,13 +230,14 @@ export async function handleNewConnection(remotePersonId: any, leuteModel: any):
  * @param {string} personId - The person ID
  * @param {Object} profileData - The received profile data
  * @param {Object} leuteModel - The LeuteModel instance
+ * @param {JournalPlan} journalPlan - Optional JournalPlan for recording contact creation
  */
-export async function handleReceivedProfile(personId: any, profileData: any, leuteModel: any): Promise<any> {
+export async function handleReceivedProfile(personId: any, profileData: any, leuteModel: any, journalPlan?: JournalPlan): Promise<any> {
   console.log('[ContactCreationProper] 📦 Received Profile data for:', personId?.substring(0, 8))
 
   try {
     // First ensure the contact exists (creates if needed)
-    const someone = await ensureContactExists(personId, leuteModel)
+    const someone = await ensureContactExists(personId, leuteModel, {}, journalPlan)
 
     if (someone) {
       // Update the profile with new data

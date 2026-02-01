@@ -5,7 +5,7 @@
  * Based on one.leute's LeuteAccessRightsManager.trustPairingKeys implementation.
  *
  * Integrates with CAPlan for journal/audit trail visibility when certificates are issued.
- * Creates AccessCertificate for certificate-based access control (filter.core).
+ * Creates AccessCertificate for certificate-based access control (trust.abac).
  */
 
 import { getAllEntries } from '@refinio/one.core/lib/reverse-map-query.js'
@@ -15,13 +15,15 @@ import ProfileModel from '@refinio/one.models/lib/models/Leute/ProfileModel.js'
 import { createAccess } from '@refinio/one.core/lib/access.js'
 import { SET_ACCESS_MODE } from '@refinio/one.core/lib/storage-base-common.js'
 import { wait } from '@refinio/one.core/lib/util/promise.js'
-import type { CAPlan } from '@trust/core/plans/CAPlan.js'
+import type { CAPlan } from '@refinio/api/plans/CAPlan.js'
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js'
 import type { Person } from '@refinio/one.core/lib/recipes.js'
 import {
   createPairingCertificate,
   type PairingCertificateResult
-} from '@filter/core'
+} from '@refinio/trust.abac'
+import { tracePairing } from '@refinio/lama.core/services/trace-service.js'
+import { getJournalPlan } from '../ipc/plans/journal.js'
 
 /**
  * Trust the keys of a newly paired remote peer.
@@ -46,7 +48,13 @@ export async function trustPairingKeys(
   token: any,
   caPlan?: CAPlan
 ) {
-  console.log('[PairingTrust] 🔑 Starting key trust establishment for:', remotePersonId?.substring(0, 8))
+  tracePairing('started', {
+    initiatedLocally,
+    localPerson: localPersonId,
+    remotePerson: remotePersonId,
+    localInstance: localInstanceId,
+    remoteInstance: remoteInstanceId
+  })
 
   // Keys are transported after connection establishment via CHUM
   // We need to wait for them to arrive, with retries
@@ -55,18 +63,18 @@ export async function trustPairingKeys(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`[PairingTrust] Attempt ${attempt}/${maxRetries} to find keys...`)
+      tracePairing('keys_query_attempt', { attempt, maxRetries })
 
       // Query for Keys objects owned by the remote person
       const keys = await getAllEntries(remotePersonId, 'Keys')
 
       if (keys.length > 0) {
-        console.log(`[PairingTrust] Found ${keys.length} key object(s) for remote peer`)
+        tracePairing('keys_found', { count: keys.length, remotePerson: remotePersonId })
 
         // Get the first key object
         const key = await getObject(keys[0])
-        console.log('[PairingTrust] Retrieved key object:', {
-          owner: key.owner?.substring(0, 8),
+        tracePairing('key_object_retrieved', {
+          owner: key.owner,
           hasPublicKey: !!key.publicKey,
           hasPublicSignKey: !!key.publicSignKey
         })
@@ -79,7 +87,6 @@ export async function trustPairingKeys(
 
         // Create a Profile with the sign key
         // This profile represents our view/trust of the remote person
-        console.log('[PairingTrust] Creating profile with trusted sign key...')
         const profile = await ProfileModel.constructWithNewProfile(
           remotePersonId,
           localPersonId,
@@ -92,11 +99,45 @@ export async function trustPairingKeys(
           throw new Error('Profile model has no hash for profile with sign key')
         }
 
-        console.log('[PairingTrust] Profile created:', profile.loadedVersion?.substring(0, 8))
+        tracePairing('profile_created', { profileHash: profile.loadedVersion })
 
         // Issue a trust certificate for this profile
-        console.log('[PairingTrust] Issuing TrustKeysCertificate...')
         await trust.certify('TrustKeysCertificate', { profile: profile.loadedVersion })
+        tracePairing('trust_cert_issued', { profileHash: profile.loadedVersion })
+
+        // Record TrustKeysCertificate in journal
+        try {
+          const journalPlan = getJournalPlan();
+          await journalPlan.recordTrustCertificate({
+            action: 'created',
+            certificateType: 'TrustKeysCertificate',
+            subject: remotePersonId.toString(),
+            issuer: localPersonId.toString(),
+            certificateHash: profile.loadedVersion.toString(),
+            context: 'device-pairing',
+            profile: profile.loadedVersion.toString(),
+            trustLevel: 'trusted'
+          });
+          tracePairing('trust_journal_recorded', { profileHash: profile.loadedVersion });
+        } catch (journalError) {
+          console.warn('[PairingTrust] Failed to record TrustKeysCertificate in journal:', journalError);
+        }
+
+        // Create journal entry for trust certification (if CAPlan available)
+        if (caPlan) {
+          try {
+            await caPlan.certifyPairingTrust({
+              trust,
+              profileHash: profile.loadedVersion,
+              remotePersonId,
+              owner: localPersonId
+            })
+            tracePairing('trust_journal_entry_created', { profileHash: profile.loadedVersion })
+          } catch (journalError) {
+            tracePairing('trust_journal_entry_failed', { error: (journalError as Error).message })
+            // Non-fatal - trust is still established
+          }
+        }
 
         // Refresh trust caches to apply the new certificate
         await trust.refreshCaches()
@@ -104,7 +145,6 @@ export async function trustPairingKeys(
         // Issue CA device certificate for journal visibility (if CAPlan available)
         if (caPlan) {
           try {
-            console.log('[PairingTrust] 📜 Issuing CA device certificate for journal...')
             const caResult = await caPlan.issueDeviceCertificate({
               subject: remotePersonId,
               subjectPublicKey: key.publicSignKey,
@@ -114,42 +154,42 @@ export async function trustPairingKeys(
             })
             // Handle union type: ExecutionResult has storyId, plain response has certificateId
             const resultId = 'storyId' in caResult && caResult.storyId
-              ? caResult.storyId.toString().substring(0, 8)
+              ? caResult.storyId.toString()
               : ('result' in caResult && caResult.result
-                ? caResult.result.certificateId.substring(0, 8)
-                : (caResult as any).certificateId?.substring(0, 8) || 'unknown')
-            console.log('[PairingTrust] ✅ CA certificate issued:', resultId)
+                ? caResult.result.certificateId
+                : (caResult as any).certificateId || 'unknown')
+            tracePairing('ca_cert_issued', { certId: resultId })
           } catch (caError) {
-            console.warn('[PairingTrust] ⚠️ Failed to issue CA certificate (non-fatal):', (caError as Error).message)
+            tracePairing('ca_cert_failed', { error: (caError as Error).message })
             // Non-fatal - trust is still established via TrustKeysCertificate
           }
         }
 
-        console.log('[PairingTrust] ✅ Key trust established successfully for:', remotePersonId?.substring(0, 8))
+        tracePairing('completed', { success: true, remotePerson: remotePersonId, profileHash: profile.loadedVersion })
         return { success: true, profileHash: profile.loadedVersion }
       }
 
       // Keys not found yet, wait and retry
       if (attempt < maxRetries) {
-        console.log('[PairingTrust] Keys not yet available, waiting...')
+        tracePairing('keys_not_found', { attempt, waitingMs: retryDelay })
         await wait(retryDelay)
       }
 
     } catch (error) {
-      console.error(`[PairingTrust] Error in attempt ${attempt}:`, (error as Error).message)
+      tracePairing('attempt_error', { attempt, error: (error as Error).message })
 
       if (attempt < maxRetries) {
         await wait(retryDelay)
       } else {
         // Final attempt failed
-        console.error('[PairingTrust] ❌ Failed to establish key trust after all retries')
+        tracePairing('failed', { error: (error as Error).message, attempts: maxRetries })
         throw error
       }
     }
   }
 
   // If we get here, we couldn't find keys after all retries
-  console.warn('[PairingTrust] ⚠️ Could not find keys for remote peer after', maxRetries, 'attempts')
+  tracePairing('failed', { reason: 'Keys not available', attempts: maxRetries })
   return { success: false, reason: 'Keys not available' }
 }
 
@@ -161,7 +201,7 @@ export async function trustPairingKeys(
  * @param {string} remotePersonId - The remote person to share with
  */
 export async function shareMainProfileWithPeer(leuteModel: any, remotePersonId: any): Promise<any> {
-  console.log('[PairingTrust] 📤 Sharing our main profile with peer:', remotePersonId?.substring(0, 8))
+  tracePairing('profile_share_started', { remotePerson: remotePersonId })
 
   try {
     // Get our main identity and profile
@@ -169,11 +209,9 @@ export async function shareMainProfileWithPeer(leuteModel: any, remotePersonId: 
     const mainProfile = me.mainProfileLazyLoad()
 
     if (!mainProfile || !mainProfile.idHash) {
-      console.warn('[PairingTrust] No main profile to share')
+      tracePairing('profile_share_failed', { reason: 'No main profile' })
       return { success: false, reason: 'No main profile' }
     }
-
-    console.log('[PairingTrust] Our main profile:', mainProfile.idHash?.substring(0, 8))
 
     // Grant access to our profile for the remote person
     const setAccessParam = {
@@ -185,11 +223,11 @@ export async function shareMainProfileWithPeer(leuteModel: any, remotePersonId: 
 
     await createAccess([setAccessParam])
 
-    console.log('[PairingTrust] ✅ Profile shared successfully')
+    tracePairing('profile_shared', { profileHash: mainProfile.idHash, remotePerson: remotePersonId })
     return { success: true, profileHash: mainProfile.idHash }
 
   } catch (error) {
-    console.error('[PairingTrust] Error sharing profile:', error)
+    tracePairing('profile_share_failed', { error: (error as Error).message })
     return { success: false, error: (error as Error).message }
   }
 }
@@ -222,11 +260,10 @@ export async function completePairingTrust(params: any): Promise<any> {
     caPlan
   } = params
 
-  console.log('[PairingTrust] 🤝 Completing trust establishment for pairing')
-  console.log('[PairingTrust] Details:', {
+  tracePairing('complete_trust_started', {
     initiatedLocally,
-    localPerson: localPersonId?.substring(0, 8),
-    remotePerson: remotePersonId?.substring(0, 8)
+    localPerson: localPersonId,
+    remotePerson: remotePersonId
   })
 
   let accessCertificate: PairingCertificateResult | undefined
@@ -245,31 +282,52 @@ export async function completePairingTrust(params: any): Promise<any> {
     )
 
     if (!trustResult.success) {
-      console.warn('[PairingTrust] Could not establish key trust:', trustResult.reason)
+      tracePairing('key_trust_warning', { reason: trustResult.reason })
       // Continue anyway - profile sharing can still work
     }
 
     // Step 1.5: Create AccessCertificate for certificate-based access control
+    // Determine if this is own device (IoM/IoP) or external contact
+    // Own devices share the same Person ID, external contacts have different Person IDs
+    const isOwnDevice = localPersonId === remotePersonId
+
     try {
-      console.log('[PairingTrust] 📜 Creating AccessCertificate for remote peer...')
       accessCertificate = await createPairingCertificate({
         localPersonId: localPersonId as SHA256IdHash<Person>,
         remotePersonId: remotePersonId as SHA256IdHash<Person>,
         storeObject: async (obj) => {
-          // Cast to any since AccessCertificate is defined in filter.core
+          // Cast to any since AccessCertificate is defined in trust.abac
           // The recipe must be registered at initialization time
           const result = await storeVersionedObject(obj as any)
           return { hash: result.hash, idHash: result.idHash }
         },
-        // Default pairing grants
-        trustLevel: 'medium',
-        contexts: ['*'],
-        permissions: ['read', 'write'],
-        delegationAllowed: true
+        // Default pairing grants - own devices get full access, contacts get restricted
+        trustLevel: isOwnDevice ? 'me' : 'trusted',
+        isOwnDevice,
+        // Contacts don't get WhatsApp access by default (can be granted later)
+        includeWhatsApp: false,
+        delegationAllowed: !isOwnDevice // Only own devices can delegate
       })
-      console.log('[PairingTrust] ✅ AccessCertificate created:', accessCertificate.certHash.substring(0, 8))
+      tracePairing('access_cert_created', { certHash: accessCertificate.certHash, certId: accessCertificate.certId })
+
+      // Record AccessCertificate in journal
+      try {
+        const journalPlan = getJournalPlan();
+        await journalPlan.recordTrustCertificate({
+          action: 'created',
+          certificateType: 'AccessCertificate',
+          subject: remotePersonId.toString(),
+          issuer: localPersonId.toString(),
+          certificateHash: accessCertificate.certHash,
+          context: 'device-pairing',
+          trustLevel: isOwnDevice ? 'full' : 'trusted'
+        });
+        tracePairing('access_cert_journal_recorded', { certHash: accessCertificate.certHash });
+      } catch (journalError) {
+        console.warn('[PairingTrust] Failed to record AccessCertificate in journal:', journalError);
+      }
     } catch (certError) {
-      console.warn('[PairingTrust] ⚠️ Failed to create AccessCertificate (non-fatal):', (certError as Error).message)
+      tracePairing('access_cert_failed', { error: (certError as Error).message })
       // Non-fatal - trust is still established via TrustKeysCertificate
     }
 
@@ -277,10 +335,15 @@ export async function completePairingTrust(params: any): Promise<any> {
     const shareResult = await shareMainProfileWithPeer(leuteModel, remotePersonId)
 
     if (!shareResult.success) {
-      console.warn('[PairingTrust] Could not share profile:', shareResult.reason)
+      tracePairing('profile_share_warning', { reason: shareResult.reason })
     }
 
-    console.log('[PairingTrust] ✅ Trust establishment completed')
+    tracePairing('complete_trust_finished', {
+      success: true,
+      keyTrust: trustResult.success,
+      accessCert: !!accessCertificate,
+      profileShare: shareResult.success
+    })
     return {
       success: true,
       keyTrust: trustResult,
@@ -292,7 +355,7 @@ export async function completePairingTrust(params: any): Promise<any> {
     }
 
   } catch (error) {
-    console.error('[PairingTrust] ❌ Error completing trust establishment:', error)
+    tracePairing('complete_trust_failed', { error: (error as Error).message })
     return {
       success: false,
       error: (error as Error).message

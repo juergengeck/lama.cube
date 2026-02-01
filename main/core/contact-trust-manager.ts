@@ -262,14 +262,34 @@ class ContactTrustManager extends EventEmitter {
     // Add to contacts (but with limited permissions due to trust level)
     if (this.nodeOneCore.leuteModel) {
       await this.nodeOneCore.leuteModel.addSomeoneElse(someone.idHash)
-      
+
       console.log('[ContactTrustManager] Contact stored with discovery VC:', {
         personId: credential.subject,
         trustLevel: this.TRUST_LEVELS.DISCOVERED,
         vcHash: vcHash
       })
+
+      // Record contact creation in journal
+      try {
+        const journalPlan = (await import('../ipc/plans/journal.js')).getJournalPlan();
+        await journalPlan.recordContactCreation({
+          contactType: 'manual',
+          personId: credential.subject.toString(),
+          displayName: credential.instanceName || 'Unknown',
+          createdBy: this.nodeOneCore.ownerId?.toString() || 'unknown',
+          source: 'api',
+          objects: {
+            person: personIdHash.toString(),
+            profile: profile.idHash.toString(),
+            someone: someone.idHash.toString()
+          }
+        });
+        console.log('[ContactTrustManager] 📓 Recorded contact creation in journal');
+      } catch (journalError) {
+        console.warn('[ContactTrustManager] Failed to record in journal:', journalError);
+      }
     }
-    
+
     return {
       personHash: personHash,
       someoneHash: someone.idHash,
@@ -372,19 +392,38 @@ class ContactTrustManager extends EventEmitter {
     // Store the acceptance VC
     const { storeUnversionedObject } = await import('@refinio/one.core/lib/storage-unversioned-objects.js')
     const vcHash = await storeUnversionedObject(acceptanceVC as any)
-    
+
     // Update the Someone object with new trust level
     // TODO: Update the actual Someone object in storage
-    
+
     console.log('[ContactTrustManager] Contact accepted with VC:', vcHash)
-    
+
+    // Record acceptance in journal
+    try {
+      const { getInstanceOwnerIdHash } = await import('@refinio/one.core/lib/instance.js');
+      const myPersonId = getInstanceOwnerIdHash();
+      const journalPlan = (await import('../ipc/plans/journal.js')).getJournalPlan();
+      await journalPlan.recordTrustCertificate({
+        action: 'created',
+        certificateType: 'AffirmationCertificate',
+        subject: personId.toString(),
+        issuer: myPersonId?.toString() || 'unknown',
+        certificateHash: (vcHash as any).hash?.toString() || vcHash.toString(),
+        context: 'contact-acceptance',
+        trustLevel: 'trusted'
+      });
+      console.log('[ContactTrustManager] 📓 Recorded acceptance in journal');
+    } catch (journalError) {
+      console.warn('[ContactTrustManager] Failed to record acceptance in journal:', journalError);
+    }
+
     // Emit event for UI updates
     this.emit('contact-accepted', {
       personId: personId,
       acceptanceVC: acceptanceVC,
       vcHash: vcHash
     })
-    
+
     return {
       success: true,
       vcHash: vcHash,
@@ -444,17 +483,36 @@ class ContactTrustManager extends EventEmitter {
     
     // Create a block VC
     const blockVC = await this.createBlockVC(personId, reason)
-    
+
     // Store it
     const { storeUnversionedObject } = await import('@refinio/one.core/lib/storage-unversioned-objects.js')
     const vcHash = await storeUnversionedObject(blockVC)
-    
+
+    // Record block in journal
+    try {
+      const { getInstanceOwnerIdHash } = await import('@refinio/one.core/lib/instance.js');
+      const myPersonId = getInstanceOwnerIdHash();
+      const journalPlan = (await import('../ipc/plans/journal.js')).getJournalPlan();
+      await journalPlan.recordTrustCertificate({
+        action: 'revoked',
+        certificateType: 'AffirmationCertificate',
+        subject: personId.toString(),
+        issuer: myPersonId?.toString() || 'unknown',
+        certificateHash: (vcHash as any).hash?.toString() || vcHash.toString(),
+        context: 'contact-acceptance',
+        revocationReason: reason
+      });
+      console.log('[ContactTrustManager] 📓 Recorded block in journal');
+    } catch (journalError) {
+      console.warn('[ContactTrustManager] Failed to record block in journal:', journalError);
+    }
+
     this.emit('contact-blocked', {
       personId: personId,
       reason: reason,
       vcHash: vcHash
     })
-    
+
     return {
       success: true,
       vcHash: vcHash

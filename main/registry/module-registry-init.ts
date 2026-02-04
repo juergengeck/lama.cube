@@ -1,22 +1,53 @@
 /**
  * Module Registry Initialization for lama.cube
  *
- * Uses shared modules from @lama/core with Electron-specific adapters
+ * Uses shared modules from @refinio/lama.core with Electron-specific adapters
  * Replaces unified-plan-system-init.ts with ModuleRegistry pattern
  */
 
 import { ModuleRegistry } from '@refinio/api/plan-system';
-import { storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
+import { storeVersionedObject, getObjectByIdHash } from '@refinio/one.core/lib/storage-versioned-objects.js';
 import { getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
 import { createMessageBus } from '@refinio/one.core/lib/message-bus.js';
-import { ExportPlan } from '@lama/core/plans/ExportPlan.js';
+import { ExportPlan } from '@refinio/lama.core/plans/ExportPlan.js';
 
-// Set up MessageBus listener for AI debug messages
-// This captures MessageBus.send('debug', ...) calls from AITopicManager, AIMessageProcessor, etc.
+// Set up MessageBus listener for debug messages
+// This captures MessageBus.send('debug', ...) calls from various modules
 const debugBus = createMessageBus('module-registry-init');
+
+// CHUM/Connection debug filter - set to true to enable verbose CHUM sync logging
+const CHUM_DEBUG = true;
+
 debugBus.on('debug', (src: string, ...messages: unknown[]) => {
-  // Filter to AI and LLM-related modules only to avoid noise
+  // AI and LLM-related modules
   if (src.startsWith('AI') || src.startsWith('LLM') || src === 'AITopicManager' || src === 'AIMessageProcessor' || src === 'AIAssistantPlan') {
+    console.log(`[${src}]`, ...messages);
+  }
+  // CHUM, Channel, Connection, and Pairing modules (when CHUM_DEBUG enabled)
+  if (CHUM_DEBUG && (
+    src.includes('CHUM') ||
+    src.includes('Channel') ||
+    src.includes('Connection') ||
+    src.includes('Pairing') ||
+    src.includes('OBJECT_EVENTS') ||
+    src.includes('chum') ||
+    src.includes('WebSocket')
+  )) {
+    console.log(`[${src}]`, ...messages);
+  }
+});
+
+// Also capture log messages for connection flow
+debugBus.on('log', (src: string, ...messages: unknown[]) => {
+  if (CHUM_DEBUG && (
+    src.includes('CHUM') ||
+    src.includes('Channel') ||
+    src.includes('Connection') ||
+    src.includes('Pairing') ||
+    src.includes('chum') ||
+    src.includes('WebSocket') ||
+    src.includes('LeuteConnections')
+  )) {
     console.log(`[${src}]`, ...messages);
   }
 });
@@ -24,6 +55,10 @@ debugBus.on('debug', (src: string, ...messages: unknown[]) => {
 // Also capture error messages
 debugBus.on('error', (src: string, ...messages: unknown[]) => {
   if (src.startsWith('AI') || src.startsWith('LLM') || src === 'AITopicManager' || src === 'AIMessageProcessor' || src === 'AIAssistantPlan') {
+    console.error(`[${src}] ERROR:`, ...messages);
+  }
+  // Always log CHUM/Connection errors
+  if (src.includes('CHUM') || src.includes('Channel') || src.includes('Connection') || src.includes('Pairing')) {
     console.error(`[${src}] ERROR:`, ...messages);
   }
 });
@@ -38,17 +73,24 @@ import {
   AnalysisModule,
   MemoryModule,
   JournalModule,
-  DeviceModule
-} from '@lama/core/modules';
-import { InstancePlan } from '@lama/core/plans/InstancePlan.js';
+  DeviceModule,
+  InstanceModule,
+  KnowledgeNavigatorModule,
+  BaileysModule
+} from '@refinio/lama.core/modules';
+import { InstancePlan } from '@refinio/lama.core/plans/InstancePlan.js';
 import { ElectronLLMPlatform, createElectronLLMConfigAdapter } from '../../adapters/electron-llm-platform.js';
-import { UserSettingsManager } from '../core/user-settings-manager.js';
+import { MeaningPlan } from '@refinio/lama.core/plans/MeaningPlan.js';
+import { InstanceSettingsStorage, SettingsPlan } from '@refinio/settings.core';
+import { registerLamaCoreSettings } from '@refinio/lama.core/settings/index.js';
 import { getInferenceManager } from '../core/inference-manager.js';
-import { MeaningDimension } from '@cube/meaning.core';
+import { Meaning, EMBEDDING_MODEL } from '@refinio/meaning.core';
+import { SemanticDimension } from '@refinio/cube.core';
+import { setSemanticDimension } from '@refinio/lama.core/one-ai/models/Subject.js';
 // FilterGate removed - ConnectionModule creates its own filters via TopicGroupManager
 import type { NodeOneCore } from '../types/one-core.js';
 import type { SHA256Hash, SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
-import type { Person } from '@refinio/one.core/lib/recipes.js';
+import type { Person, Instance } from '@refinio/one.core/lib/recipes.js';
 
 // Singleton registry instance
 let moduleRegistry: ModuleRegistry | null = null;
@@ -57,6 +99,8 @@ let moduleRegistry: ModuleRegistry | null = null;
 let coreModuleInstance: CoreModule | null = null;
 let aiModuleInstance: AIModule | null = null;
 let connectionModuleInstance: ConnectionModule | null = null;
+let instanceModuleInstance: InstanceModule | null = null;
+let baileysModuleInstance: BaileysModule | null = null;
 
 // FilterGate factories removed - ConnectionModule creates its own filters via TopicGroupManager
 
@@ -189,21 +233,32 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
 
   // NOTE: Settings is now created by CoreModule (not duplicated here)
 
-  // CRITICAL: Create and attach UserSettingsManager for API key management
+  // CRITICAL: Create and attach SettingsPlan for API key management and settings
   // This is needed for LLMManager to inject API keys into cloud provider calls
-  if (!(nodeOneCore as any).userSettingsManager && nodeOneCore.email) {
-    console.log('[ModuleRegistryInit] Creating UserSettingsManager...');
-    const userSettingsManager = new UserSettingsManager(
-      nodeOneCore,
-      nodeOneCore.email,
-      nodeOneCore.ownerId
-    );
-    (nodeOneCore as any).userSettingsManager = userSettingsManager;
-    console.log('[ModuleRegistryInit] ✅ UserSettingsManager created and attached to nodeOneCore');
-  } else if ((nodeOneCore as any).userSettingsManager) {
-    console.log('[ModuleRegistryInit] UserSettingsManager already exists on nodeOneCore');
+  if (!(nodeOneCore as any).settingsPlan && nodeOneCore.instanceId) {
+    console.log('[ModuleRegistryInit] Creating SettingsPlan...');
+
+    // Register settings sections before creating storage
+    registerLamaCoreSettings();
+
+    // Create InstanceSettingsStorage with instanceIdHash
+    const instanceSettingsStorage = new InstanceSettingsStorage({
+      instanceIdHash: nodeOneCore.instanceId as SHA256IdHash<Instance>
+    });
+
+    // Create SettingsPlan
+    const settingsPlan = new SettingsPlan(instanceSettingsStorage);
+    (nodeOneCore as any).settingsPlan = settingsPlan;
+
+    // Supply SettingsPlan to module registry for MemoryModule and others
+    moduleRegistry.supply('SettingsPlan', settingsPlan);
+    console.log('[ModuleRegistryInit] ✅ SettingsPlan created, attached to nodeOneCore, and supplied to registry');
+  } else if ((nodeOneCore as any).settingsPlan) {
+    // Already exists - still supply it to the registry
+    moduleRegistry.supply('SettingsPlan', (nodeOneCore as any).settingsPlan);
+    console.log('[ModuleRegistryInit] SettingsPlan already exists on nodeOneCore, supplied to registry');
   } else {
-    console.warn('[ModuleRegistryInit] Cannot create UserSettingsManager - email not available');
+    console.warn('[ModuleRegistryInit] Cannot create SettingsPlan - instanceId not available');
   }
 
   // Supply ExportPlan (required by ChatModule)
@@ -228,6 +283,38 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
     console.log('[ModuleRegistryInit] Singleton LLMManager supplied (has discovered models)');
   } catch (error) {
     console.warn('[ModuleRegistryInit] LLMManager singleton not available:', error);
+  }
+
+  // Supply FileSystemOps for memory auto-export (Node.js implementation)
+  const fs = await import('fs/promises');
+  const path = await import('path');
+  const fileSystemOps = {
+    mkdir: async (dirPath: string) => {
+      await fs.mkdir(dirPath, { recursive: true });
+    },
+    writeFile: async (filePath: string, content: string) => {
+      await fs.writeFile(filePath, content, 'utf-8');
+    },
+    exists: async (dirPath: string) => {
+      try {
+        await fs.access(dirPath);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    join: (...segments: string[]) => path.join(...segments)
+  };
+  moduleRegistry.supply('FileSystemOps', fileSystemOps);
+  console.log('[ModuleRegistryInit] FileSystemOps supplied for memory auto-export');
+
+  // Supply ExportDirectories from config (directories outside app data that survive deletion)
+  const exportDirectories = (global as any).lamaConfig?.instance?.exportDirectories || [];
+  if (exportDirectories.length > 0) {
+    moduleRegistry.supply('ExportDirectories', exportDirectories);
+    console.log(`[ModuleRegistryInit] ExportDirectories supplied: ${exportDirectories.length} directories`);
+  } else {
+    console.log('[ModuleRegistryInit] No ExportDirectories configured - auto-export disabled');
   }
 
   // DISABLED: TTS moved to renderer with WebGPU
@@ -272,33 +359,56 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
     // Initialize InferenceManager if not yet ready (blocking to ensure embeddings available)
     if (!inferenceManager.initialized) {
       console.log('[ModuleRegistryInit] Initializing InferenceManager for semantic memory...');
-      await inferenceManager.init({ preferLocal: true });
-      console.log('[ModuleRegistryInit] ✅ InferenceManager initialized');
+      await inferenceManager.init();
+      console.log(`[ModuleRegistryInit] ✅ InferenceManager initialized with ${inferenceManager.activeProvider}`);
     }
 
     const localProvider = inferenceManager.getEmbeddingProvider();
     moduleRegistry.supply('EmbeddingProvider', localProvider);
     console.log('[ModuleRegistryInit] ✅ EmbeddingProvider supplied for semantic memory search');
 
-    // Create shared MeaningDimension for cube-based HNSW indexing
+    // Create Meaning service for embedding generation
     // Adapt LocalEmbeddingProvider to meaning.core's EmbeddingProvider interface
     const meaningEmbeddingProvider = {
-      model: 'all-MiniLM-L6-v2' as const,
       embed: (text: string) => localProvider.embed(text),
       embedBatch: (texts: string[]) => localProvider.embedBatch(texts)
     };
 
-    const meaningDimension = new MeaningDimension({
-      model: 'all-MiniLM-L6-v2',
-      embeddingProvider: meaningEmbeddingProvider
-    });
+    const meaning = new Meaning();
+    meaning.setProvider(meaningEmbeddingProvider);
+    console.log('[ModuleRegistryInit] ✅ Meaning service created for embedding generation');
 
-    // Initialize MeaningDimension (blocking to ensure ready for MemoryModule)
-    await meaningDimension.init();
-    console.log('[ModuleRegistryInit] ✅ MeaningDimension initialized for cube-based memory indexing');
+    // Create SemanticDimension for cube-based HNSW indexing
+    const semanticDimension = new SemanticDimension({ meaning });
 
-    moduleRegistry.supply('MeaningDimension', meaningDimension);
-    console.log('[ModuleRegistryInit] ✅ MeaningDimension supplied for cube-based memory indexing');
+    // Initialize SemanticDimension (blocking to ensure ready for MemoryModule)
+    await semanticDimension.init();
+    console.log('[ModuleRegistryInit] ✅ SemanticDimension initialized for cube-based memory indexing');
+
+    // Wire up SemanticDimension to Subject model for automatic embedding indexing
+    setSemanticDimension(semanticDimension);
+    console.log('[ModuleRegistryInit] ✅ SemanticDimension wired to Subject model for embeddings');
+
+    // Supply both Meaning and SemanticDimension
+    moduleRegistry.supply('Meaning', meaning);
+    moduleRegistry.supply('SemanticDimension', semanticDimension);
+    // Also supply as 'MeaningDimension' for backward compatibility
+    moduleRegistry.supply('MeaningDimension', semanticDimension);
+    console.log('[ModuleRegistryInit] ✅ Meaning + SemanticDimension supplied for semantic memory');
+
+    // Create and supply MeaningPlan (wraps SemanticDimension for KnowledgeNavigatorModule)
+    const meaningPlan = new MeaningPlan(semanticDimension, localProvider);
+    moduleRegistry.supply('MeaningPlan', meaningPlan);
+    console.log('[ModuleRegistryInit] ✅ MeaningPlan supplied');
+
+    // Wire up SemanticDimension to MCPManager for semantic memory search and embedding generation
+    try {
+      const { default: mcpManager } = await import('../services/mcp-manager.js');
+      mcpManager.setSemanticDimension(semanticDimension, EMBEDDING_MODEL);
+      console.log('[ModuleRegistryInit] ✅ SemanticDimension wired to MCPManager for semantic search and embedding generation');
+    } catch (mcpError) {
+      console.warn('[ModuleRegistryInit] Could not wire SemanticDimension to MCPManager:', mcpError);
+    }
   } catch (error) {
     console.warn('[ModuleRegistryInit] EmbeddingProvider/MeaningDimension not available:', error);
     console.log('[ModuleRegistryInit] ℹ️ Memory will use keyword search');
@@ -307,11 +417,43 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   console.log('[ModuleRegistryInit] Registering MemoryModule...');
   moduleRegistry.register(new MemoryModule());
 
+  console.log('[ModuleRegistryInit] Registering KnowledgeNavigatorModule...');
+  moduleRegistry.register(new KnowledgeNavigatorModule());
+
   console.log('[ModuleRegistryInit] Registering JournalModule...');
   moduleRegistry.register(new JournalModule());
 
   console.log('[ModuleRegistryInit] Registering DeviceModule...');
   moduleRegistry.register(new DeviceModule());
+
+  // BaileysModule is optional - only register if WhatsApp integration is enabled
+  // It will fail gracefully if Baileys dependencies are not installed
+  try {
+    console.log('[ModuleRegistryInit] Registering BaileysModule (WhatsApp)...');
+    baileysModuleInstance = new BaileysModule();
+    // Set instance ID for session persistence (must be called before init)
+    if (nodeOneCore.instanceId) {
+      baileysModuleInstance.setInstanceId(nodeOneCore.instanceId);
+      console.log('[ModuleRegistryInit] BaileysModule instanceId set to:', nodeOneCore.instanceId);
+    }
+    moduleRegistry.register(baileysModuleInstance);
+    console.log('[ModuleRegistryInit] ✅ BaileysModule registered');
+  } catch (error) {
+    console.warn('[ModuleRegistryInit] BaileysModule not available (WhatsApp integration disabled):', (error as Error).message);
+    baileysModuleInstance = null;
+  }
+
+  console.log('[ModuleRegistryInit] Registering InstanceModule...');
+  instanceModuleInstance = new InstanceModule();
+  // Configure local instance info before init
+  if (nodeOneCore.instanceId) {
+    instanceModuleInstance.setLocalInstance(
+      nodeOneCore.instanceId,
+      'cube',
+      ['AIAssistantPlan', 'ChatPlan', 'ConnectionPlan', 'MemoryPlan']  // Capabilities
+    );
+  }
+  moduleRegistry.register(instanceModuleInstance);
 
   // Check for unsatisfied demands before initialization
   const unsatisfied = moduleRegistry.getUnsatisfiedDemands();
@@ -323,6 +465,159 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   // This must be done before initAll() so JournalModule, AIModule, ChatModule receive it
   console.log('[ModuleRegistryInit] Setting up StoryFactory...');
   moduleRegistry.setStorageFunction(storeVersionedObject);
+
+  // Supply platform-specific QuicVCProvider with dedicated transport on port 49497
+  if (nodeOneCore.ownerId) {
+    try {
+      const dgram = await import('dgram');
+      const { QuicVCConnectionManager } = await import('@refinio/connection.core');
+
+      const QUICVC_PORT = 49497;
+      const connectionManager = QuicVCConnectionManager.getInstance(nodeOneCore.ownerId as SHA256IdHash<Person>);
+
+      if (!connectionManager.isInitialized()) {
+        // Create dedicated UDP socket for QuicVC on port 49497
+        const quicSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+        await new Promise<void>((resolve, reject) => {
+          quicSocket.bind(QUICVC_PORT, () => {
+            console.log('[ModuleRegistryInit] QuicVC transport bound to port', QUICVC_PORT);
+            resolve();
+          });
+          quicSocket.on('error', reject);
+        });
+
+        const messageHandlers: ((data: Uint8Array, rinfo: any) => void)[] = [];
+        quicSocket.on('message', (msg, rinfo) => {
+          const data = new Uint8Array(msg.buffer, msg.byteOffset, msg.byteLength);
+          messageHandlers.forEach(handler => handler(data, rinfo));
+        });
+
+        const transport = {
+          send: async (data: Uint8Array, address: string, port: number): Promise<void> => {
+            return new Promise((resolve, reject) => {
+              quicSocket.send(Buffer.from(data), port, address, (err) => {
+                if (err) reject(err);
+                else resolve();
+              });
+            });
+          },
+          on: (event: string, handler: (data: Uint8Array, rinfo: any) => void): void => {
+            if (event === 'message') {
+              messageHandlers.push(handler);
+            }
+          },
+        };
+
+        // Get own Ed25519 public key for credential
+        const { createCryptoApiFromDefaultKeys } = await import('@refinio/one.core/lib/keychain/keychain.js');
+        const cryptoApi = await createCryptoApiFromDefaultKeys(nodeOneCore.ownerId as SHA256IdHash<Person>);
+        const ownPubKey = Buffer.from(cryptoApi.publicSignKey).toString('hex');
+        const deviceId = nodeOneCore.instanceId || 'cube';
+
+        await connectionManager.initialize(transport, {
+          id: deviceId,
+          credentialSubject: { id: deviceId, publicKeyHex: ownPubKey }
+        });
+        console.log('[ModuleRegistryInit] QuicVCConnectionManager initialized on port', QUICVC_PORT);
+      }
+
+      moduleRegistry.supply('QuicVCProvider', connectionManager);
+      console.log('[ModuleRegistryInit] QuicVCProvider supplied');
+    } catch (error) {
+      console.warn('[ModuleRegistryInit] Failed to supply QuicVCProvider:', error);
+    }
+  }
+
+  // Supply TrustModel for public-key-based trust checks
+  // Uses the same singleton as trust.ts IPC handlers
+  if (nodeOneCore.ownerId) {
+    try {
+      const { getTrustModel } = await import('../ipc/plans/trust.js');
+      const trustModel = getTrustModel();
+      moduleRegistry.supply('TrustModel', trustModel);
+      console.log('[ModuleRegistryInit] TrustModel supplied');
+    } catch (error) {
+      console.warn('[ModuleRegistryInit] Failed to supply TrustModel:', error);
+    }
+  }
+
+  // Supply MDNSDiscovery as LocalDiscoveryProvider for ConnectionModule
+  // Use Device.displayName as the single source of truth for mDNS name
+  if (nodeOneCore.ownerId && nodeOneCore.instanceId && connectionModuleInstance) {
+    try {
+      const { MDNSDiscoveryAdapter } = await import('@refinio/connection.core');
+      const { DevicePlan } = await import('@refinio/device.core');
+      const { createCryptoApiFromDefaultKeys } = await import('@refinio/one.core/lib/keychain/keychain.js');
+      // storeVersionedObject and getObjectByIdHash are imported statically at module level
+      const { getObject } = await import('@refinio/one.core/lib/storage-unversioned-objects.js');
+      const { getOnlyLatestReferencingObjsHashAndId } = await import('@refinio/one.core/lib/reverse-map-query.js');
+
+      const cryptoApi = await createCryptoApiFromDefaultKeys(nodeOneCore.ownerId as SHA256IdHash<Person>);
+      const pubKey = Buffer.from(cryptoApi.publicSignKey).toString('hex');
+      const deviceId = nodeOneCore.instanceId;
+
+      // Detect device type based on platform
+      let deviceType = 'unknown';
+      const platform = process.platform;
+      if (platform === 'darwin') {
+        deviceType = 'macbook';
+      } else if (platform === 'linux') {
+        deviceType = 'linux';
+      } else if (platform === 'win32') {
+        deviceType = 'windows';
+      }
+
+      // Create ONE.core adapter for DevicePlan (it expects these as methods)
+      const oneCoreAdapter = {
+        storeVersionedObject,
+        getObjectByIdHash,
+        getObject,
+        getReverseMapEntries: async (key: any, type: string) => {
+          // Returns array of {hash, idHash, timestamp}
+          return await getOnlyLatestReferencingObjsHashAndId(key, type as any);
+        }
+      };
+
+      // Get or create local Device object - single source of truth for displayName
+      const devicePlan = new DevicePlan(oneCoreAdapter);
+      const localDeviceResult = await devicePlan.getOrCreateLocalDevice(
+        nodeOneCore.instanceId as SHA256IdHash<Instance>,
+        nodeOneCore.ownerId as SHA256IdHash<Person>,
+        'LAMA Cube'  // Default display name for new devices
+      );
+
+      if (!localDeviceResult.success || !localDeviceResult.device) {
+        throw new Error(localDeviceResult.error || 'Failed to get/create local device');
+      }
+
+      const displayName = localDeviceResult.device.displayName;
+      console.log(`[ModuleRegistryInit] Local Device: ${localDeviceResult.created ? 'created' : 'found'}, displayName="${displayName}"`);
+
+      // Store devicePlan on nodeOneCore for updateName IPC handler
+      (nodeOneCore as any).devicePlan = devicePlan;
+      (nodeOneCore as any).localDeviceIdHash = localDeviceResult.device.idHash;
+
+      // Get owner email for mDNS broadcast (receivers derive personId from email)
+      const { getInstanceOwnerEmail } = await import('@refinio/one.core/lib/instance.js');
+      const email = getInstanceOwnerEmail();
+      if (!email) {
+        throw new Error('Owner email not available for mDNS discovery');
+      }
+
+      const mdnsAdapter = new MDNSDiscoveryAdapter({
+        deviceId,
+        pubKey,
+        email,
+        displayName,
+        deviceType,
+        quicvcPort: 49497
+      });
+      connectionModuleInstance.setLocalDiscoveryProvider(mdnsAdapter, true);
+      console.log(`[ModuleRegistryInit] ✅ MDNSDiscoveryAdapter set (deviceType=${deviceType}, displayName="${displayName}", autoStart=true)`);
+    } catch (error) {
+      console.warn('[ModuleRegistryInit] Failed to setup MDNSDiscovery:', error);
+    }
+  }
 
   // Initialize all modules
   console.log('[ModuleRegistryInit] Initializing all modules...');
@@ -367,17 +662,39 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   // CRITICAL: Wire userSettingsManager to AIModule's llmManager for API key injection
   // AIModule creates its own llmManager, but userSettingsManager is Electron-specific
   // This enables Claude API key auto-injection in llmManager.chat()
-  const userSettingsManager = (nodeOneCore as any).userSettingsManager;
-  if (userSettingsManager && aiModuleInstance?.llmManager) {
-    console.log('[ModuleRegistryInit] Wiring userSettingsManager to AIModule llmManager...');
+  // Use settingsPlan for wiring to LLM manager
+  const settingsPlan = (nodeOneCore as any).settingsPlan;
+  if (settingsPlan && aiModuleInstance?.llmManager) {
+    console.log('[ModuleRegistryInit] Wiring SettingsPlan to AIModule llmManager...');
     aiModuleInstance.llmManager.updateSystemPromptDependencies(
-      userSettingsManager,
+      settingsPlan,
       (nodeOneCore as any).topicAnalysisModel,
       nodeOneCore.channelManager
     );
-    console.log('[ModuleRegistryInit] ✅ UserSettingsManager wired to AIModule llmManager');
+    console.log('[ModuleRegistryInit] ✅ SettingsPlan wired to AIModule llmManager');
   } else {
-    console.warn('[ModuleRegistryInit] Cannot wire userSettingsManager - userSettingsManager:', !!userSettingsManager, 'llmManager:', !!aiModuleInstance?.llmManager);
+    console.warn('[ModuleRegistryInit] Cannot wire SettingsPlan - settingsPlan:', !!settingsPlan, 'llmManager:', !!aiModuleInstance?.llmManager);
+  }
+
+  // Wire StoryFactory and CoreMemoryPlan to AnalysisModule for Subject → Journal + Memory integration
+  // This must be done post-init because MemoryModule (which supplies CoreMemoryPlan) depends on TopicAnalysisModel
+  // from AnalysisModule, creating a circular dependency that we resolve here
+  const analysisModule = moduleRegistry.getModule<AnalysisModule>('AnalysisModule');
+  if (analysisModule?.topicAnalysisModel) {
+    const storyFactory = moduleRegistry.getStoryFactory();
+    if (storyFactory) {
+      await analysisModule.topicAnalysisModel.setStoryFactory(storyFactory);
+      console.log('[ModuleRegistryInit] ✅ StoryFactory wired to TopicAnalysisModel for Journal visibility');
+    }
+
+    // Get CoreMemoryPlan from MemoryModule (now initialized)
+    if (memoryModule) {
+      const coreMemoryPlan = (memoryModule as any).coreMemoryPlan;
+      if (coreMemoryPlan) {
+        analysisModule.topicAnalysisModel.setMemoryPlan(coreMemoryPlan);
+        console.log('[ModuleRegistryInit] ✅ CoreMemoryPlan wired to TopicAnalysisModel for Memory visibility');
+      }
+    }
   }
 
   // Setup ConnectionModule event listeners for UI updates
@@ -387,6 +704,19 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
     setupConnectionModuleListeners(connectionModuleInstance, nodeOneCore);
     console.log('[ModuleRegistryInit] ✅ ConnectionModule event listeners registered');
   }
+
+  // Setup BaileysModule event listeners for UI updates (WhatsApp QR codes, messages, etc.)
+  if (baileysModuleInstance) {
+    try {
+      const { setupBaileysEventForwarding } = await import('../ipc/plans/baileys.js');
+      const getWindow = () => global.mainWindow || null;
+      setupBaileysEventForwarding(getWindow);
+      console.log('[ModuleRegistryInit] ✅ BaileysModule event listeners registered');
+    } catch (error) {
+      console.warn('[ModuleRegistryInit] Failed to setup BaileysModule event listeners:', error);
+    }
+  }
+
 
   // Create retroactive Assemblies for Instance and Owner (bootstrap problem: created before StoryFactory)
   // Now that StoryFactory is ready, record instance creation in journal
@@ -468,6 +798,20 @@ export function getAIModule(): AIModule | null {
 }
 
 /**
+ * Get the ConnectionModule instance (for wiring discovery events)
+ */
+export function getConnectionModule(): ConnectionModule | null {
+  return connectionModuleInstance;
+}
+
+/**
+ * Get the BaileysModule instance (for WhatsApp integration)
+ */
+export function getBaileysModule(): BaileysModule | null {
+  return baileysModuleInstance;
+}
+
+/**
  * Shutdown the module registry
  */
 export async function shutdownModuleRegistry(): Promise<void> {
@@ -477,6 +821,9 @@ export async function shutdownModuleRegistry(): Promise<void> {
     moduleRegistry = null;
     coreModuleInstance = null;
     aiModuleInstance = null;
+    connectionModuleInstance = null;
+    instanceModuleInstance = null;
+    baileysModuleInstance = null;
     console.log('[ModuleRegistryInit] Module registry shutdown complete');
   }
 }

@@ -5,7 +5,7 @@
  * Only wires Electron IPC events to MCPPlans and injects cube-specific deps.
  */
 
-import type { IpcMainInvokeEvent } from 'electron';
+import { type IpcMainInvokeEvent, BrowserWindow } from 'electron';
 import { MCPPlans, type MCPServerLifecycle } from '@refinio/mcp.core/plans';
 import { getPlanRegistry, stopMcpServer, startMcpServer } from '../../services/mcp-server-init.js';
 import { lamaAPIServer } from '../../services/lama-api-server.js';
@@ -18,7 +18,14 @@ const lifecycle: MCPServerLifecycle = {
   startMcpServer,
   stopMcpServer,
   startApiServer: () => lamaAPIServer.start(),
-  stopApiServer: () => lamaAPIServer.stop()
+  stopApiServer: () => lamaAPIServer.stop(),
+  onStatusChanged: (status) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('mcp:statusChanged', status);
+      }
+    }
+  }
 };
 
 const plans = new MCPPlans(lifecycle);
@@ -34,6 +41,14 @@ export function resetMCPPlans(): void {
  * Re-export for callers that need to init supply/demand.
  */
 export { plans as mcpPlansInstance };
+
+/**
+ * Push current MCP status to all renderer windows.
+ * Call after MCP server startup or any external status change.
+ */
+export function broadcastMCPStatus(): void {
+  lifecycle.onStatusChanged?.(plans.getStatus());
+}
 
 // ── IPC plan map ───────────────────────────────────────────────────────
 

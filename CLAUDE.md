@@ -5,30 +5,32 @@ Electron-specific guidance for lama.cube. See parent `CLAUDE.md` for general LAM
 ## Essential Commands
 
 ```bash
-# Development
-npm run electron              # Run app (uses dist/)
-npm run electron:src          # Run from source TypeScript
-cd electron-ui && npm run dev # Vite dev server (hot-reload)
+# Development (electron-vite based)
+pnpm dev                   # Dev mode with hot-reload (builds + launches Electron)
+pnpm preview               # Run from pre-built output (rebuilds first, then launches)
 
 # Building
-npm run build:all             # TypeScript + React UI
-npm run build:main            # Main process only
-npm run build:ui              # UI only
-npm run watch:main            # Watch mode
+pnpm build                 # Build all (main + preload + renderer) via electron-vite
 
 # Testing
-cd electron-ui && npm test    # All tests
-npm run test:watch            # Watch mode
-npm run test:ci               # CI mode
+pnpm test                  # All tests (jest)
+pnpm test:watch            # Watch mode
+
+# Type checking
+pnpm typecheck             # All
+pnpm typecheck:main        # Main process only
+pnpm typecheck:renderer    # Renderer only
 
 # Distribution
-npm run dist                  # Current platform
-npm run dist:all              # All platforms
+pnpm dist                  # Current platform (build + bundle models + electron-builder)
+pnpm dist:all              # All platforms
 
 # Cleanup
 ./clear-all-storage.sh        # Clear ALL ONE.core storage
 pkill -f Electron             # Kill Electron processes
 ```
+
+**Starting the app**: Use `pnpm dev` for development (hot-reload). Use `pnpm build && pnpm preview` to test production builds. The `preview` command also rebuilds, so just `pnpm preview` suffices. There is no standalone `pnpm electron` script - all launching goes through electron-vite.
 
 ## Architecture
 
@@ -133,7 +135,8 @@ REMOVE THEM. Browser uses IPC only: `window.electronAPI.invoke()`
 
 - `main/core/node-one-core.ts` - Node.js ONE.core instance
 - `main/ipc/controller.ts` - IPC router
-- `main/ipc/plans/` - IPC plan handlers
+- `main/ipc/plans/` - IPC plan handlers (including `instance.ts` for IoM/IoP)
+- `main/registry/module-registry-init.ts` - Module initialization (InstanceModule registered here)
 - `electron-ui/src/bridge/lama-bridge.ts` - IPC bridge
 - `lama-electron-shadcn.ts` - Main entry point
 
@@ -143,8 +146,25 @@ REMOVE THEM. Browser uses IPC only: `window.electronAPI.invoke()`
 - **HTML Export**: Microdata markup with `implode()`
 - **Topic Analysis**: Auto-extract subjects/keywords/summaries
 - **Proposals**: Context-aware suggestions (Feature 019)
+- **Instance Management**: IoM/IoP device tracking via `InstanceModule`
+- **ESP32 Control**: LED control for discovered ESP32 devices via UDP
 
 Specs: `specs/018-*/`, `specs/019-*/`, `specs/021-*/`
+
+## ESP32 Device Control
+
+ESP32 devices running the `esp32.core` firmware are discovered via mDNS and appear in Settings → Devices → Network Discovery.
+
+**IPC Handler**: `esp32:controlLED` in `main/ipc/plans/devices.ts`
+
+**Protocol**:
+- Transport: UDP to device's advertised port (49497)
+- Format: `[0x03][JSON]` where 0x03 = SERVICE_TYPE_LED_CONTROL
+- Authentication: `senderPersonId` must match device owner
+
+**LED Actions**: `on`, `off`, `toggle`
+
+**UI**: LED dropdown button appears only for devices with names starting with "esp32"
 
 ## Registering ONE.core Types
 
@@ -183,6 +203,57 @@ const allRecipes = [
 **Key file**: `main/plans/CoreInstanceInitializationPlan.ts`
 
 **Note**: The `@OneObjectInterfaces.d.ts` files provide TypeScript compile-time types only. Runtime registration happens via `initInstance({ initialRecipes: [...] })`.
+
+## Bundling with electron-vite
+
+**CRITICAL**: The packaged app bundles EVERYTHING. There is NO node_modules in the final app.
+
+### How It Works
+
+- `electron-vite` bundles all code into `out/main/index.js`
+- `electron-builder` packages the bundle into AppImage/DMG/etc.
+- Workspace packages are bundled (listed in `workspacePackages` array)
+- npm packages are externalized by default (NOT bundled)
+
+### Native Modules (nativeModules array)
+
+**WARNING**: Packages in `nativeModules` are EXCLUDED FROM THE ENTIRE BUNDLE and WILL NOT BE AVAILABLE AT RUNTIME!
+
+```typescript
+// electron.vite.config.ts
+const nativeModules = [
+  '@abandonware/noble',      // ❌ NOT in final app
+  '@roamhq/wrtc-linux-x64',  // ❌ Externalized, but copied by bundleWrtcBinaries plugin
+  // etc.
+]
+```
+
+**If you need a native module at runtime**, you MUST:
+1. Remove it from `nativeModules`
+2. Bundle it using a custom Vite plugin (like `bundleNodeLlamaCppBinaries`)
+3. Copy binaries manually to `out/` directory
+
+### Examples
+
+**node-llama-cpp**: Bundled via custom plugin that copies platform binaries to `out/main/bins/`
+
+**onnxruntime-node**: REMOVED from app entirely. Main process ONNX providers are stubs. TTS uses renderer-side worker with WebGPU/WASM instead.
+
+**@roamhq/wrtc**: Externalized (not bundled). `transport.node` handles missing wrtc gracefully - logs warning and disables WebRTC transport. Use `isWebRTCAvailable()` to check availability.
+
+### Debugging Bundle Issues
+
+```bash
+# Check what's in the bundle
+ls -la out/main/
+
+# Test AppImage
+timeout 10 ./release/LAMA-*.AppImage --no-sandbox 2>&1
+
+# Common error: "Cannot find module 'X'"
+# → X is externalized but code tries to import it
+# → Either bundle X or remove the import
+```
 
 ## Development Principles
 

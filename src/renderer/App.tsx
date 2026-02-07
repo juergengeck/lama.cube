@@ -285,8 +285,8 @@ function AppContent() {
 
   // Global listener for channel updates - keeps conversation list updated app-wide
   useEffect(() => {
-    const handleChannelUpdated = (data: { channelId: string; topicId: string }) => {
-      console.log('[App] 📬 Global: Channel updated for topic:', data.topicId?.substring(0, 20))
+    const handleChannelUpdated = (data: { channelId: string; channelInfoIdHash: string; participants: string; channelOwner: string }) => {
+      console.log('[App] 📬 Global: Channel updated:', data.channelId?.substring(0, 20))
     }
 
     lamaBridge.on('channel:updated', handleChannelUpdated)

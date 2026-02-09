@@ -284,16 +284,8 @@ function AppContent() {
   }, [])
 
   // Global listener for channel updates - keeps conversation list updated app-wide
-  useEffect(() => {
-    const handleChannelUpdated = (data: { channelId: string; channelInfoIdHash: string; participants: string; channelOwner: string }) => {
-      console.log('[App] 📬 Global: Channel updated:', data.channelId?.substring(0, 20))
-    }
-
-    lamaBridge.on('channel:updated', handleChannelUpdated)
-    return () => {
-      lamaBridge.off('channel:updated', handleChannelUpdated)
-    }
-  }, [])
+  // Note: individual hooks (useLamaMessages) handle per-topic refresh with debouncing
+  // No logging here - channel:updated fires hundreds of times during sync
   
   // Listen for navigation from Electron menu
   useEffect(() => {
@@ -441,10 +433,25 @@ function AppContent() {
       setSelectedConversationId(conversationId)
     }
 
-    // Store navigation context for settings
+    // Store navigation context for settings and expand the target section
     if (tab === 'settings' && section) {
-      // We'll pass this to SettingsView
       sessionStorage.setItem('settings-scroll-to', section)
+
+      // Expand the target section before it mounts (localStorage is read on mount)
+      const prefix = 'lama-settings-section-'
+      localStorage.setItem(`${prefix}${section}`, 'true')
+
+      // For nested sections, also expand the parent
+      const parentMap: Record<string, string> = {
+        'ai-models': 'ai',
+        'local-models': 'ai',
+        'mcp-servers': 'ai',
+        'proposals': 'ai',
+      }
+      const parentId = parentMap[section]
+      if (parentId) {
+        localStorage.setItem(`${prefix}${parentId}`, 'true')
+      }
     }
   }
 
@@ -702,6 +709,7 @@ function AppContent() {
           enabled: discoveryEnabled,
           onChange: handleDiscoveryChange
         }}
+        onNavigateToSection={(sectionId) => handleNavigate('settings', undefined, sectionId)}
         hideOnMobile={true}
       />
     </div>

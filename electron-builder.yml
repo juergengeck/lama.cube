@@ -1,85 +1,71 @@
+# electron-builder config for electron-vite
+# Based on electron-vite standard conventions
+# Run with: pnpm dist
+
 appId: com.lama.one
 productName: LAMA
-directories:
-  output: release
-  buildResources: assets
-files:
-  - "dist/**/*"
-  - "node_modules/**/*"
-  - "package.json"
-  - "!dist/mac*/**/*"
-  - "!dist/win*/**/*"
-  - "!dist/linux*/**/*"
-  - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
-  - "!.editorconfig"
-  - "!**/._*"
-  - "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}"
-  - "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}"
-  - "!**/{appveyor.yml,.travis.yml,circle.yml}"
-  - "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
-  - "!electron-ui/node_modules/**/*"
-  - "!electron-ui/src/**/*"
-  - "!electron-ui/public/**/*"
-  - "!electron-ui/*.{json,js,ts,tsx,html,md}"
-  - "!tests/**/*"
-  - "!specs/**/*"
-  - "!reference/**/*"
-  - "!scripts/**/*"
-  - "!.git/**/*"
-  - "!.github/**/*"
-  - "!*.md"
 
-# Include prebuilt UI
+directories:
+  buildResources: assets
+  output: release
+
+# Exclude source files, keep built output
+# All dependencies are bundled by electron-vite, so exclude node_modules
+files:
+  - '!**/.vscode/*'
+  - '!src/*'             # Source excluded, out/ included
+  - '!electron/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+  - '!{tsconfig*.json}'
+  - '!{*.md,*.log}'
+  - '!tests/*'
+  - '!specs/*'
+  - '!scripts/*'
+  - '!**/node_modules/**'  # Skip all node_modules (bundled by vite)
+
+# Unpack resources that need filesystem access
+asarUnpack:
+  - resources/**
+  - assets/**
+  - out/main/bins/**  # node-llama-cpp native binaries
+
+# Extra resources (not in asar)
 extraResources:
-  - from: electron-ui/dist
-    to: electron-ui/dist
+  - from: assets
+    to: assets
     filter: ["**/*"]
-  # Include bundled AI models (~200MB)
   - from: models
     to: models
     filter: ["**/*"]
 
-# Windows configuration
+# Windows
 win:
+  executableName: LAMA
+  icon: assets/icons/icon.ico
   target:
     - target: nsis
-      arch:
-        - x64
-  artifactName: ${productName}-Setup-${version}.${ext}
-  icon: assets/icons/icon.ico
+      arch: [x64]
 
-# NSIS installer configuration for single-file installer
 nsis:
-  oneClick: true  # One-click installer (no wizard)
-  perMachine: false  # Install for current user only (no admin rights needed)
-  allowToChangeInstallationDirectory: false  # Single-file installer, no directory choice
-  deleteAppDataOnUninstall: false  # Preserve user data on uninstall
-  artifactName: ${productName}-${version}-Installer.${ext}
-  uninstallDisplayName: ${productName}
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
-  shortcutName: lama.one
+  artifactName: LAMA-${version}-setup.${ext}
+  shortcutName: LAMA
+  uninstallDisplayName: LAMA
+  createDesktopShortcut: always
+  oneClick: true
+  perMachine: false
 
-# Portable app configuration as alternative
-portable:
-  artifactName: ${productName}-${version}-Portable.${ext}
-
-# macOS configuration
+# macOS
 mac:
+  icon: assets/icons/icon.png
   category: public.app-category.productivity
-  icon: assets/icons/icon.icns
   hardenedRuntime: true
-  gatekeeperAssess: false
   entitlements: assets/entitlements.mac.plist
   entitlementsInherit: assets/entitlements.mac.plist
-  # Using development certificate (for local testing only)
-  # For distribution, get "Developer ID Application" certificate
-  identity: "Apple Development: Juergen Geck (98SBS9L3U9)"
-  target:
-    - dmg
-    - zip
 
 dmg:
+  artifactName: LAMA-${version}.${ext}
   contents:
     - x: 130
       y: 220
@@ -88,16 +74,20 @@ dmg:
       type: link
       path: /Applications
 
-# Linux configuration
+# Linux
 linux:
   target:
     - AppImage
-    - deb
   icon: assets/icons
   category: Office
+  maintainer: lama.one
   synopsis: Local AI Messaging Assistant
-  desktop:
-    entry:
-      Name: lama.one
-      Comment: Local AI Messaging Assistant
-      Categories: Office;Chat;InstantMessaging;
+
+appImage:
+  artifactName: LAMA-${version}-${arch}.${ext}
+
+npmRebuild: false
+buildDependenciesFromSource: false
+
+# Disable publishing (build artifacts only)
+publish: null

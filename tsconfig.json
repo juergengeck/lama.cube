@@ -8,8 +8,6 @@
     "allowJs": true,
     "checkJs": false,
     "declaration": true,
-    "outDir": "./dist",
-    "rootDir": "./",
     "strict": false,
     "noImplicitAny": false,
     "strictNullChecks": false,
@@ -25,33 +23,21 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": false,
-    "types": ["node"],
-    "lib": ["ES2022", "DOM"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./main/*"],
-      "@core/*": ["./main/core/*"],
-      "@models/*": ["./main/models/*"],
+      "@/*": ["./src/*"],
+      "@main/*": ["./electron/main/*"],
+      "@components/*": ["./src/components/*"],
+      "@lib/*": ["./src/lib/*"],
       "@refinio/one.core/*": ["./node_modules/@refinio/one.core/*"],
-      "@refinio/one.models/*": ["./node_modules/@refinio/one.models/*"],
-      "@assembly/core/*": ["./node_modules/@assembly/core/*"],
-      "@trust/core/*": ["./node_modules/@trust/core/*"]
+      "@refinio/one.models/*": ["./node_modules/@refinio/one.models/*"]
     }
   },
-  "include": [
-    "main/**/*.ts",
-    "main/**/*.js",
-    "lama-electron-shadcn.ts",
-    "electron-preload.ts",
-    "@OneCoreTypes.d.ts"
-  ],
   "exclude": [
     "node_modules",
+    "out",
     "dist",
     "vendor",
-    "electron-ui/node_modules",
-    "packages/**/node_modules",
-    "packages/**/*.ts",
     "OneDB",
     "reference"
   ],

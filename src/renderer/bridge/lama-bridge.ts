@@ -12,7 +12,7 @@ export interface LamaAPI {
   getCurrentUser: () => Promise<{ id: string; name: string } | null>
 
   // Messaging
-  sendMessage: (recipientId: string, content: string, attachments?: any[]) => Promise<string>
+  sendMessage: (recipientId: string, content: string, attachments?: any[], replyTo?: string) => Promise<string>
   getMessages: (topicId: string) => Promise<Message[]>
   createChannel: (name: string, members: string[]) => Promise<string>
   
@@ -101,6 +101,11 @@ export interface Message {
   topicId?: string
   topicName?: string
   format?: 'markdown' | 'plain' | 'html' // Message format for proper rendering (default: markdown)
+  replyTo?: {         // Reply context (resolved server-side from dataHash)
+    messageId: string  // dataHash of original message
+    text: string       // Truncated text preview
+    senderName: string
+  }
 }
 
 export interface Peer {
@@ -254,17 +259,16 @@ class LamaBridge implements LamaAPI {
     }
   }
   
-  async sendMessage(recipientId: string, content: string, attachments?: any[]): Promise<string> {
+  async sendMessage(recipientId: string, content: string, attachments?: any[], replyTo?: string): Promise<string> {
     if (!window.electronAPI) {
       throw new Error('IPC not available')
     }
 
-    // console.log('[LamaBridge] Sending message via IPC:', { recipientId, content })
-
     const result = await window.electronAPI.invoke('chat:sendMessage', {
       topicId: recipientId,
       text: content,
-      attachments: attachments || []
+      attachments: attachments || [],
+      replyTo
     })
 
     if (result.success) {
@@ -315,7 +319,8 @@ class LamaBridge implements LamaAPI {
       topicId: topicId,
       topicName: 'Chat',
       attachments: msg.attachments,
-      format: msg.format // Pass through format for markdown rendering
+      format: msg.format, // Pass through format for markdown rendering
+      replyTo: msg.replyTo || undefined // Reply context resolved server-side
     }))
   }
   

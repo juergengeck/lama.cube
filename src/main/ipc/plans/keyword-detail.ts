@@ -1,0 +1,136 @@
+/**
+ * Keyword Detail IPC Handlers (Thin Adapter)
+ *
+ * Maps Electron IPC calls to KeywordDetailHandler methods.
+ * Business logic lives in ../../../lama.core/handlers/KeywordDetailHandler.ts
+ *
+ * Implements Phase 2 (IPC Layer) for spec 015-keyword-detail-preview
+ */
+
+import type { IpcMainInvokeEvent } from 'electron';
+import { KeywordDetailPlan } from '@refinio/lama.core/plans/KeywordDetailPlan.js';
+import nodeOneCoreInstance from '../../core/node-one-core.js';
+import * as keywordAccessStorage from '@refinio/lama.core/one-ai/storage/keyword-access-storage.js';
+import * as keywordEnrichment from '@refinio/lama.core/one-ai/services/keyword-enrichment.js';
+
+// Singleton handler (uses TopicAnalysisModel from nodeOneCore via demand/supply)
+let keywordDetailHandler: KeywordDetailPlan | null = null;
+let keywordDetailEpoch = -1;
+
+/**
+ * @deprecated No-op: plan cache invalidates automatically via initEpoch
+ */
+export function resetKeywordDetailSingleton(): void {}
+
+/**
+ * Initialize handler using TopicAnalysisModel from AnalysisModule (via nodeOneCore)
+ */
+async function initializeHandler(): Promise<KeywordDetailPlan> {
+  if (keywordDetailEpoch !== nodeOneCoreInstance.initEpoch) {
+    keywordDetailHandler = null;
+  }
+  if (keywordDetailHandler && nodeOneCoreInstance?.topicAnalysisModel?.state.currentState === 'Initialised') {
+    return keywordDetailHandler;
+  }
+
+  if (!nodeOneCoreInstance?.initialized) {
+    throw new Error('ONE.core not initialized');
+  }
+
+  // Use TopicAnalysisModel from AnalysisModule (via demand/supply pattern)
+  const topicAnalysisModel = nodeOneCoreInstance.topicAnalysisModel;
+  if (!topicAnalysisModel) {
+    throw new Error('TopicAnalysisModel not available - AnalysisModule may not be initialized');
+  }
+
+  if (topicAnalysisModel.state.currentState !== 'Initialised') {
+    throw new Error('TopicAnalysisModel not initialized');
+  }
+
+  if (!keywordDetailHandler) {
+    keywordDetailHandler = new KeywordDetailPlan(
+      nodeOneCoreInstance,
+      topicAnalysisModel,
+      keywordAccessStorage,
+      keywordEnrichment
+    );
+    keywordDetailEpoch = nodeOneCoreInstance.initEpoch;
+  }
+
+  return keywordDetailHandler;
+}
+
+/**
+ * Get keyword details with subjects, access states, and topic references
+ * Handler for: keywordDetail:getKeywordDetails
+ * Contract: /specs/015-keyword-detail-preview/contracts/getKeywordDetails.md
+ */
+export async function getKeywordDetails(
+  event: IpcMainInvokeEvent,
+  { keyword, topicId }: { keyword: string; topicId?: string }
+): Promise<any> {
+  try {
+    const handler = await initializeHandler();
+    return await handler.getKeywordDetails({ keyword, topicId });
+  } catch (error) {
+    console.error('[KeywordDetail] Error in IPC handler:', error);
+    return {
+      success: false,
+      error: (error as Error).message,
+      data: {
+        keyword: null,
+        subjects: [],
+        accessStates: []
+      }
+    };
+  }
+}
+
+/**
+ * Update or create access state for a keyword and principal
+ * Handler for: keywordDetail:updateKeywordAccessState
+ * Contract: /specs/015-keyword-detail-preview/contracts/updateKeywordAccessState.md
+ */
+export async function updateKeywordAccessState(
+  event: IpcMainInvokeEvent,
+  {
+    keyword,
+    topicId,
+    principalId,
+    principalType,
+    state
+  }: {
+    keyword: string;
+    topicId: string;
+    principalId: string;
+    principalType: 'user' | 'group';
+    state: 'allow' | 'deny' | 'none';
+  }
+): Promise<any> {
+  try {
+    const handler = await initializeHandler();
+    return await handler.updateKeywordAccessState({
+      keyword,
+      topicId,
+      principalId,
+      principalType,
+      state
+    });
+  } catch (error) {
+    console.error('[KeywordDetail] Error in IPC handler:', error);
+    return {
+      success: false,
+      error: (error as Error).message,
+      data: {
+        accessState: null,
+        created: false
+      }
+    };
+  }
+}
+
+// Export all handlers
+export default {
+  getKeywordDetails,
+  updateKeywordAccessState
+};

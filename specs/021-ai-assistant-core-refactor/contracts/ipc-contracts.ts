@@ -284,7 +284,7 @@ export interface AIIPCEvents {
  *
  * ```typescript
  * import type { AIIPCHandlers } from '@lama/specs/contracts/ipc-contracts';
- * import { AIHandler } from '@lama/core/handlers/AIHandler';
+ * import { AIHandler } from '@refinio/lama.core/handlers/AIHandler';
  *
  * type AIHandlerFn<K extends keyof AIIPCHandlers> = (
  *   event: any,

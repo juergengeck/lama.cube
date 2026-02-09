@@ -139,8 +139,8 @@ function bundleNodeLlamaCppBinaries(): Plugin {
 // Also include legacy packages that need octal escape transformation
 const workspacePackages = [
   '@refinio/api', '@refinio/assembly.core', '@refinio/chat.baileys', '@refinio/chat.core',
-  '@refinio/connection.btle', '@refinio/connection.core', '@refinio/cube.core', '@refinio/lama.core',
-  '@refinio/lama.ui', '@refinio/lama.youtube', '@refinio/local.core', '@refinio/local.llama',
+  '@refinio/connection.btle', '@refinio/connection.core', '@refinio/cube.core', '@refinio/glue.moltbook',
+  '@refinio/lama.core', '@refinio/lama.ui', '@refinio/lama.youtube', '@refinio/local.core', '@refinio/local.llama',
   '@refinio/mcp.core', '@refinio/meaning.core', '@refinio/memory.core', '@refinio/one.core',
   '@refinio/one.knowledge', '@refinio/one.models', '@refinio/settings.core', '@refinio/transport.core',
   '@refinio/transport.node', '@refinio/trust.abac', '@refinio/trust.core', '@refinio/ui.core',

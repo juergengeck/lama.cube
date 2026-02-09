@@ -165,7 +165,7 @@ export interface IAIHandler {
  *
  * ```typescript
  * // lama.electron/main/ipc/handlers/ai.ts
- * import { AIHandler } from '@lama/core/handlers/AIHandler.js';
+ * import { AIHandler } from '@refinio/lama.core/handlers/AIHandler.js';
  * import nodeOneCore from '../../core/node-one-core.js';
  * import stateManager from '../../state/manager.js';
  *

@@ -1,0 +1,224 @@
+import type { ChannelManager } from '@refinio/one.models/lib/models/index.js';
+import type { Subject } from '@refinio/lama.core/one-ai/types/Subject.js';
+import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
+import type { IndexModule } from '@refinio/lama.core/modules/IndexModule.js';
+/**
+ * IPC handlers for topic operations (TypeScript)
+ */
+
+import { IpcMainInvokeEvent } from 'electron';
+import { calculateIdHashOfObj } from '@refinio/one.core/lib/util/object.js';
+import { getObjectByIdHash, storeVersionedObject } from '@refinio/one.core/lib/storage-versioned-objects.js';
+import { chatPlans } from './chat.js';
+import nodeOneCore from '../../core/node-one-core.js';
+import { getModuleRegistry } from '../../registry/module-registry-init.js';
+
+interface TopicResult {
+  success: boolean;
+  topicId?: string;
+  error?: string;
+}
+
+/**
+ * Get or create a one-to-one topic for a contact
+ */
+export async function getOrCreateTopicForContact(
+  event: IpcMainInvokeEvent,
+  contactId: string
+): Promise<TopicResult> {
+  console.log('[Topics IPC] Getting or creating topic for contact:', contactId);
+
+  // nodeOneCore is already the instance, not a class
+  const nodeInstance = nodeOneCore;
+  if (!nodeInstance || !nodeInstance.initialized) {
+    console.error('[Topics IPC] No Node.js ONE.core instance available');
+    return { success: false, error: 'No Node.js ONE.core instance' };
+  }
+
+  try {
+    const topicModel = nodeInstance.topicModel;
+    const channelManager: ChannelManager = nodeInstance.channelManager;
+    const myPersonId = nodeInstance.ownerId;
+
+    if (!topicModel || !channelManager || !myPersonId) {
+      console.error('[Topics IPC] Missing required models');
+      return { success: false, error: 'Models not initialized' };
+    }
+
+    // Check if this is an AI contact
+    let isAI = false;
+    let contactName = 'Contact';
+    let personId: any = null;
+
+    // O(1) lookup via ContactDimension (replaces leuteModel.others().find())
+    const registry = getModuleRegistry();
+    const indexModule = registry?.getModule<IndexModule>('IndexModule');
+    const contactEntry = indexModule?.contactDimension?.getBySomeoneId(contactId);
+
+    if (contactEntry) {
+      personId = contactEntry.personIdHash;
+      contactName = contactEntry.name || 'Contact';
+
+      // Check if AI using LLMObjectManager
+      if (nodeInstance.aiAssistantModel?.llmObjectManager) {
+        isAI = nodeInstance.aiAssistantModel.llmObjectManager.isLLMPerson(personId);
+        console.log(`[Topics IPC] Contact ${contactId.substring(0, 8)} isAI: ${isAI}`);
+      }
+    } else if (nodeInstance.leuteModel) {
+      // Fallback: ContactDimension not available or contact not indexed
+      const others = await nodeInstance.leuteModel.others();
+      const contact = others.find((c: any) => c.id === contactId);
+      if (contact) {
+        personId = await contact.mainIdentity();
+
+        // Check if AI using LLMObjectManager
+        if (nodeInstance.aiAssistantModel?.llmObjectManager) {
+          isAI = nodeInstance.aiAssistantModel.llmObjectManager.isLLMPerson(personId);
+          console.log(`[Topics IPC] Contact ${contactId.substring(0, 8)} isAI: ${isAI}`);
+        }
+
+        // Get contact name
+        const profile = await contact.mainProfile();
+        if (profile?.personDescriptions) {
+          const nameDesc = profile.personDescriptions.find((d: any) => d.$type$ === 'PersonName') as { name?: string } | undefined;
+          if (nameDesc?.name) {
+            contactName = nameDesc.name;
+          }
+        }
+      }
+    }
+
+    // For AI contacts, use chat:createConversation to properly set up the group and trigger handleNewTopic
+    if (isAI) {
+      console.log('[Topics IPC] AI contact detected - creating conversation via chat handler');
+
+      // Get the AI model ID for this person
+      if (!nodeInstance.aiAssistantModel) {
+        throw new Error('AIAssistantModel not initialized');
+      }
+
+      const aiModelId = nodeInstance.aiAssistantModel.getModelIdForPersonId(personId);
+      if (!aiModelId) {
+        throw new Error(`No AI model ID found for person ${personId?.toString().substring(0, 8)}`);
+      }
+
+      console.log('[Topics IPC] AI model ID:', aiModelId);
+
+      // Create conversation with AI participant
+      const result = await chatPlans.createConversation(event, {
+        type: 'group', // AI conversations are always groups (even 1-on-1)
+        participants: [contactId], // Pass contact ID
+        name: contactName,
+        aiModelId: aiModelId // CRITICAL: Pass the AI model ID
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to create AI conversation');
+      }
+
+      console.log('[Topics IPC] AI conversation created:', result.data?.id);
+      return {
+        success: true,
+        topicId: result.data.id
+      };
+    }
+
+    // For non-AI P2P contacts, create P2P topic using TopicModel
+    const localPersonId = myPersonId;
+
+    // Get the remote Person ID - O(1) lookup via ContactDimension
+    let remotePersonId: any = null;
+    if (contactEntry) {
+      // Already resolved from ContactDimension above
+      remotePersonId = contactEntry.personIdHash;
+      console.log(`[Topics IPC] Found Person ID ${remotePersonId?.substring(0, 8)} for Someone ${contactId.substring(0, 8)} (via ContactDimension)`);
+    } else if (nodeInstance.leuteModel) {
+      // Fallback: ContactDimension not available
+      const others = await nodeInstance.leuteModel.others();
+      const contact = others.find((c: any) => c.id === contactId);
+      if (contact) {
+        remotePersonId = await contact.mainIdentity();
+        console.log(`[Topics IPC] Found Person ID ${remotePersonId?.substring(0, 8)} for Someone ${contactId.substring(0, 8)}`);
+      }
+    }
+
+    if (!remotePersonId) {
+      throw new Error(`Could not find Person ID for contact ${contactId.substring(0, 8)}`);
+    }
+
+    // Create P2P topic using TopicModel - this handles "create if not exists" logic
+    // createOneToOneTopic returns the Topic object (existing or newly created)
+    const p2pTopic = await nodeInstance.topicModel.createOneToOneTopic(localPersonId, remotePersonId);
+
+    // Compute the topic idHash to return as identifier
+    const p2pTopicId = await calculateIdHashOfObj(p2pTopic);
+
+    console.log('[Topics IPC] P2P topic ready:', String(p2pTopicId).substring(0, 16));
+
+    return {
+      success: true,
+      topicId: p2pTopicId
+    };
+  } catch (error) {
+    console.error('[Topics IPC] Failed to create topic:', error);
+    return {
+      success: false,
+      error: (error as Error).message
+    };
+  }
+}
+
+/**
+ * Record feedback (like/dislike) for a subject
+ */
+export async function recordSubjectFeedback(
+  event: IpcMainInvokeEvent,
+  params: { subjectId: string; feedbackType: 'like' | 'dislike' }
+): Promise<{ success: boolean; subject?: Partial<Subject>; error?: string }> {
+  console.log(`[Topics IPC] Recording ${params.feedbackType} for subject:`, params.subjectId);
+
+  const nodeInstance = nodeOneCore;
+  if (!nodeInstance || !nodeInstance.initialized) {
+    console.error('[Topics IPC] No Node.js ONE.core instance available');
+    return { success: false, error: 'No Node.js ONE.core instance' };
+  }
+
+  try {
+    // Get the subject by ID
+    const result = await getObjectByIdHash(params.subjectId as SHA256IdHash<Subject>);
+    if (!result || !result.obj) {
+      console.error('[Topics IPC] Subject not found:', params.subjectId);
+      return { success: false, error: 'Subject not found' };
+    }
+
+    const subject = result.obj as Subject & { likes?: number; dislikes?: number };
+    const subjectIdHash = params.subjectId;  // Use the provided idHash as identifier
+    console.log('[Topics IPC] Found subject:', subjectIdHash, 'Current likes:', subject.likes, 'dislikes:', subject.dislikes);
+
+    // Update feedback counters
+    if (params.feedbackType === 'like') {
+      subject.likes = (subject.likes || 0) + 1;
+    } else {
+      subject.dislikes = (subject.dislikes || 0) + 1;
+    }
+
+    // Store updated subject
+    const storeResult = await storeVersionedObject(subject);
+    console.log(`[Topics IPC] Updated subject ${subjectIdHash} - likes: ${subject.likes}, dislikes: ${subject.dislikes}`);
+
+    return {
+      success: true,
+      subject: {
+        id: subjectIdHash,
+        likes: subject.likes,
+        dislikes: subject.dislikes
+      } as Partial<Subject>
+    };
+  } catch (error) {
+    console.error('[Topics IPC] Failed to record feedback:', error);
+    return {
+      success: false,
+      error: (error as Error).message
+    };
+  }
+}

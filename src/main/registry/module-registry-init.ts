@@ -14,6 +14,8 @@ import fs from 'fs/promises';
 import path from 'path';
 
 import { ModuleRegistry } from '@refinio/api/plan-system';
+import { planRegistry } from '@refinio/api/registry';
+import { TransactionalRegistry } from '@refinio/api/registry/TransactionalRegistry.js';
 import { storeVersionedObject, getObjectByIdHash } from '@refinio/one.core/lib/storage-versioned-objects.js';
 import { getObject } from '@refinio/one.core/lib/storage-unversioned-objects.js';
 import { getOnlyLatestReferencingObjsHashAndId } from '@refinio/one.core/lib/reverse-map-query.js';
@@ -43,7 +45,8 @@ import {
   DeviceModule,
   InstanceModule,
   KnowledgeNavigatorModule,
-  BaileysModule
+  BaileysModule,
+  IndexModule
 } from '@refinio/lama.core/modules';
 
 import { BrowserWindow } from 'electron';
@@ -55,6 +58,9 @@ import { wireModulesToRegistry, startMcpServer } from '../services/mcp-server-in
 import { broadcastMCPStatus } from '../ipc/plans/mcp.js';
 import { setupBaileysEventForwarding as setupBaileysEvents } from '../ipc/plans/baileys.js';
 import { ElectronLLMPlatform, createElectronLLMConfigAdapter } from '../adapters/electron-llm-platform.js';
+import { JobManager } from '@refinio/worker.core';
+import { NodeWorkerPlatform } from '../adapters/NodeWorkerPlatform.js';
+import { setJobManager } from '../ipc/plans/jobs.js';
 import { getInferenceManager } from '../core/inference-manager.js';
 import type { NodeOneCore } from '../types/one-core.js';
 import type { SHA256IdHash } from '@refinio/one.core/lib/util/type-checks.js';
@@ -66,7 +72,7 @@ import type { QuicVCConnectFn } from '@refinio/one.models/lib/misc/ConnectionEst
 // =============================================================================
 
 const debugBus = createMessageBus('module-registry');
-const CHUM_DEBUG = true;
+const CHUM_DEBUG = false;
 
 debugBus.on('debug', (src: string, ...messages: unknown[]) => {
   if (src.startsWith('AI') || src.startsWith('LLM') || src === 'AITopicManager' || src === 'AIMessageProcessor' || src === 'AIAssistantPlan') {
@@ -108,6 +114,7 @@ debugBus.on('ai-creation-progress', async (_src: string, data: { step: number; t
 // =============================================================================
 
 let moduleRegistry: ModuleRegistry | null = null;
+let transactionalRegistry: TransactionalRegistry | null = null;
 let coreModuleInstance: CoreModule | null = null;
 let aiModuleInstance: AIModule | null = null;
 let connectionModuleInstance: ConnectionModule | null = null;
@@ -115,6 +122,7 @@ let instanceModuleInstance: InstanceModule | null = null;
 let baileysModuleInstance: BaileysModule | null = null;
 let localDevicePlan: DevicePlan | null = null;
 let localDeviceIdHash: SHA256IdHash<Device> | null = null;
+let jobManagerInstance: JobManager | null = null;
 
 // =============================================================================
 // MAIN ENTRY POINT
@@ -136,6 +144,9 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
 
   const commServerUrl = nodeOneCore.commServerUrl || 'wss://comm10.dev.refinio.one';
 
+  // Create TransactionalRegistry wrapping global PlanRegistry
+  transactionalRegistry = new TransactionalRegistry(planRegistry);
+
   // PHASE 1: Supply platform adapters
   await supplyPlatformAdapters(moduleRegistry, nodeOneCore);
 
@@ -148,6 +159,12 @@ export async function initializeModuleRegistry(nodeOneCore: NodeOneCore): Promis
   // PHASE 4: Initialize all modules (dependency injection + init)
   console.log('[ModuleRegistry] Initializing modules...');
   await moduleRegistry.initAll();
+
+  // Check for genuinely unsatisfied demands after init
+  const unsatisfied = moduleRegistry.getUnsatisfiedDemands();
+  if (unsatisfied.length > 0) {
+    console.warn('[ModuleRegistry] Unsatisfied demands after init:', unsatisfied.map(d => d.targetType));
+  }
 
   // PHASE 5: Post-init lifecycle
   await postInit(moduleRegistry, nodeOneCore);
@@ -200,6 +217,13 @@ async function supplyPlatformAdapters(
 
   // StoryFactory for journal tracking
   registry.setStorageFunction(storeVersionedObject);
+
+  // Worker platform for long-running jobs
+  const workerPlatform = new NodeWorkerPlatform({});
+  jobManagerInstance = new JobManager(workerPlatform);
+  setJobManager(jobManagerInstance);
+  registry.supply('JobManager', jobManagerInstance);
+  console.log('[ModuleRegistry] JobManager supplied');
 }
 
 async function supplyMCPManager(registry: ModuleRegistry): Promise<void> {
@@ -323,6 +347,9 @@ function registerModules(
   coreModuleInstance = new CoreModule(commServerUrl);
   registry.register(coreModuleInstance);
 
+  // Dimensional indexing (O(1) contact/topic lookups - depends on LeuteModel, TopicModel)
+  registry.register(new IndexModule());
+
   // AI functionality
   const getWindow = () => global.mainWindow || null;
   const llmPlatform = new ElectronLLMPlatform(getWindow);
@@ -369,11 +396,8 @@ function registerModules(
   }
   registry.register(instanceModuleInstance);
 
-  // Check unsatisfied demands
-  const unsatisfied = registry.getUnsatisfiedDemands();
-  if (unsatisfied.length > 0) {
-    console.warn('[ModuleRegistry] Unsatisfied demands:', unsatisfied.map(d => d.targetType));
-  }
+  // Note: demands like LeuteModel, ChannelManager etc. are satisfied during
+  // Phase 4 initAll() when modules produce their supplies. Don't warn here.
 }
 
 function registerBaileysModule(registry: ModuleRegistry, nodeOneCore: NodeOneCore): void {
@@ -618,6 +642,9 @@ async function postInit(registry: ModuleRegistry, nodeOneCore: NodeOneCore): Pro
   // Setup BaileysModule event forwarding
   await setupBaileysEventForwarding();
 
+  // Wire source resolver to IndexModule (determines conversation source: whatsapp/glue/molt/etc.)
+  wireSourceResolver(registry, nodeOneCore);
+
   // Create instance assemblies for journal
   await createInstanceAssemblies(registry, nodeOneCore);
 }
@@ -684,6 +711,30 @@ function wireToNodeOneCore(registry: ModuleRegistry, nodeOneCore: NodeOneCore): 
   console.log('[ModuleRegistry] References wired to nodeOneCore');
 }
 
+/**
+ * Wire source resolver to IndexModule.
+ * Determines conversation source (whatsapp/glue/molt/hi/lama) from
+ * AITopicManager (default topic types) and BaileysModule (WhatsApp topics).
+ */
+function wireSourceResolver(registry: ModuleRegistry, nodeOneCore: NodeOneCore): void {
+  const indexModule = registry.getModule<IndexModule>('IndexModule');
+  if (!indexModule) return;
+
+  const whatsAppTopicIds = baileysModuleInstance
+    ? new Set<string>(baileysModuleInstance.getAllWhatsAppTopicIds())
+    : new Set<string>();
+
+  indexModule.setSourceResolver((topicIdHash: string) => {
+    if (whatsAppTopicIds.has(topicIdHash)) return 'whatsapp';
+    if (nodeOneCore.aiAssistantModel?.topicManager?.getDefaultTopicType) {
+      return nodeOneCore.aiAssistantModel.topicManager.getDefaultTopicType(topicIdHash) ?? undefined;
+    }
+    return undefined;
+  });
+
+  console.log('[ModuleRegistry] Source resolver wired to IndexModule');
+}
+
 async function wireAnalysisModuleDependencies(registry: ModuleRegistry): Promise<void> {
   const analysisModule = registry.getModule<AnalysisModule>('AnalysisModule');
   if (!analysisModule?.topicAnalysisModel) return;
@@ -738,6 +789,18 @@ async function setupBaileysEventForwarding(): Promise<void> {
   try {
     const getWindow = () => global.mainWindow || null;
     setupBaileysEvents(getWindow);
+
+    // Send current connection state to catch any events that fired
+    // before the IPC forwarder was set up (e.g., fast auto-connect)
+    const liveStatus = await baileysModuleInstance.connectionPlan.getStatus();
+    if (liveStatus.connected) {
+      const window = global.mainWindow;
+      if (window && !window.isDestroyed()) {
+        console.log('[ModuleRegistry] Sending catch-up connectionChanged(true) to renderer');
+        window.webContents.send('baileys:connectionChanged', { connected: true });
+      }
+    }
+
     console.log('[ModuleRegistry] BaileysModule event listeners set');
   } catch (error) {
     console.warn('[ModuleRegistry] BaileysModule event setup failed:', error);
@@ -839,6 +902,14 @@ export function getLocalDeviceIdHash(): SHA256IdHash<Device> | null {
   return localDeviceIdHash;
 }
 
+export function getJobManager(): JobManager | null {
+  return jobManagerInstance;
+}
+
+export function getTransactionalRegistry(): TransactionalRegistry | null {
+  return transactionalRegistry;
+}
+
 export async function shutdownModuleRegistry(): Promise<void> {
   if (!moduleRegistry) return;
 
@@ -851,7 +922,12 @@ export async function shutdownModuleRegistry(): Promise<void> {
       await coreModuleInstance?.shutdown();
     } catch {}
   } finally {
+    if (jobManagerInstance) {
+      await jobManagerInstance.shutdown();
+      jobManagerInstance = null;
+    }
     moduleRegistry = null;
+    transactionalRegistry = null;
     coreModuleInstance = null;
     aiModuleInstance = null;
     connectionModuleInstance = null;

@@ -1,0 +1,256 @@
+/**
+ * Topic Analysis IPC Handlers (Thin Adapter)
+ *
+ * Maps Electron IPC calls to TopicAnalysisHandler methods.
+ * Business logic lives in ../../../lama.core/handlers/TopicAnalysisHandler.ts
+ */
+
+import { TopicAnalysisPlan } from '@refinio/lama.core/plans/TopicAnalysisPlan.js';
+import nodeOneCoreInstance from '../../core/node-one-core.js';
+import llmManager from '../../services/llm-manager-singleton.js';
+import { chatPlans } from './chat.js';
+import type { IpcMainInvokeEvent } from 'electron';
+
+// Create handler instance - models will be set after initialization
+const topicAnalysisHandler = new TopicAnalysisPlan();
+
+// Helper to ensure models are initialized before use
+function ensureModelsInitialized() {
+  console.log('[TopicAnalysisIPC] ensureModelsInitialized called', {
+    hasHandlerModel: !!topicAnalysisHandler['topicAnalysisModel'],
+    hasNodeModel: !!nodeOneCoreInstance.topicAnalysisModel
+  });
+  if (!topicAnalysisHandler['topicAnalysisModel'] && nodeOneCoreInstance.topicAnalysisModel) {
+    console.log('[TopicAnalysisIPC] ✅ Initializing models for TopicAnalysisPlan');
+    topicAnalysisHandler.setModels(
+      nodeOneCoreInstance.topicAnalysisModel!,
+      nodeOneCoreInstance.topicModel,
+      llmManager,
+      nodeOneCoreInstance
+    );
+  } else if (!nodeOneCoreInstance.topicAnalysisModel) {
+    console.log('[TopicAnalysisIPC] ❌ nodeOneCoreInstance.topicAnalysisModel is not available yet');
+  }
+}
+
+/**
+ * Thin IPC adapter - maps ipcMain.handle() calls to handler methods
+ */
+const topicAnalysisHandlers = {
+  /**
+   * Analyze messages to extract subjects and keywords
+   */
+  async analyzeMessages(
+    event: IpcMainInvokeEvent,
+    { topicId, messages, forceReanalysis = false }: {
+      topicId: string;
+      messages?: any[];
+      forceReanalysis?: boolean;
+    }
+  ) {
+    ensureModelsInitialized();
+
+    // Diagnostic: Check if aiAssistantModel is available
+    const hasAIModel = !!nodeOneCoreInstance.aiAssistantModel;
+    console.log('[TopicAnalysisIPC] analyzeMessages called:', {
+      topicId: topicId?.substring(0, 16),
+      hasAIModel,
+      hasTopicAnalysisModel: !!topicAnalysisHandler['topicAnalysisModel'],
+      hasLLMManager: !!topicAnalysisHandler['llmManager'],
+      hasNodeOneCore: !!topicAnalysisHandler['nodeOneCore']
+    });
+
+    const result = await topicAnalysisHandler.analyzeMessages({
+      topicId,
+      messages,
+      forceReanalysis
+    });
+
+    // Log result for debugging
+    if (!result.success) {
+      console.error('[TopicAnalysisIPC] analyzeMessages FAILED:', result.error);
+    } else {
+      console.log('[TopicAnalysisIPC] analyzeMessages SUCCESS:', {
+        subjects: result.data?.subjects?.length || 0,
+        keywords: result.data?.keywords?.length || 0,
+        hasSummary: !!result.data?.summary
+      });
+    }
+
+    return result;
+  },
+
+  /**
+   * Get all subjects for a topic
+   */
+  async getSubjects(
+    event: IpcMainInvokeEvent,
+    { topicId, includeArchived = false }: {
+      topicId: string;
+      includeArchived?: boolean;
+    }
+  ) {
+    ensureModelsInitialized();
+    return await topicAnalysisHandler.getSubjects({
+      topicId,
+      includeArchived
+    });
+  },
+
+  /**
+   * Get summary for a topic
+   */
+  async getSummary(
+    event: IpcMainInvokeEvent,
+    { topicId, version, includeHistory = false }: {
+      topicId: string;
+      version?: number;
+      includeHistory?: boolean;
+    }
+  ) {
+    return await topicAnalysisHandler.getSummary({
+      topicId,
+      version,
+      includeHistory
+    });
+  },
+
+  /**
+   * Generate conversation restart context for LLM continuity
+   */
+  async getConversationRestartContext(
+    event: IpcMainInvokeEvent,
+    { topicId }: { topicId: string }
+  ) {
+    return await topicAnalysisHandler.getConversationRestartContext({
+      topicId
+    });
+  },
+
+  /**
+   * Update or create summary for a topic
+   */
+  async updateSummary(
+    event: IpcMainInvokeEvent,
+    { topicId, content, changeReason, autoGenerate = false }: {
+      topicId: string;
+      content?: string;
+      changeReason?: string;
+      autoGenerate?: boolean;
+    }
+  ) {
+    // Helper function to get messages for auto-generate
+    const chatPlanGetMessages = async (params: { topicId: string; limit?: number }) => {
+      return await chatPlans.getMessages(event, params);
+    };
+
+    return await topicAnalysisHandler.updateSummary(
+      { topicId, content, changeReason, autoGenerate },
+      chatPlanGetMessages
+    );
+  },
+
+  /**
+   * Extract keywords from text using LLM
+   */
+  async extractKeywords(
+    event: IpcMainInvokeEvent,
+    { text, limit = 10 }: {
+      text: string;
+      limit?: number;
+    }
+  ) {
+    return await topicAnalysisHandler.extractKeywords({
+      text,
+      limit
+    });
+  },
+
+  /**
+   * Merge two subjects into one
+   */
+  async mergeSubjects(
+    event: IpcMainInvokeEvent,
+    { topicId, subjectId1, subjectId2 }: {
+      topicId: string;
+      subjectId1: string;
+      subjectId2: string;
+    }
+  ) {
+    return await topicAnalysisHandler.mergeSubjects({
+      topicId,
+      subjectId1,
+      subjectId2
+    });
+  },
+
+  /**
+   * Extract single-word keywords for real-time display
+   */
+  async extractRealtimeKeywords(
+    event: IpcMainInvokeEvent,
+    { text, existingKeywords = [], maxKeywords = 15 }: {
+      text: string;
+      existingKeywords?: string[];
+      maxKeywords?: number;
+    }
+  ) {
+    return await topicAnalysisHandler.extractRealtimeKeywords({
+      text,
+      existingKeywords,
+      maxKeywords
+    });
+  },
+
+  /**
+   * Extract keywords from all messages in a conversation
+   */
+  async extractConversationKeywords(
+    event: IpcMainInvokeEvent,
+    { topicId, messages = [], maxKeywords = 15 }: {
+      topicId: string;
+      messages?: any[];
+      maxKeywords?: number;
+    }
+  ) {
+    // Helper function to get messages
+    const chatPlanGetMessages = async (params: { topicId: string }) => {
+      return await chatPlans.getMessages(event, params);
+    };
+
+    return await topicAnalysisHandler.extractConversationKeywords(
+      { topicId, messages, maxKeywords },
+      chatPlanGetMessages
+    );
+  },
+
+  /**
+   * Get all keywords for a topic
+   */
+  async getKeywords(
+    event: IpcMainInvokeEvent,
+    params: { topicId: string; limit?: number }
+  ) {
+    ensureModelsInitialized();
+    return await topicAnalysisHandler.getKeywords({
+      topicId: params.topicId,
+      limit: params.limit
+    });
+  }
+};
+
+// Export handlers
+export const {
+  analyzeMessages,
+  getSubjects,
+  getSummary,
+  getConversationRestartContext,
+  updateSummary,
+  extractKeywords,
+  mergeSubjects,
+  extractRealtimeKeywords,
+  extractConversationKeywords,
+  getKeywords
+} = topicAnalysisHandlers;
+
+export default topicAnalysisHandlers;

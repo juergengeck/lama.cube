@@ -34,6 +34,8 @@ out/
 
 # Bundled AI models (downloaded during build)
 models/
+# But keep source code models directory
+!src/main/models/
 
 # Test coverage
 coverage/

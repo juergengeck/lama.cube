@@ -1,14 +1,17 @@
 {
+  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "outDir": "./dist",
-    "rootDir": "./",
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "types": ["node"],
-    "isolatedModules": true
+    "outDir": "./out/preload",
+    "types": ["node", "electron"]
   },
-  "include": ["electron-preload.ts"]
+  "include": [
+    "electron/preload/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "out",
+    "dist",
+    "src",
+    "electron/main"
+  ]
 }

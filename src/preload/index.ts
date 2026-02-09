@@ -83,14 +83,19 @@ const validChannels = [
   // WhatsApp/Baileys events
   'baileys:log',
   'baileys:syncStats',
+  'baileys:importProgress',
   'baileys:qrCode',
   'baileys:qrCodeBase64',
   'baileys:pairingCode',
   'baileys:connectionChanged',
   'baileys:messageReceived',
   'baileys:error',
+  'baileys:chatsDiscovered',
   // MCP events
   'mcp:statusChanged',
+  // Job events
+  'job:progress',
+  'job:status',
   // Topic events (for useTopics refresh)
   'newTopic'
 ] as const;

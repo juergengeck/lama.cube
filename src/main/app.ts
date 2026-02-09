@@ -30,6 +30,7 @@ import llmManager from './services/llm-manager-singleton.js';
 import attachmentService from './services/attachment-service.js';
 import assemblyManagerSingleton from './services/assembly-manager-singleton.js';
 import { getInferenceManager } from './core/inference-manager.js';
+import nodeInstance from './core/node-one-core.js';
 
 class MainApplication {
   public mainWindow: any;
@@ -260,10 +261,30 @@ class MainApplication {
     return this.mainWindow
   }
 
+  /**
+   * Reinitialize the application after data clear (for dev mode)
+   * In dev mode, we can't use app.relaunch() because the Vite dev server
+   * won't be available to the relaunched process.
+   *
+   * NOTE: We don't call initialize() again because IPC handlers are already
+   * registered and Electron throws if you try to register them twice.
+   * We just reset the node state - the renderer will reload and re-login.
+   */
+  async reinitialize(): Promise<void> {
+    console.log('[MainApp] Reinitializing application for dev mode...')
+
+    // Reset provisioning state so user can login fresh
+    nodeProvisioning.resetProvisioningState()
+
+    // Reset our internal state
+    this.initialized = false
+
+    console.log('[MainApp] Reinitialization complete - renderer will reload')
+  }
+
   async getState(): Promise<any> {
     // State is now managed by ONE.CORE instances
     if (nodeProvisioning.isProvisioned()) {
-      const { default: nodeInstance } = await import('./core/node-one-core.js');
       return nodeInstance.models?.state?.getAll() || {};
     }
     return {};

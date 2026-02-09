@@ -58,6 +58,7 @@ import alertPlans from './plans/alerts.js';
 import gluePlans from './plans/glue.js';
 import moltPlans from './plans/molt.js';
 import sharingPlans from './plans/sharing.js';
+import jobPlans from './plans/jobs.js';
 
 // Node error type
 interface NodeError extends Error {
@@ -559,12 +560,23 @@ class IPCController {
     this.handle('baileys:connect', baileysPlans.connect);
     this.handle('baileys:waitForConnection', baileysPlans.waitForConnection);
     this.handle('baileys:disconnect', baileysPlans.disconnect);
+    this.handle('baileys:unlink', baileysPlans.unlink);
     this.handle('baileys:getStatus', baileysPlans.getStatus);
     this.handle('baileys:requestPairingCode', baileysPlans.requestPairingCode);
     this.handle('baileys:getQRCode', baileysPlans.getQRCode);
     this.handle('baileys:getPairingCode', baileysPlans.getPairingCode);
     this.handle('baileys:sendMessage', baileysPlans.sendMessage);
     this.handle('baileys:sendMessageToJid', baileysPlans.sendMessageToJid);
+    this.handle('baileys:getChats', baileysPlans.getChats);
+    this.handle('baileys:setChatPreference', baileysPlans.setChatPreference);
+    this.handle('baileys:setChatEnabled', baileysPlans.setChatEnabled);
+    this.handle('baileys:confirmImport', baileysPlans.confirmImport);
+
+    // Job manager plans
+    this.handle('job:submit', jobPlans.submit);
+    this.handle('job:cancel', jobPlans.cancel);
+    this.handle('job:list', jobPlans.list);
+    this.handle('job:getJob', jobPlans.getJob);
 
     // Marketplace plans (supply/demand matching)
     this.handle('marketplace:publishSupply', marketplacePlans['marketplace:publishSupply']);

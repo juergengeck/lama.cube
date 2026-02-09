@@ -27,7 +27,7 @@ pnpm dist:all              # All platforms
 
 # Cleanup
 ./clear-all-storage.sh        # Clear ALL ONE.core storage
-pkill -f Electron             # Kill Electron processes
+# NEVER pkill -f Electron (kills VS Code and all Electron apps!)
 ```
 
 **Starting the app**: Use `pnpm dev` for development (hot-reload). Use `pnpm build && pnpm preview` to test production builds. The `preview` command also rebuilds, so just `pnpm preview` suffices. There is no standalone `pnpm electron` script - all launching goes through electron-vite.
